@@ -11,6 +11,8 @@ let totalBytes = 0;
 const startTime = Date.now();
 /** @type {{ fileName: string, bucketName: string, size: number, time: number, status: string }[]} */
 const activityLog = [];
+/** @type {{ size: number, time: number }[]} */
+const recentByteEvents = [];
 
 function createServer(downloadPath) {
   const app = express();
@@ -30,11 +32,25 @@ function createServer(downloadPath) {
 
   // Server status / stats
   app.get("/status", (_req, res) => {
+    const now = Date.now();
+    const windowMs = 5000;
+    const cutoff = now - windowMs;
+
+    while (recentByteEvents.length > 0 && recentByteEvents[0].time < cutoff) {
+      recentByteEvents.shift();
+    }
+
+    const recentBytes = recentByteEvents.reduce((sum, e) => sum + e.size, 0);
+    const currentSpeedBytesPerSec = Math.round((recentBytes * 1000) / windowMs);
     const uptimeMs = Date.now() - startTime;
+    const averageSpeedBytesPerSec = uptimeMs > 0 ? Math.round((totalBytes * 1000) / uptimeMs) : 0;
+
     res.json({
       totalReceived,
       totalBytes,
       uptimeMs,
+      currentSpeedBytesPerSec,
+      averageSpeedBytesPerSec,
       downloadPath,
       recentActivity: activityLog.slice(-50).reverse(),
     });
@@ -116,6 +132,7 @@ function createServer(downloadPath) {
 
     totalReceived++;
     totalBytes += fileSize;
+    recentByteEvents.push({ size: fileSize, time: Date.now() });
 
     const entry = {
       fileName: req.file.filename,

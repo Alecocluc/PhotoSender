@@ -447,6 +447,11 @@
       const s = await window.api.getStatus();
       document.getElementById("stat-count").textContent = s.totalReceived || 0;
 
+      const speed = Number(s.currentSpeedBytesPerSec || 0) > 0
+        ? Number(s.currentSpeedBytesPerSec || 0)
+        : Number(s.averageSpeedBytesPerSec || 0);
+      document.getElementById("stat-speed").textContent = (speed / 1048576).toFixed(1);
+
       const uptimeMs = s.uptimeMs || 0;
       const h = String(Math.floor(uptimeMs / 3600000)).padStart(2, "0");
       const m = String(Math.floor((uptimeMs % 3600000) / 60000)).padStart(2, "0");

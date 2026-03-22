@@ -31,6 +31,7 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okio.BufferedSink
 import okio.source
+import java.io.IOException
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -242,12 +243,13 @@ class UploadManager @Inject constructor(
 
             val requestBody = MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
-                .addFormDataPart("file", record.fileName, progressBody)
-                .addFormDataPart("fileName", record.fileName)
+                // Put metadata before the file part so multer has bucketName during destination resolution.
                 .addFormDataPart("bucketName", record.bucketName)
+                .addFormDataPart("fileName", record.fileName)
                 .addFormDataPart("fileSize", record.fileSize.toString())
                 .addFormDataPart("md5Hash", md5)
                 .addFormDataPart("mimeType", guessMimeType(record.fileName))
+                .addFormDataPart("file", record.fileName, progressBody)
                 .build()
 
             val request = Request.Builder()
@@ -255,31 +257,36 @@ class UploadManager @Inject constructor(
                 .post(requestBody)
                 .build()
 
-            val response = okHttpClient.newCall(request).execute()
-
-            if (response.isSuccessful) {
-                uploadRecordDao.update(
-                    record.copy(
-                        status = UploadStatus.COMPLETED,
-                        md5Hash = md5,
-                        progress = 100,
-                        uploadedAt = System.currentTimeMillis()
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    uploadRecordDao.update(
+                        record.copy(
+                            status = UploadStatus.COMPLETED,
+                            md5Hash = md5,
+                            progress = 100,
+                            uploadedAt = System.currentTimeMillis()
+                        )
                     )
-                )
-                _transferState.update { st ->
-                    val activeTransferred = st.activeTransfers.find { it.recordId == record.id }?.bytesTransferred ?: 0L
-                    val finalDelta = (record.fileSize - activeTransferred).coerceAtLeast(0)
-                    st.copy(
-                        completedFiles = st.completedFiles + 1,
-                        transferredBytes = (st.transferredBytes + finalDelta).coerceAtMost(st.totalBytes),
-                    )
+                    _transferState.update { st ->
+                        val activeTransferred = st.activeTransfers.find { it.recordId == record.id }?.bytesTransferred ?: 0L
+                        val finalDelta = (record.fileSize - activeTransferred).coerceAtLeast(0)
+                        st.copy(
+                            completedFiles = st.completedFiles + 1,
+                            transferredBytes = (st.transferredBytes + finalDelta).coerceAtMost(st.totalBytes),
+                        )
+                    }
+                } else {
+                    val body = response.body?.string()?.take(180) ?: ""
+                    throw Exception("Server returned ${response.code}${if (body.isNotBlank()) ": $body" else ""}")
                 }
-            } else {
-                throw Exception("Server returned ${response.code}")
             }
         } catch (e: CancellationException) {
             uploadRecordDao.update(record.copy(status = UploadStatus.PENDING))
             throw e
+        } catch (e: IOException) {
+            // Network/read timeouts can happen after the server already persisted the file.
+            // Keep this retryable instead of marking it as a hard failure.
+            uploadRecordDao.update(record.copy(status = UploadStatus.PENDING))
         } catch (e: Exception) {
             uploadRecordDao.update(record.copy(status = UploadStatus.FAILED))
             _transferState.update { st ->

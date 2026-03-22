@@ -256,7 +256,7 @@ private fun TransferItem(
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
-            if (transfer.contentUri.isNotEmpty()) {
+            if (transfer.contentUri.isNotEmpty() && canPreviewThumbnail(transfer.fileName)) {
                 AsyncImage(
                     model = transfer.contentUri,
                     contentDescription = transfer.fileName,
@@ -340,6 +340,11 @@ private fun TransferItem(
             }
         }
     }
+}
+
+private fun canPreviewThumbnail(fileName: String): Boolean {
+    val ext = fileName.substringAfterLast('.', "").lowercase()
+    return ext in setOf("jpg", "jpeg", "png", "webp", "gif", "bmp")
 }
 
 @Composable
