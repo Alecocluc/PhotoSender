@@ -62,6 +62,7 @@ fun ConnectScreen(
     val ipAddress by viewModel.ipAddress.collectAsStateWithLifecycle()
     val ipError by viewModel.ipError.collectAsStateWithLifecycle()
     val serverName by viewModel.serverName.collectAsStateWithLifecycle()
+    val connectionError by viewModel.connectionError.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
 
     Column(
@@ -189,6 +190,15 @@ fun ConnectScreen(
                         ConnectionState.CONNECTING -> MaterialTheme.colorScheme.secondary
                         ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.error
                     },
+                )
+            }
+
+            if (connectionError != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = connectionError!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
 

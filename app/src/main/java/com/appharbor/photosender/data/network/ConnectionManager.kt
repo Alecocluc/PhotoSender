@@ -31,10 +31,14 @@ class ConnectionManager @Inject constructor(
     private val _connectedIp = MutableStateFlow("")
     val connectedIp: StateFlow<String> = _connectedIp.asStateFlow()
 
+    private val _connectionError = MutableStateFlow<String?>(null)
+    val connectionError: StateFlow<String?> = _connectionError.asStateFlow()
+
     private var heartbeatJob: Job? = null
 
     fun connect(ip: String) {
         _connectionState.value = ConnectionState.CONNECTING
+        _connectionError.value = null
         _connectedIp.value = ip
         scope.launch {
             val success = performHealthCheck(ip)
@@ -91,7 +95,8 @@ class ConnectionManager @Inject constructor(
             } else {
                 false
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            _connectionError.value = "Could not reach server: ${e.localizedMessage ?: "unknown error"}"
             false
         }
     }

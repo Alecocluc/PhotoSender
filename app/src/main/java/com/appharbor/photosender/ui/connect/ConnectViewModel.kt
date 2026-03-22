@@ -22,6 +22,7 @@ class ConnectViewModel @Inject constructor(
 
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val serverName: StateFlow<String> = connectionManager.serverName
+    val connectionError: StateFlow<String?> = connectionManager.connectionError
 
     private val _ipAddress = MutableStateFlow("")
     val ipAddress: StateFlow<String> = _ipAddress.asStateFlow()
