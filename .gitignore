@@ -13,3 +13,12 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Room schema exports
+app/schemas/
+
+# Desktop Electron app
+desktop/node_modules/
+desktop/dist/
+desktop/out/
+desktop/package-lock.json

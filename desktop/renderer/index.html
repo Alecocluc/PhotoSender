@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:*; img-src 'self' data:;" />
+  <title>PhotoSender Desktop</title>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --primary: #0040a1;
+      --primary-container: #0056d2;
+      --on-primary: #fff;
+      --surface: #f7f9fb;
+      --surface-dim: #d8dadc;
+      --surface-container-lowest: #fff;
+      --surface-container-low: #f2f4f6;
+      --surface-container: #eceef0;
+      --surface-container-high: #e6e8ea;
+      --surface-container-highest: #e0e3e5;
+      --on-surface: #191c1e;
+      --on-surface-variant: #424654;
+      --secondary: #4a5d8e;
+      --secondary-container: #b3c5fd;
+      --on-secondary-container: #3e5181;
+      --tertiary: #822800;
+      --outline-variant: #c3c6d6;
+      --error: #ba1a1a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Manrope', sans-serif; background: var(--surface); color: var(--on-surface); display: flex; min-height: 100vh; }
+    .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+    .material-symbols-outlined.filled { font-variation-settings: 'FILL' 1; }
+
+    /* Sidebar */
+    .sidebar { width: 256px; background: var(--surface-container-low); display: flex; flex-direction: column; padding: 24px 16px; position: fixed; top: 0; left: 0; bottom: 0; z-index: 50; box-shadow: 0px 4px 20px rgba(25,28,30,0.06); }
+    .sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 40px; padding: 0 8px; }
+    .brand-icon { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--primary), var(--primary-container)); display: flex; align-items: center; justify-content: center; color: #fff; }
+    .brand-title { font-size: 18px; font-weight: 800; letter-spacing: -0.03em; color: var(--primary); }
+    .brand-sub { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--on-surface-variant); }
+
+    .nav-list { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 500; color: var(--on-surface-variant); cursor: pointer; transition: all 0.15s ease; text-decoration: none; letter-spacing: -0.01em; }
+    .nav-item:hover { color: var(--primary); background: rgba(0,64,161,0.06); }
+    .nav-item.active { color: var(--primary); font-weight: 700; background: rgba(0,64,161,0.08); border-right: 3px solid var(--primary); }
+
+    /* Main content */
+    .main { flex: 1; margin-left: 256px; display: flex; flex-direction: column; min-height: 100vh; }
+
+    /* Top bar */
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 32px; height: 60px; position: sticky; top: 0; z-index: 40; background: rgba(247,249,251,0.85); backdrop-filter: blur(12px); }
+    .topbar-title { font-size: 17px; font-weight: 700; letter-spacing: -0.03em; }
+    .topbar-actions { display: flex; align-items: center; gap: 16px; }
+    .status-badge { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px rgba(0,64,161,0.4); }
+    .status-dot.off { background: var(--error); box-shadow: 0 0 8px rgba(186,26,26,0.3); }
+
+    /* Content area */
+    .content { padding: 32px; display: grid; grid-template-columns: 1fr 380px; gap: 28px; flex: 1; }
+    .left-col { display: flex; flex-direction: column; gap: 24px; }
+    .right-col { display: flex; flex-direction: column; gap: 24px; }
+
+    /* Cards */
+    .card { border-radius: 20px; box-shadow: 0px 4px 20px rgba(25,28,30,0.06); }
+    .card-low { background: var(--surface-container-low); }
+    .card-high { background: var(--surface-container-highest); }
+    .card-surface { background: var(--surface-container); }
+
+    /* Server Status */
+    .server-card { padding: 32px; position: relative; overflow: hidden; }
+    .server-card .glow { position: absolute; top: 16px; right: 24px; width: 12px; height: 12px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 12px rgba(0,64,161,0.5); }
+    .server-card .glow.off { background: var(--error); box-shadow: 0 0 12px rgba(186,26,26,0.4); }
+    .server-label { font-size: 13px; font-weight: 700; color: var(--primary); margin-bottom: 4px; letter-spacing: -0.01em; }
+    .server-title { font-size: 36px; font-weight: 800; letter-spacing: -0.04em; margin-bottom: 24px; }
+    .ip-section { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+    .ip-label { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--on-surface-variant); margin-bottom: 8px; }
+    .ip-address { font-size: 28px; font-family: 'Manrope', monospace; font-weight: 500; letter-spacing: -0.02em; }
+    .ip-hint { font-size: 10px; color: rgba(66,70,84,0.6); }
+    .btn-gradient { background: linear-gradient(135deg, var(--primary), var(--primary-container)); color: #fff; border: none; padding: 12px 24px; border-radius: 12px; font-family: 'Manrope'; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: transform 0.1s; box-shadow: 0 4px 16px rgba(0,64,161,0.2); }
+    .btn-gradient:hover { transform: scale(1.03); }
+    .btn-gradient:active { transform: scale(0.97); }
+    .server-card .decor { position: absolute; bottom: -40px; right: -40px; width: 160px; height: 160px; border-radius: 50%; background: rgba(0,64,161,0.04); filter: blur(40px); }
+
+    /* Save Location */
+    .location-card { padding: 32px; display: flex; flex-direction: column; justify-content: space-between; }
+    .location-icon { width: 48px; height: 48px; border-radius: 16px; background: #fff; display: flex; align-items: center; justify-content: center; color: var(--primary); margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+    .location-title { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
+    .location-desc { font-size: 13px; color: var(--on-surface-variant); line-height: 1.5; }
+    .location-path { margin-top: 20px; padding: 14px 0; border-bottom: 1px solid rgba(66,70,84,0.12); display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: border-color 0.15s; }
+    .location-path:hover { border-color: var(--primary); }
+    .location-path span { font-size: 13px; font-weight: 700; }
+    .location-path .material-symbols-outlined { color: var(--on-surface-variant); font-size: 20px; }
+
+    /* Stats row */
+    .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .stat-card { padding: 24px; border-radius: 20px; box-shadow: 0px 4px 20px rgba(25,28,30,0.06); }
+    .stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--on-surface-variant); margin-bottom: 14px; }
+    .stat-value { font-size: 28px; font-weight: 800; letter-spacing: -0.04em; }
+    .stat-unit { font-size: 13px; font-weight: 700; color: var(--on-surface-variant); margin-left: 6px; }
+    .stat-primary { background: var(--primary); color: #fff; }
+    .stat-primary .stat-label { color: rgba(255,255,255,0.7); }
+
+    /* Activity feed */
+    .activity-card { padding: 24px; display: flex; flex-direction: column; flex: 1; }
+    .activity-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+    .activity-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+    .live-badge { padding: 4px 10px; border-radius: 6px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+    .activity-list { display: flex; flex-direction: column; gap: 20px; flex: 1; overflow-y: auto; }
+    .activity-item { display: flex; gap: 14px; cursor: pointer; }
+    .activity-thumb { width: 48px; height: 48px; border-radius: 12px; background: var(--surface-container-highest); display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+    .activity-thumb .material-symbols-outlined { color: var(--primary); font-size: 22px; }
+    .activity-info { flex: 1; min-width: 0; }
+    .activity-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .activity-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
+    .activity-time { font-size: 12px; color: var(--on-surface-variant); }
+    .activity-status { font-size: 10px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 4px; }
+    .activity-status .material-symbols-outlined { font-size: 14px; }
+
+    /* Progress item */
+    .progress-bar-bg { width: 100%; height: 4px; border-radius: 4px; background: var(--surface-container-highest); margin-top: 8px; }
+    .progress-bar-fill { height: 4px; border-radius: 4px; background: var(--primary); transition: width 0.3s ease; }
+    .progress-meta { display: flex; justify-content: space-between; margin-top: 4px; }
+    .progress-pct { font-size: 10px; font-weight: 700; color: var(--primary); }
+    .progress-speed { font-size: 10px; font-weight: 700; color: var(--on-surface-variant); }
+
+    .btn-secondary { width: 100%; margin-top: 24px; padding: 12px; border-radius: 12px; background: var(--surface-container-high); border: none; font-family: 'Manrope'; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--on-surface-variant); cursor: pointer; transition: background 0.15s; }
+    .btn-secondary:hover { background: var(--surface-container-highest); }
+
+    /* Empty state */
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; opacity: 0.5; text-align: center; gap: 8px; padding: 40px 0; }
+    .empty-state .material-symbols-outlined { font-size: 40px; }
+    .empty-state p { font-size: 13px; }
+
+    /* Responsive */
+    @media (max-width: 1100px) {
+      .content { grid-template-columns: 1fr; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--outline-variant); border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">
+      <span class="material-symbols-outlined filled">photo_camera</span>
+    </div>
+    <div>
+      <div class="brand-title">PhotoSender</div>
+      <div class="brand-sub">Precision Pilot</div>
+    </div>
+  </div>
+
+  <nav class="nav-list">
+    <a class="nav-item active" data-page="dashboard">
+      <span class="material-symbols-outlined">dashboard</span>
+      Dashboard
+    </a>
+    <a class="nav-item" data-page="activity">
+      <span class="material-symbols-outlined">analytics</span>
+      Activity Log
+    </a>
+    <a class="nav-item" data-page="settings">
+      <span class="material-symbols-outlined">settings</span>
+      Settings
+    </a>
+  </nav>
+
+  <div style="margin-top: auto; padding: 0 8px;">
+    <div style="padding: 16px; border-radius: 14px; background: var(--surface-container);">
+      <p style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--on-surface-variant); margin-bottom: 8px;">Server Port</p>
+      <p id="sidebar-port" style="font-size: 22px; font-weight: 700; color: var(--on-surface);">3210</p>
+    </div>
+  </div>
+</aside>
+
+<!-- Main -->
+<div class="main">
+  <!-- Top Bar -->
+  <header class="topbar">
+    <div class="topbar-title" id="page-title">Dashboard Overview</div>
+    <div class="topbar-actions">
+      <div class="status-badge">
+        <div class="status-dot" id="topbar-dot"></div>
+        <span id="topbar-status">Active</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Dashboard Page -->
+  <div class="content" id="page-dashboard">
+    <div class="left-col">
+      <!-- Top bento: server + location -->
+      <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px;">
+        <!-- Server Status -->
+        <div class="card card-low server-card">
+          <div class="glow" id="server-glow"></div>
+          <div class="server-label">System Status</div>
+          <div class="server-title" id="server-title">Server is ON</div>
+          <div class="ip-section">
+            <div>
+              <div class="ip-label">
+                <span class="material-symbols-outlined" style="font-size: 18px;">router</span>
+                Local Gateway
+              </div>
+              <div class="ip-address" id="ip-display">—</div>
+              <div class="ip-hint">Enter this address on your mobile device</div>
+            </div>
+            <button class="btn-gradient" id="btn-copy-ip">
+              <span class="material-symbols-outlined" style="font-size: 16px;">content_copy</span>
+              Copy IP
+            </button>
+          </div>
+          <div class="decor"></div>
+        </div>
+
+        <!-- Save Location -->
+        <div class="card card-high location-card">
+          <div>
+            <div class="location-icon">
+              <span class="material-symbols-outlined">folder_open</span>
+            </div>
+            <div class="location-title">Save Location</div>
+            <div class="location-desc">Incoming photos will be routed to your desktop folder.</div>
+          </div>
+          <div class="location-path" id="btn-change-folder">
+            <span id="path-display">/Photos/PhotoSender</span>
+            <span class="material-symbols-outlined">edit</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats Row -->
+      <div class="stats-row">
+        <div class="stat-card card-surface">
+          <div class="stat-label">Transfer Speed</div>
+          <div><span class="stat-value" id="stat-speed">0</span><span class="stat-unit">MB/s</span></div>
+        </div>
+        <div class="stat-card card-surface" style="border-bottom: 2px solid rgba(130,40,0,0.15);">
+          <div class="stat-label">Total Received</div>
+          <div><span class="stat-value" id="stat-count">0</span><span class="stat-unit">files</span></div>
+        </div>
+        <div class="stat-card stat-primary">
+          <div class="stat-label">Uptime</div>
+          <div><span class="stat-value" id="stat-uptime">00:00:00</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Activity Feed -->
+    <div class="right-col">
+      <div class="card card-low activity-card" style="flex: 1;">
+        <div class="activity-header">
+          <div class="activity-title">Activity Feed</div>
+          <div class="live-badge">Live</div>
+        </div>
+        <div class="activity-list" id="activity-list">
+          <div class="empty-state">
+            <span class="material-symbols-outlined">hourglass_empty</span>
+            <p>Waiting for transfers...</p>
+          </div>
+        </div>
+        <button class="btn-secondary" id="btn-open-folder">Open Downloads Folder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Activity Log Page (hidden) -->
+  <div class="content" id="page-activity" style="display: none;">
+    <div style="grid-column: 1 / -1;">
+      <div class="card card-low" style="padding: 28px; border-radius: 20px;">
+        <h3 style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 20px;">Full Transfer Log</h3>
+        <div id="full-log" style="display: flex; flex-direction: column; gap: 12px; max-height: 600px; overflow-y: auto;">
+          <div class="empty-state">
+            <span class="material-symbols-outlined">history</span>
+            <p>No transfers recorded yet</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Page (hidden) -->
+  <div class="content" id="page-settings" style="display: none;">
+    <div style="grid-column: 1 / -1; max-width: 600px;">
+      <div class="card card-low" style="padding: 32px; border-radius: 20px;">
+        <h3 style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 24px;">Settings</h3>
+
+        <div style="margin-bottom: 24px;">
+          <label style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--on-surface-variant); display: block; margin-bottom: 8px;">Download Destination</label>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span id="settings-path" style="font-size: 14px; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">—</span>
+            <button class="btn-gradient" id="btn-settings-folder" style="padding: 10px 20px; font-size: 12px;">
+              <span class="material-symbols-outlined" style="font-size: 16px;">folder_open</span> Change
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+          <label style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--on-surface-variant); display: block; margin-bottom: 8px;">Server Port</label>
+          <span style="font-size: 14px; font-weight: 600;" id="settings-port">3210</span>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+          <label style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--on-surface-variant); display: block; margin-bottom: 8px;">Network Addresses</label>
+          <div id="settings-ips" style="font-size: 14px; font-weight: 600;">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Navigation
+  const pages = { dashboard: "Dashboard Overview", activity: "Activity Log", settings: "Settings" };
+  document.querySelectorAll(".nav-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const page = item.dataset.page;
+      document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
+      item.classList.add("active");
+      Object.keys(pages).forEach((p) => {
+        const el = document.getElementById("page-" + p);
+        if (el) el.style.display = p === page ? "" : "none";
+      });
+      document.getElementById("page-title").textContent = pages[page] || "";
+    });
+  });
+
+  // State
+  let activityItems = [];
+
+  // Initialize
+  async function init() {
+    const ips = await window.api.getLocalIPs();
+    const ip = ips[0] || "127.0.0.1";
+    document.getElementById("ip-display").textContent = ip;
+
+    const dlPath = await window.api.getDownloadPath();
+    document.getElementById("path-display").textContent = shortenPath(dlPath);
+    document.getElementById("settings-path").textContent = dlPath;
+
+    const port = await window.api.getPort();
+    document.getElementById("sidebar-port").textContent = port;
+    document.getElementById("settings-port").textContent = port;
+
+    document.getElementById("settings-ips").textContent = ips.join(", ") || "No network";
+
+    // Copy IP
+    document.getElementById("btn-copy-ip").addEventListener("click", () => {
+      const port = document.getElementById("sidebar-port").textContent;
+      navigator.clipboard.writeText(ip);
+      const btn = document.getElementById("btn-copy-ip");
+      btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px">check</span> Copied!';
+      setTimeout(() => {
+        btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px">content_copy</span> Copy IP';
+      }, 1500);
+    });
+
+    // Open folder
+    document.getElementById("btn-open-folder").addEventListener("click", () => {
+      window.api.openFolder();
+    });
+
+    // Change folder
+    document.getElementById("btn-change-folder").addEventListener("click", changeFolder);
+    document.getElementById("btn-settings-folder").addEventListener("click", changeFolder);
+
+    // Listen for new files
+    window.api.onFileReceived((data) => {
+      activityItems.unshift(data);
+      if (activityItems.length > 100) activityItems.pop();
+      renderActivity();
+      renderFullLog();
+    });
+
+    // Poll status
+    pollStatus();
+    setInterval(pollStatus, 2000);
+  }
+
+  async function changeFolder() {
+    const newPath = await window.api.chooseFolder();
+    document.getElementById("path-display").textContent = shortenPath(newPath);
+    document.getElementById("settings-path").textContent = newPath;
+  }
+
+  async function pollStatus() {
+    try {
+      const s = await window.api.getStatus();
+      document.getElementById("stat-count").textContent = s.totalReceived || 0;
+
+      const uptimeMs = s.uptimeMs || 0;
+      const h = String(Math.floor(uptimeMs / 3600000)).padStart(2, "0");
+      const m = String(Math.floor((uptimeMs % 3600000) / 60000)).padStart(2, "0");
+      const sec = String(Math.floor((uptimeMs % 60000) / 1000)).padStart(2, "0");
+      document.getElementById("stat-uptime").textContent = `${h}:${m}:${sec}`;
+
+      if (s.recentActivity && s.recentActivity.length > 0 && activityItems.length === 0) {
+        activityItems = s.recentActivity;
+        renderActivity();
+        renderFullLog();
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  function renderActivity() {
+    const list = document.getElementById("activity-list");
+    if (activityItems.length === 0) {
+      list.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">hourglass_empty</span><p>Waiting for transfers...</p></div>';
+      return;
+    }
+    list.innerHTML = activityItems
+      .slice(0, 20)
+      .map((item) => {
+        const ago = timeAgo(item.time);
+        return `
+        <div class="activity-item">
+          <div class="activity-thumb">
+            <span class="material-symbols-outlined filled" style="color: var(--primary)">check_circle</span>
+          </div>
+          <div class="activity-info">
+            <div class="activity-name">${escapeHtml(item.fileName)}</div>
+            <div class="activity-meta">
+              <span class="activity-time">${ago}</span>
+              <span class="activity-status">
+                <span class="material-symbols-outlined filled" style="font-size:14px">check_circle</span>
+                SAVED
+              </span>
+            </div>
+          </div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function renderFullLog() {
+    const el = document.getElementById("full-log");
+    if (activityItems.length === 0) {
+      el.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">history</span><p>No transfers recorded yet</p></div>';
+      return;
+    }
+    el.innerHTML = activityItems
+      .map((item) => {
+        const t = new Date(item.time);
+        const ts = t.toLocaleString();
+        return `
+        <div style="display:flex; align-items:center; gap:14px; padding:10px 0;">
+          <span class="material-symbols-outlined filled" style="color:var(--primary); font-size:20px">check_circle</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(item.fileName)}</div>
+            <div style="font-size:11px; color:var(--on-surface-variant);">${escapeHtml(item.bucketName)} &bull; ${formatBytes(item.size)}</div>
+          </div>
+          <div style="font-size:11px; color:var(--on-surface-variant); white-space:nowrap;">${ts}</div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function timeAgo(ts) {
+    const diff = Date.now() - ts;
+    if (diff < 5000) return "Just now";
+    if (diff < 60000) return Math.floor(diff / 1000) + "s ago";
+    if (diff < 3600000) return Math.floor(diff / 60000) + " min ago";
+    return Math.floor(diff / 3600000) + "h ago";
+  }
+
+  function formatBytes(b) {
+    if (b >= 1073741824) return (b / 1073741824).toFixed(1) + " GB";
+    if (b >= 1048576) return (b / 1048576).toFixed(1) + " MB";
+    if (b >= 1024) return (b / 1024).toFixed(1) + " KB";
+    return b + " B";
+  }
+
+  function shortenPath(p) {
+    if (!p) return "—";
+    const parts = p.replace(/\\/g, "/").split("/");
+    if (parts.length > 3) return ".../" + parts.slice(-2).join("/");
+    return p;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str || "";
+    return div.innerHTML;
+  }
+
+  init();
+</script>
+</body>
+</html>
