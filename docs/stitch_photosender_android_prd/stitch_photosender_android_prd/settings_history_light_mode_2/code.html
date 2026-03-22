@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200;300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-container-lowest": "#ffffff",
+                        "tertiary": "#822800",
+                        "error": "#ba1a1a",
+                        "inverse-surface": "#2d3133",
+                        "secondary-fixed": "#dae2ff",
+                        "surface-tint": "#0056d2",
+                        "on-primary-container": "#ccd8ff",
+                        "surface-dim": "#d8dadc",
+                        "surface-container": "#eceef0",
+                        "on-surface": "#191c1e",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-container": "#3e5181",
+                        "surface-bright": "#f7f9fb",
+                        "background": "#f7f9fb",
+                        "primary-fixed": "#dae2ff",
+                        "surface-container-low": "#f2f4f6",
+                        "secondary-container": "#b3c5fd",
+                        "inverse-on-surface": "#eff1f3",
+                        "surface-container-high": "#e6e8ea",
+                        "surface": "#f7f9fb",
+                        "error-container": "#ffdad6",
+                        "on-error": "#ffffff",
+                        "surface-container-highest": "#e0e3e5",
+                        "outline": "#737785",
+                        "on-surface-variant": "#424654",
+                        "on-secondary-fixed-variant": "#324575",
+                        "on-background": "#191c1e",
+                        "on-tertiary-container": "#ffcebd",
+                        "on-primary-fixed": "#001847",
+                        "tertiary-fixed": "#ffdbcf",
+                        "surface-variant": "#e0e3e5",
+                        "on-primary": "#ffffff",
+                        "on-tertiary-fixed": "#380d00",
+                        "primary": "#0040a1",
+                        "tertiary-fixed-dim": "#ffb59b",
+                        "tertiary-container": "#a93802",
+                        "on-primary-fixed-variant": "#0040a1",
+                        "secondary-fixed-dim": "#b3c5fd",
+                        "on-error-container": "#93000a",
+                        "inverse-primary": "#b2c5ff",
+                        "on-secondary": "#ffffff",
+                        "primary-fixed-dim": "#b2c5ff",
+                        "on-tertiary-fixed-variant": "#812800",
+                        "secondary": "#4a5d8e",
+                        "primary-container": "#0056d2",
+                        "on-secondary-fixed": "#001847",
+                        "outline-variant": "#c3c6d6"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Manrope"],
+                        "label": ["Manrope"]
+                    },
+                    borderRadius: { "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem" },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(12px);
+        }
+        .glow-active {
+            box-shadow: 0 0 4px #0040a1;
+        }
+    </style>
+</head>
+<body class="bg-background font-body text-on-surface flex h-screen overflow-hidden">
+<!-- SideNavBar (Predicted Anchor) -->
+<aside class="bg-slate-50 flex flex-col h-full py-6 px-4 h-screen w-64 border-r-0 shadow-[0px_4px_20px_rgba(25,28,30,0.06)] z-50">
+<div class="flex items-center gap-3 px-2 mb-10">
+<div class="w-8 h-8 bg-primary-container rounded flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-lg">photo_camera</span>
+</div>
+<div>
+<h1 class="text-xl font-bold tracking-tighter text-blue-900">PhotoSender</h1>
+<p class="text-xs font-manrope tracking-tight text-slate-500">Precision Pilot</p>
+</div>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-200/50 transition-colors font-manrope text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+                Dashboard
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-200/50 transition-colors font-manrope text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">analytics</span>
+                Activity Log
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-200/50 transition-colors font-manrope text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">history</span>
+                History
+            </a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-blue-700 font-bold border-r-4 border-blue-700 bg-blue-50/50 transition-all font-manrope text-sm tracking-tight" href="#">
+<span class="material-symbols-outlined">settings</span>
+                Settings
+            </a>
+</nav>
+<div class="mt-auto px-2">
+<div class="flex items-center gap-3 p-3 bg-surface-container rounded-xl">
+<div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-800 font-bold text-xs">JD</div>
+<div class="overflow-hidden">
+<p class="text-xs font-bold truncate">John Desktop</p>
+<p class="text-[10px] text-on-surface-variant truncate">Premium License</p>
+</div>
+</div>
+</div>
+</aside>
+<div class="flex-1 flex flex-col relative overflow-hidden">
+<!-- TopNavBar (Predicted Anchor) -->
+<header class="w-full h-16 sticky top-0 z-40 bg-white/80 backdrop-blur-md flex items-center justify-between px-8 w-full">
+<div class="flex items-center gap-4">
+<h2 class="text-lg font-black tracking-tighter text-slate-900 uppercase">Configuration</h2>
+<div class="h-4 w-[1px] bg-outline-variant/30 mx-2"></div>
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary glow-active"></div>
+<span class="text-xs font-bold text-primary tracking-wide">Active</span>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-4 text-slate-400">
+<span class="material-symbols-outlined cursor-pointer active:scale-95 hover:text-blue-500 transition-colors">cloud_done</span>
+<span class="material-symbols-outlined cursor-pointer active:scale-95 hover:text-blue-500 transition-colors">settings_remote</span>
+</div>
+</div>
+</header>
+<main class="flex-1 overflow-y-auto p-12 no-scrollbar bg-surface-container">
+<div class="max-w-5xl mx-auto space-y-12">
+<!-- Settings Section: Precision Pilot Interface -->
+<section>
+<div class="mb-6">
+<h3 class="text-2xl font-bold tracking-tight text-on-surface flex items-center gap-3">
+                            App Settings
+                            <span class="text-[10px] font-bold text-on-surface-variant/40 tracking-[0.2em] uppercase">Control Panel</span>
+</h3>
+</div>
+<!-- Bento Grid for Settings -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Path Configuration -->
+<div class="col-span-12 lg:col-span-8 bg-surface-container-lowest p-8 rounded-xl shadow-[0px_4px_20px_rgba(25,28,30,0.06)] border border-white/50">
+<label class="block text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-4">Default Download Destination</label>
+<div class="flex items-center gap-4">
+<div class="flex-1 relative group">
+<span class="absolute left-0 bottom-0 w-full h-[1px] bg-outline-variant/30 group-focus-within:bg-primary transition-all group-focus-within:h-[2px]"></span>
+<input class="w-full bg-transparent border-none py-3 px-0 focus:ring-0 text-sm font-medium text-on-surface" readonly="" type="text" value="C:/Users/Media/PhotoSender"/>
+</div>
+<button class="bg-surface-container-high px-6 py-2.5 rounded-lg text-xs font-bold text-on-surface hover:bg-surface-container-highest transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">folder_open</span>
+                                    Change Folder
+                                </button>
+</div>
+<p class="mt-4 text-xs text-on-surface-variant/60 italic font-medium">Existing photos in this directory will not be moved during path change.</p>
+</div>
+<!-- Quick Toggles -->
+<div class="col-span-12 lg:col-span-4 space-y-4">
+<div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_4px_20px_rgba(25,28,30,0.06)] border border-white/50 flex items-center justify-between group">
+<div>
+<p class="text-sm font-bold text-on-surface">Auto-open folder</p>
+<p class="text-[10px] text-on-surface-variant font-medium">On session completion</p>
+</div>
+<div class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-6 rounded-xl shadow-[0px_4px_20px_rgba(25,28,30,0.06)] border border-white/50 flex items-center justify-between group">
+<div>
+<p class="text-sm font-bold text-on-surface">Launch at startup</p>
+<p class="text-[10px] text-on-surface-variant font-medium">Start as background process</p>
+</div>
+<div class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-surface-container-highest rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- History Section: Tonal Layering -->
+<section>
+<div class="mb-6 flex items-center justify-between">
+<h3 class="text-2xl font-bold tracking-tight text-on-surface flex items-center gap-3">
+                            Sync History
+                            <span class="text-[10px] font-bold text-on-surface-variant/40 tracking-[0.2em] uppercase">Global Logs</span>
+</h3>
+<button class="text-xs font-bold text-primary hover:underline transition-all">Export CSV</button>
+</div>
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden shadow-[0px_4px_20px_rgba(25,28,30,0.06)]">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="bg-surface-container-low border-none">
+<th class="px-8 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Date &amp; Time</th>
+<th class="px-8 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">Total Files</th>
+<th class="px-8 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">Size</th>
+<th class="px-8 py-4 text-[10px] font-bold text-on-surface-variant uppercase tracking-widest text-right">Status</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container">
+<tr class="hover:bg-surface-container-low/50 transition-colors group cursor-default">
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container">event</span>
+<div>
+<p class="text-sm font-bold text-on-surface">Oct 24, 2023</p>
+<p class="text-[10px] text-on-surface-variant">14:22:15</p>
+</div>
+</div>
+</td>
+<td class="px-8 py-5 text-right font-medium text-sm text-on-surface">1,248 files synced</td>
+<td class="px-8 py-5 text-right font-medium text-sm text-on-surface-variant">4.2 GB</td>
+<td class="px-8 py-5 text-right">
+<span class="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-bold rounded-full uppercase tracking-tighter">Success</span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group cursor-default">
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container">event</span>
+<div>
+<p class="text-sm font-bold text-on-surface">Oct 23, 2023</p>
+<p class="text-[10px] text-on-surface-variant">09:10:44</p>
+</div>
+</div>
+</td>
+<td class="px-8 py-5 text-right font-medium text-sm text-on-surface">842 files synced</td>
+<td class="px-8 py-5 text-right font-medium text-sm text-on-surface-variant">1.8 GB</td>
+<td class="px-8 py-5 text-right">
+<span class="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-bold rounded-full uppercase tracking-tighter">Success</span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group cursor-default">
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container">event</span>
+<div>
+<p class="text-sm font-bold text-on-surface">Oct 21, 2023</p>
+<p class="text-[10px] text-on-surface-variant">22:05:12</p>
+</div>
+</div>
+</td>
+<td class="px-8 py-5 text-right font-medium text-sm text-on-surface">3,110 files synced</td>
+<td class="px-8 py-5 text-right font-medium text-sm text-on-surface-variant">12.5 GB</td>
+<td class="px-8 py-5 text-right">
+<span class="px-3 py-1 bg-orange-50 text-orange-700 text-[10px] font-bold rounded-full uppercase tracking-tighter">Partial</span>
+</td>
+</tr>
+<tr class="hover:bg-surface-container-low/50 transition-colors group cursor-default">
+<td class="px-8 py-5">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-primary-container">event</span>
+<div>
+<p class="text-sm font-bold text-on-surface">Oct 18, 2023</p>
+<p class="text-[10px] text-on-surface-variant">18:30:00</p>
+</div>
+</div>
+</td>
+<td class="px-8 py-5 text-right font-medium text-sm text-on-surface">512 files synced</td>
+<td class="px-8 py-5 text-right font-medium text-sm text-on-surface-variant">940 MB</td>
+<td class="px-8 py-5 text-right">
+<span class="px-3 py-1 bg-green-50 text-green-700 text-[10px] font-bold rounded-full uppercase tracking-tighter">Success</span>
+</td>
+</tr>
+</tbody>
+</table>
+<div class="p-6 bg-surface-container-low/30 text-center">
+<button class="text-[11px] font-bold text-on-surface-variant hover:text-primary tracking-widest uppercase">Load More History</button>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- Status Chip Overlay (Glassmorphism) -->
+<div class="absolute bottom-12 right-12 z-50 glass-panel px-6 py-4 rounded-xl border border-white/40 shadow-xl flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4 duration-1000">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary animate-pulse" style="font-variation-settings: 'FILL' 1;">speed</span>
+</div>
+<div>
+<p class="text-xs font-bold text-on-surface">Next Sync Window</p>
+<p class="text-[10px] text-on-surface-variant font-medium">In 14m 22s • Priority High</p>
+</div>
+</div>
+<!-- Footer (Predicted Anchor) -->
+<footer class="w-full py-3 px-8 fixed bottom-0 border-t-0 bg-slate-100 flex justify-between items-center w-full z-30">
+<p class="font-manrope text-xs font-medium uppercase tracking-widest text-slate-500">Local IP: 192.168.1.42 • Status: Connected</p>
+<div class="flex gap-6">
+<a class="font-manrope text-xs font-medium uppercase tracking-widest text-blue-600 hover:underline" href="#">Support</a>
+<a class="font-manrope text-xs font-medium uppercase tracking-widest text-blue-600 hover:underline" href="#">Documentation</a>
+</div>
+</footer>
+</div>
+</body></html>

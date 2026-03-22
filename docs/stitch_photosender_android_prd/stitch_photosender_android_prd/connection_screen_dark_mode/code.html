@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PhotoSender - Connect</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-surface-variant": "#424654",
+              "on-secondary-fixed": "#001159",
+              "background": "#fbf8fe",
+              "on-error": "#ffffff",
+              "on-primary-fixed-variant": "#0040a1",
+              "secondary-fixed": "#dee1ff",
+              "on-primary-container": "#ccd8ff",
+              "inverse-surface": "#303034",
+              "primary-fixed": "#dae2ff",
+              "inverse-primary": "#b2c5ff",
+              "outline": "#737785",
+              "tertiary-fixed": "#6ffbbe",
+              "surface-container-highest": "#e4e1e7",
+              "on-tertiary-container": "#63f1b4",
+              "on-secondary": "#ffffff",
+              "tertiary-fixed-dim": "#4edea3",
+              "on-primary": "#ffffff",
+              "outline-variant": "#c3c6d6",
+              "secondary": "#2b4cda",
+              "on-primary-fixed": "#001847",
+              "on-secondary-container": "#fffbff",
+              "tertiary-container": "#006c49",
+              "error": "#ba1a1a",
+              "surface-dim": "#dcd9de",
+              "primary-container": "#0056d2",
+              "surface-container": "#f0edf2",
+              "surface-container-lowest": "#ffffff",
+              "on-tertiary": "#ffffff",
+              "secondary-container": "#4967f4",
+              "tertiary": "#005136",
+              "on-tertiary-fixed": "#002113",
+              "primary-fixed-dim": "#b2c5ff",
+              "surface": "#fbf8fe",
+              "inverse-on-surface": "#f3f0f5",
+              "on-error-container": "#93000a",
+              "on-surface": "#1b1b1f",
+              "on-background": "#1b1b1f",
+              "on-secondary-fixed-variant": "#0031c4",
+              "surface-variant": "#e4e1e7",
+              "surface-bright": "#fbf8fe",
+              "error-container": "#ffdad6",
+              "on-tertiary-fixed-variant": "#005236",
+              "surface-tint": "#0056d2",
+              "secondary-fixed-dim": "#bac3ff",
+              "surface-container-high": "#eae7ed",
+              "primary": "#0040a1",
+              "surface-container-low": "#f6f2f8"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #1b1b1f; /* dark:bg-[#1b1b1f] from JSON */
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body text-on-surface selection:bg-primary-container selection:text-on-primary-container">
+<!-- Top App Bar -->
+<nav class="fixed top-0 w-full z-50 bg-white/80 dark:bg-[#1b1b1f]/80 backdrop-blur-xl flex items-center justify-between px-6 h-16">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#0040a1] dark:text-[#d6e2ff]" data-icon="sensors">sensors</span>
+<span class="font-['Manrope'] font-extrabold tracking-tighter text-[#0040a1] dark:text-[#d6e2ff] text-xl">PhotoSender</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="hover:bg-[#f0edf2] dark:hover:bg-[#2b2d32] transition-colors p-2 rounded-full active:scale-95 duration-200 ease-in-out">
+<span class="material-symbols-outlined text-[#44474e] dark:text-[#c4c6d0]" data-icon="wifi_tethering">wifi_tethering</span>
+</button>
+</div>
+</nav>
+<main class="pt-24 pb-32 px-6 max-w-lg mx-auto min-h-screen">
+<!-- Connection Status Header -->
+<header class="mb-12">
+<div class="flex items-center gap-3 mb-2">
+<div class="relative flex h-3 w-3">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-20"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-error shadow-[0_0_12px_rgba(186,26,26,0.5)]"></span>
+</div>
+<span class="text-error font-semibold tracking-wide text-xs uppercase">Disconnected</span>
+</div>
+<h1 class="font-headline font-bold text-4xl text-on-surface tracking-tight leading-tight">
+                Establish <br/><span class="text-primary-fixed-dim">Link</span>
+</h1>
+</header>
+<!-- Bento Style Connection Card -->
+<section class="space-y-4">
+<!-- Hero Card: IP Input -->
+<div class="bg-[#232429] rounded-[2rem] p-8 shadow-2xl overflow-hidden relative border border-white/5">
+<div class="relative z-10">
+<label class="text-[#c4c6d0] text-sm font-medium mb-4 block">Destination IP Address</label>
+<div class="bg-[#1b1b1f] rounded-2xl p-4 flex items-center gap-4 mb-8 group focus-within:ring-2 ring-primary-container transition-all">
+<span class="material-symbols-outlined text-[#0040a1] dark:text-[#d6e2ff]" data-icon="terminal">terminal</span>
+<input class="bg-transparent border-none focus:ring-0 text-2xl font-mono text-on-surface w-full placeholder:text-on-surface-variant/30 tracking-widest" placeholder="192.168.1.1" type="text"/>
+</div>
+<button class="w-full py-5 bg-gradient-to-r from-primary to-primary-container text-white rounded-2xl font-bold tracking-wide active:scale-95 transition-all shadow-lg shadow-primary/20 flex items-center justify-center gap-2">
+<span>Initiate Transfer</span>
+<span class="material-symbols-outlined text-xl" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+<!-- Abstract Glow Background -->
+<div class="absolute -right-20 -bottom-20 w-64 h-64 bg-primary/10 blur-[80px] rounded-full"></div>
+</div>
+<!-- Setup Instructions Asymmetric Grid -->
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-[#f0edf2]/5 backdrop-blur-md rounded-[1.5rem] p-5 flex flex-col justify-between aspect-square">
+<span class="material-symbols-outlined text-tertiary-fixed-dim text-3xl" data-icon="wifi">wifi</span>
+<div>
+<h3 class="font-headline font-bold text-on-surface text-lg">Network</h3>
+<p class="text-on-surface-variant text-sm leading-snug mt-1">Both devices must use same Wi-Fi.</p>
+</div>
+</div>
+<div class="bg-[#f0edf2]/5 backdrop-blur-md rounded-[1.5rem] p-5 flex flex-col justify-between aspect-square">
+<span class="material-symbols-outlined text-secondary-fixed-dim text-3xl" data-icon="visibility">visibility</span>
+<div>
+<h3 class="font-headline font-bold text-on-surface text-lg">Discovery</h3>
+<p class="text-on-surface-variant text-sm leading-snug mt-1">Keep the app open on receiver.</p>
+</div>
+</div>
+</div>
+<!-- Additional Instruction Row -->
+<div class="bg-surface-container-low/5 rounded-[1.5rem] p-6 flex items-center gap-5">
+<div class="w-12 h-12 rounded-xl bg-primary-container/20 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary-fixed-dim" data-icon="info">info</span>
+</div>
+<div class="flex-1">
+<h4 class="font-headline font-bold text-on-surface text-sm">Automated Pairing</h4>
+<p class="text-on-surface-variant text-xs">Scanning for active PhotoSender nodes in your local perimeter...</p>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pb-6 pt-3 bg-white/80 dark:bg-[#1b1b1f]/80 backdrop-blur-xl rounded-t-[2rem] z-50 shadow-[0_-4px_24px_rgba(0,0,0,0.04)]">
+<!-- Connect: Active -->
+<a class="flex flex-col items-center justify-center bg-[#0056d2]/10 dark:bg-[#d6e2ff]/10 text-[#0040a1] dark:text-[#d6e2ff] rounded-2xl px-5 py-1 transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="leak_add" style="font-variation-settings: 'FILL' 1;">leak_add</span>
+<span class="font-['Inter'] font-medium text-[11px] tracking-wide mt-1">Connect</span>
+</a>
+<!-- Gallery -->
+<a class="flex flex-col items-center justify-center text-[#44474e] dark:text-[#c4c6d0] px-5 py-1 hover:bg-[#f0edf2] dark:hover:bg-[#2b2d32] rounded-2xl transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="photo_library">photo_library</span>
+<span class="font-['Inter'] font-medium text-[11px] tracking-wide mt-1">Gallery</span>
+</a>
+<!-- Transfer -->
+<a class="flex flex-col items-center justify-center text-[#44474e] dark:text-[#c4c6d0] px-5 py-1 hover:bg-[#f0edf2] dark:hover:bg-[#2b2d32] rounded-2xl transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="swap_horizontal_circle">swap_horizontal_circle</span>
+<span class="font-['Inter'] font-medium text-[11px] tracking-wide mt-1">Transfer</span>
+</a>
+<!-- History -->
+<a class="flex flex-col items-center justify-center text-[#44474e] dark:text-[#c4c6d0] px-5 py-1 hover:bg-[#f0edf2] dark:hover:bg-[#2b2d32] rounded-2xl transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-['Inter'] font-medium text-[11px] tracking-wide mt-1">History</span>
+</a>
+</nav>
+</body></html>

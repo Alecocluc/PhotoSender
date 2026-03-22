@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PhotoSender - Active Transfer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-surface-variant": "#424654",
+              "on-secondary-fixed": "#001159",
+              "background": "#fbf8fe",
+              "on-error": "#ffffff",
+              "on-primary-fixed-variant": "#0040a1",
+              "secondary-fixed": "#dee1ff",
+              "on-primary-container": "#ccd8ff",
+              "inverse-surface": "#303034",
+              "primary-fixed": "#dae2ff",
+              "inverse-primary": "#b2c5ff",
+              "outline": "#737785",
+              "tertiary-fixed": "#6ffbbe",
+              "surface-container-highest": "#e4e1e7",
+              "on-tertiary-container": "#63f1b4",
+              "on-secondary": "#ffffff",
+              "tertiary-fixed-dim": "#4edea3",
+              "on-primary": "#ffffff",
+              "outline-variant": "#c3c6d6",
+              "secondary": "#2b4cda",
+              "on-primary-fixed": "#001847",
+              "on-secondary-container": "#fffbff",
+              "tertiary-container": "#006c49",
+              "error": "#ba1a1a",
+              "surface-dim": "#dcd9de",
+              "primary-container": "#0056d2",
+              "surface-container": "#f0edf2",
+              "surface-container-lowest": "#ffffff",
+              "on-tertiary": "#ffffff",
+              "secondary-container": "#4967f4",
+              "tertiary": "#005136",
+              "on-tertiary-fixed": "#002113",
+              "primary-fixed-dim": "#b2c5ff",
+              "surface": "#fbf8fe",
+              "inverse-on-surface": "#f3f0f5",
+              "on-error-container": "#93000a",
+              "on-surface": "#1b1b1f",
+              "on-background": "#1b1b1f",
+              "on-secondary-fixed-variant": "#0031c4",
+              "surface-variant": "#e4e1e7",
+              "surface-bright": "#fbf8fe",
+              "error-container": "#ffdad6",
+              "on-tertiary-fixed-variant": "#005236",
+              "surface-tint": "#0056d2",
+              "secondary-fixed-dim": "#bac3ff",
+              "surface-container-high": "#eae7ed",
+              "primary": "#0040a1",
+              "surface-container-low": "#f6f2f8"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #1b1b1f; /* Dark mode surface */
+            color: #e4e1e7;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .progress-gradient {
+            background: linear-gradient(90deg, #0040a1 0%, #4967f4 100%);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-body selection:bg-primary/30">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-white/80 dark:bg-[#1b1b1f]/80 backdrop-blur-xl flex items-center justify-between px-6 h-16">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[#0040a1] dark:text-[#d6e2ff]" data-icon="sensors">sensors</span>
+<h1 class="font-['Manrope'] font-extrabold tracking-tighter text-[#0040a1] dark:text-[#d6e2ff] text-xl">PhotoSender</h1>
+</div>
+<div class="flex items-center gap-4">
+<button class="hover:bg-[#f0edf2] dark:hover:bg-[#2b2d32] transition-colors p-2 rounded-full active:scale-95 duration-200 ease-in-out">
+<span class="material-symbols-outlined text-[#44474e] dark:text-[#c4c6d0]" data-icon="wifi_tethering">wifi_tethering</span>
+</button>
+</div>
+</header>
+<main class="pt-24 pb-32 px-6 max-w-4xl mx-auto">
+<!-- Hero Status Section -->
+<section class="mb-10">
+<div class="flex flex-col gap-1 mb-8">
+<span class="text-primary-fixed-dim font-label text-sm font-semibold tracking-widest uppercase">Ongoing Session</span>
+<h2 class="font-headline text-4xl font-bold tracking-tight text-on-surface">Transferring 48 Files</h2>
+<div class="flex items-center gap-2 mt-2">
+<div class="w-2 h-2 rounded-full bg-tertiary shadow-[0_0_8px_#005136]"></div>
+<p class="text-on-surface-variant font-medium text-sm">Connected to Studio_Mac_Pro</p>
+</div>
+</div>
+<!-- Global Progress Hero Card -->
+<div class="bg-surface-container-low dark:bg-[#232429] rounded-[2rem] p-8 relative overflow-hidden">
+<div class="relative z-10">
+<div class="flex justify-between items-end mb-4">
+<div>
+<p class="text-on-surface-variant text-sm font-medium mb-1">Total Progress</p>
+<div class="flex items-baseline gap-2">
+<span class="text-5xl font-headline font-extrabold text-on-surface">64</span>
+<span class="text-2xl font-headline font-bold text-on-surface-variant">%</span>
+</div>
+</div>
+<div class="text-right">
+<p class="text-primary-fixed-dim font-bold text-lg">1.2 GB / 1.8 GB</p>
+<p class="text-on-surface-variant text-xs">Estimated: 45s remaining</p>
+</div>
+</div>
+<div class="h-4 w-full bg-surface-container-highest dark:bg-[#2b2d32] rounded-full overflow-hidden">
+<div class="h-full progress-gradient w-[64%] rounded-full shadow-[0_0_12px_rgba(0,86,210,0.4)]"></div>
+</div>
+</div>
+<!-- Abstract Background Detail -->
+<div class="absolute -right-10 -bottom-10 opacity-10 pointer-events-none">
+<span class="material-symbols-outlined text-[160px]" data-icon="swap_horizontal_circle">swap_horizontal_circle</span>
+</div>
+</div>
+</section>
+<!-- Active Parallel Transfers -->
+<section class="space-y-4">
+<div class="flex justify-between items-center mb-4">
+<h3 class="font-headline text-xl font-bold">Parallel Monitoring</h3>
+<span class="bg-primary/10 text-primary-fixed-dim px-3 py-1 rounded-full text-xs font-bold">4 Active Slots</span>
+</div>
+<!-- Bento Transfer Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<!-- Slot 1 -->
+<div class="bg-surface-container dark:bg-[#2b2d32] p-5 rounded-2xl hover:bg-[#f6f2f8] dark:hover:bg-[#33353b] transition-all">
+<div class="flex gap-4 items-center mb-4">
+<div class="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="Landscape mountain sunset photograph" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA4Oc1GTH7XxSG7oqAjltUpJWSU6ZHDCPXMytNL-GRf_w-3cf3a2AxL-HsZDfZt29AmsPV_j1wj1Xv9cPWN5vdi8B4cNi8OXT-O0XRobGiM8Vj4vqM708836PQcjDFunOE7BDlGf5pFWZAeOaZ9c4qS85wQBHWxOVIwGDeDUEfuXz0l77shRE3lr1zyR7N-qkq7EvcR_-x4x5n7RrWzNA2jbpcVdlHBEriAuUr5rlcYdDpY8vB19Esz4l3HvNH6QipJSvW47sa-SFRI"/>
+</div>
+<div class="flex-1 min-w-0">
+<h4 class="text-on-surface font-semibold truncate text-sm">DSC_0821.RAW</h4>
+<p class="text-on-surface-variant text-xs">42.4 MB • Processing</p>
+</div>
+<span class="material-symbols-outlined text-tertiary" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest dark:bg-[#1b1b1f] rounded-full">
+<div class="h-full bg-tertiary w-full rounded-full"></div>
+</div>
+</div>
+<!-- Slot 2 -->
+<div class="bg-surface-container dark:bg-[#2b2d32] p-5 rounded-2xl border-l-4 border-primary">
+<div class="flex gap-4 items-center mb-4">
+<div class="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="Forest aerial drone shot" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAiNE3CtXpz7kp2UDqi4AV-iXb5B_PUvuPVRtCJAPXL5k74uwLPV338_Ae7aTAIs4J6Kg7woEjwZqzIN3-k2EwApVbMRQgAupmG0KXAfsdPLo7C9tpOByVZEAWxM6HfP6-zr3uqchkOvKHw-JEooKbECZfN4mQNlzjUkfLVU66_il_bXcZHfA1CsUsyMIpQ7F7Q5Ij0RFq1rtnINPFTejUxyP-WwYYnhW8WR3xALAI8L0IKYSlxYWQsQGsJXDPmwGKfD_xnTdSRA07Z"/>
+</div>
+<div class="flex-1 min-w-0">
+<h4 class="text-on-surface font-semibold truncate text-sm">DSC_0822.RAW</h4>
+<p class="text-on-surface-variant text-xs">38.1 MB • 8.4 MB/s</p>
+</div>
+<p class="text-primary font-bold text-xs">72%</p>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest dark:bg-[#1b1b1f] rounded-full">
+<div class="h-full bg-primary w-[72%] rounded-full"></div>
+</div>
+</div>
+<!-- Slot 3 -->
+<div class="bg-surface-container dark:bg-[#2b2d32] p-5 rounded-2xl border-l-4 border-primary">
+<div class="flex gap-4 items-center mb-4">
+<div class="w-14 h-14 rounded-xl overflow-hidden flex-shrink-0">
+<img class="w-full h-full object-cover" data-alt="Sunlight filtering through trees" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCN4yfvotaTTPQN0WjximUAqwD0RuW6CTBSLCRuBtjzYgASH7I1JUiPZMroHxBw_1-SafVSkQqUqh5Db4cllseNMdcoioy59kawVyGNfaQMp9DRTXUx9yByjp9ba7GIPQXd5AvzdAipTOi2fNMv6qU19O4D3eVsyDQzYaDFDvUI0HifAqyHCHiexs0uAA2Sjf9sYBg-YS355TFsEcFYSrkdC2XTUML7vrijkNRhFNHBCTYOjxNOUtcSyR_70nEPzzFdJsnfG2kPBspW"/>
+</div>
+<div class="flex-1 min-w-0">
+<h4 class="text-on-surface font-semibold truncate text-sm">DSC_0823.RAW</h4>
+<p class="text-on-surface-variant text-xs">45.0 MB • 9.1 MB/s</p>
+</div>
+<p class="text-primary font-bold text-xs">24%</p>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest dark:bg-[#1b1b1f] rounded-full">
+<div class="h-full bg-primary w-[24%] rounded-full"></div>
+</div>
+</div>
+<!-- Slot 4 -->
+<div class="bg-surface-container dark:bg-[#2b2d32] p-5 rounded-2xl opacity-60">
+<div class="flex gap-4 items-center mb-4">
+<div class="w-14 h-14 rounded-xl bg-surface-container-highest dark:bg-[#1b1b1f] flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="schedule">schedule</span>
+</div>
+<div class="flex-1 min-w-0">
+<h4 class="text-on-surface font-semibold truncate text-sm">DSC_0824.RAW</h4>
+<p class="text-on-surface-variant text-xs">Pending in queue</p>
+</div>
+</div>
+<div class="h-1.5 w-full bg-surface-container-highest dark:bg-[#1b1b1f] rounded-full overflow-hidden">
+<div class="h-full bg-surface-variant w-0"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- History Preview -->
+<section class="mt-12">
+<h3 class="font-headline text-xl font-bold mb-4">Recent Batch</h3>
+<div class="flex gap-2 overflow-x-auto pb-4 -mx-2 px-2 scrollbar-hide">
+<div class="flex-shrink-0 w-32 h-32 rounded-xl bg-surface-container dark:bg-[#2b2d32] relative overflow-hidden group">
+<img class="w-full h-full object-cover grayscale opacity-50" data-alt="Calm lake in mountains" src="https://lh3.googleusercontent.com/aida-public/AB6AXuALH5d0i_N494SxM6QAELFPUNrxF9hvcUocAwDm-Q83reZ94mp55WNPaM8Z1o3xQfCFjLY-MTGsh0FYaqrBmJbEtwwjinXwETu1VeTFpZg4veDVsGGvh7Sy4X6nYKdzhCNO4wqpvgA9Qrg4m_USMzXER8dSNAviQo0Nl3neRM5OENpKikMQqmHUCDJhVl3JHmB-SkJU-ppKhLSkdrhq9XQSQ5EyAZnuchsKJgdKKNeVwL-3ssUonMCGX0arWE2kqYJHSJeLsEKA2iOs"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-3xl" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+</div>
+<div class="flex-shrink-0 w-32 h-32 rounded-xl bg-surface-container dark:bg-[#2b2d32] relative overflow-hidden">
+<img class="w-full h-full object-cover grayscale opacity-50" data-alt="Misty forest valley" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJYFhEWrhBjd674hCltfQwEFM-lrmM61sN8gorylXxqQRMCFe4_gIGpQnw1MvkRnWJeQferwo-5Bm_LSXC1bp-dhVfa68Uno66RfdRBWI_OVCN1XWQ_hZ3oHTt-7exQy8wTFY85wjE4eAOyDpoC0fGy5CODdwQMuZDC_LVzHTeez7pcLICABeoyxlYrzzGGmB94S7TCossy0u6PrEE0iFD2BQ-AnG2IECoy9R9I7qVDBGzU1J38KDxXvVfks1wDhh8HaVlg63pSfFa"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-3xl" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+</div>
+<div class="flex-shrink-0 w-32 h-32 rounded-xl bg-surface-container dark:bg-[#2b2d32] relative overflow-hidden">
+<img class="w-full h-full object-cover grayscale opacity-50" data-alt="Wooden bridge in woods" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC0GmJRtcRgO_eDOZcHN_Xr-jI5AgmHRA6FOMJPxJyLsK6wrRz9gbdU1OADSWVwmNOq4Qlh4Ao-lcDUFjwB3JBsv_JOgkvHOUFpexNDIMQCKYzZlaYsYbJsHFe3UDYdRgEhP-QdOiHkgdLSMQY62MEjAUfATTvlTpRoSvO9j84yTIQVvTqawAOC2c2gFU0Tq0ymnqcGyKAjPEjMUNEgI2l-nx_PXW0sXyT8VDXYLhiWirQMM_JyhUJUSoWublIDUqYt895ExkBWoBhC"/>
+<div class="absolute inset-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-white text-3xl" data-icon="check_circle" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+</div>
+<div class="flex-shrink-0 w-32 h-32 rounded-xl bg-surface-container-highest dark:bg-[#2b2d32] flex flex-col items-center justify-center gap-1 border-2 border-dashed border-outline-variant/30">
+<span class="text-on-surface-variant font-bold text-lg">+12</span>
+<span class="text-[10px] text-on-surface-variant font-medium">OTHERS</span>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center px-4 pb-6 pt-3 bg-white/80 dark:bg-[#1b1b1f]/80 backdrop-blur-xl rounded-t-[2rem] z-50 shadow-[0_-4px_24px_rgba(0,0,0,0.04)]">
+<button class="flex flex-col items-center justify-center text-[#44474e] dark:text-[#c4c6d0] px-5 py-1 hover:bg-[#f0edf2] dark:hover:bg-[#2b2d32] rounded-2xl transition-all active:scale-90 duration-200">
+<span class="material-symbols-outlined mb-1" data-icon="leak_add">leak_add</span>
+<span class="font-['Inter'] font-medium text-[11px] tracking-wide">Connect</span>
+</button>
+<button class="flex flex-col items-center justify-center text-[#44474e] dark:text-[#c4c6d0] px-5 py-1 hover:bg-[#f0edf2] dark:hover:bg-[#2b2d32] rounded-2xl transition-all active:scale-90 duration-200">
+<span class="material-symbols-outlined mb-1" data-icon="photo_library">photo_library</span>
+<span class="font-['Inter'] font-medium text-[11px] tracking-wide">Gallery</span>
+</button>
+<button class="flex flex-col items-center justify-center bg-[#0056d2]/10 dark:bg-[#d6e2ff]/10 text-[#0040a1] dark:text-[#d6e2ff] rounded-2xl px-5 py-1 active:scale-90 duration-200">
+<span class="material-symbols-outlined mb-1" data-icon="swap_horizontal_circle" style="font-variation-settings: 'FILL' 1;">swap_horizontal_circle</span>
+<span class="font-['Inter'] font-medium text-[11px] tracking-wide">Transfer</span>
+</button>
+<button class="flex flex-col items-center justify-center text-[#44474e] dark:text-[#c4c6d0] px-5 py-1 hover:bg-[#f0edf2] dark:hover:bg-[#2b2d32] rounded-2xl transition-all active:scale-90 duration-200">
+<span class="material-symbols-outlined mb-1" data-icon="history">history</span>
+<span class="font-['Inter'] font-medium text-[11px] tracking-wide">History</span>
+</button>
+</nav>
+</body></html>
