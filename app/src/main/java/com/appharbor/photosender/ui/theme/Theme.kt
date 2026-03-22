@@ -2,6 +2,7 @@ package com.appharbor.photosender.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -11,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
@@ -88,23 +90,56 @@ data class ExtendedColors(
     val primaryFixedDim: Color = Color.Unspecified,
     val tertiaryFixed: Color = Color.Unspecified,
     val tertiaryFixedDim: Color = Color.Unspecified,
+    val progressGradient: Brush = Brush.horizontalGradient(listOf(Color.Unspecified, Color.Unspecified)),
+    val buttonGradient: Brush = Brush.horizontalGradient(listOf(Color.Unspecified, Color.Unspecified)),
+    val progressGlowColor: Color = Color.Unspecified,
 )
 
 val LocalExtendedColors = staticCompositionLocalOf { ExtendedColors() }
 
-private val LightExtendedColors = ExtendedColors(
-    primaryFixed = PrimaryFixedLight,
-    primaryFixedDim = PrimaryFixedDimLight,
-    tertiaryFixed = TertiaryFixedLight,
-    tertiaryFixedDim = TertiaryFixedDimLight,
+// Azure Stream gradient — always use the deep azure blues for both dark & light
+// This is the signature brand gradient, consistent across all modes.
+private val AzureButtonGradient = Brush.horizontalGradient(
+    listOf(PrimaryLight, PrimaryContainerLight)  // #0040A1 → #0056D2
+)
+private val AzureProgressGradient = Brush.horizontalGradient(
+    listOf(PrimaryLight, SecondaryLight)  // #0040A1 → #2B4CDA
 )
 
-private val DarkExtendedColors = ExtendedColors(
-    primaryFixed = PrimaryFixedLight,
-    primaryFixedDim = PrimaryFixedDimLight,
-    tertiaryFixed = TertiaryFixedLight,
-    tertiaryFixedDim = TertiaryFixedDimLight,
-)
+private fun buildExtendedColors(
+    colorScheme: ColorScheme,
+    isDynamic: Boolean,
+    isDark: Boolean,
+): ExtendedColors {
+    // When dynamic (Material You) is enabled, derive gradients from the
+    // dynamic colorScheme so they blend with the wallpaper palette.
+    // When dynamic is off, always use the Azure Stream signature gradient.
+    val buttonGradient = if (isDynamic) {
+        Brush.horizontalGradient(
+            listOf(colorScheme.primary, colorScheme.primaryContainer)
+        )
+    } else {
+        AzureButtonGradient
+    }
+    val progressGradient = if (isDynamic) {
+        Brush.horizontalGradient(
+            listOf(colorScheme.primary, colorScheme.secondary)
+        )
+    } else {
+        AzureProgressGradient
+    }
+    val glowColor = if (isDynamic) colorScheme.primary else PrimaryLight
+
+    return ExtendedColors(
+        primaryFixed = PrimaryFixedLight,
+        primaryFixedDim = PrimaryFixedDimLight,
+        tertiaryFixed = TertiaryFixedLight,
+        tertiaryFixedDim = TertiaryFixedDimLight,
+        progressGradient = progressGradient,
+        buttonGradient = buttonGradient,
+        progressGlowColor = glowColor,
+    )
+}
 
 @Composable
 fun PhotoSenderTheme(
@@ -112,15 +147,20 @@ fun PhotoSenderTheme(
     dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val isDynamic = dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        isDynamic -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
-    val extendedColors = if (darkTheme) DarkExtendedColors else LightExtendedColors
+    val extendedColors = buildExtendedColors(
+        colorScheme = colorScheme,
+        isDynamic = isDynamic,
+        isDark = darkTheme,
+    )
 
     CompositionLocalProvider(LocalExtendedColors provides extendedColors) {
         MaterialTheme(

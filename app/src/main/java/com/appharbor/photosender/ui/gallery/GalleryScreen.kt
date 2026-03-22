@@ -31,7 +31,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -54,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.appharbor.photosender.data.model.MediaFilter
 import com.appharbor.photosender.data.model.MediaFolder
+import com.appharbor.photosender.ui.theme.LocalExtendedColors
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material3.FilledTonalButton
@@ -233,20 +233,34 @@ fun GalleryScreen(
 
         // Select All / Transfer FAB
         if (selectedIds.isNotEmpty()) {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    viewModel.startTransfer()
-                    onTransferClick()
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+            val extColors = LocalExtendedColors.current
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(extColors.buttonGradient)
+                    .clickable {
+                        viewModel.startTransfer()
+                        onTransferClick()
+                    }
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
             ) {
-                Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Transfer ${selectedIds.size}", fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = Color.White,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Transfer ${selectedIds.size}",
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
             }
         }
     }

@@ -26,7 +26,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.appharbor.photosender.ui.theme.LocalExtendedColors
 
 @Composable
 fun FolderDetailScreen(
@@ -148,7 +148,7 @@ fun FolderDetailScreen(
                             .clip(CircleShape)
                             .background(
                                 if (isSelected) MaterialTheme.colorScheme.primary
-                                else Color.White.copy(alpha = 0.6f)
+                                else Color.Black.copy(alpha = 0.3f)
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -156,7 +156,7 @@ fun FolderDetailScreen(
                             Icon(
                                 Icons.Filled.CheckCircle,
                                 contentDescription = "Selected",
-                                tint = Color.White,
+                                tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(20.dp),
                             )
                         }
@@ -172,20 +172,34 @@ fun FolderDetailScreen(
 
         // Transfer FAB
         if (selectedIds.isNotEmpty()) {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    viewModel.startTransfer()
-                    onTransferClick()
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+            val extColors = LocalExtendedColors.current
+            Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp),
+                    .padding(16.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(extColors.buttonGradient)
+                    .clickable {
+                        viewModel.startTransfer()
+                        onTransferClick()
+                    }
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
             ) {
-                Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Transfer ${selectedIds.size}", fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = Color.White,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Transfer ${selectedIds.size}",
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
             }
         }
     }

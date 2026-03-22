@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,7 +26,6 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -35,6 +35,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -42,7 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.appharbor.photosender.data.db.UploadRecord
 import com.appharbor.photosender.data.db.UploadStatus
+import com.appharbor.photosender.ui.theme.LocalExtendedColors
 import com.appharbor.photosender.data.upload.FileTransferProgress
 
 @Composable
@@ -50,6 +56,7 @@ fun TransferScreen(
     viewModel: TransferViewModel = hiltViewModel()
 ) {
     val state by viewModel.transferState.collectAsStateWithLifecycle()
+    val recentBatch by viewModel.recentBatch.collectAsStateWithLifecycle()
 
     val animatedProgress by animateFloatAsState(
         targetValue = state.progressPercent,
@@ -103,15 +110,22 @@ fun TransferScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Global progress bar
-            LinearProgressIndicator(
-                progress = { animatedProgress },
+            // Global progress bar — gradient from primary to secondary per design system
+            val extendedColors = LocalExtendedColors.current
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp)),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .drawBehind {
+                        val indicatorWidth = size.width * animatedProgress
+                        drawRoundRect(
+                            brush = extendedColors.progressGradient,
+                            size = Size(indicatorWidth, size.height),
+                            cornerRadius = CornerRadius(3.dp.toPx()),
+                        )
+                    }
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -228,6 +242,26 @@ fun TransferScreen(
                 Spacer(modifier = Modifier.height(32.dp))
             }
         }
+
+        // Recent Batch section
+        if (recentBatch.isNotEmpty()) {
+            item {
+                Text(
+                    text = "Recent Batch",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(recentBatch, key = { it.id }) { record ->
+                        RecentBatchThumbnail(record = record)
+                    }
+                }
+                Spacer(modifier = Modifier.height(32.dp))
+            }
+        }
     }
 }
 
@@ -306,19 +340,29 @@ private fun TransferItem(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Progress bar
-            LinearProgressIndicator(
-                progress = { progress },
+            // Progress bar — gradient for active uploads, flat for completed/pending
+            val extColors = LocalExtendedColors.current
+            val completedColor = MaterialTheme.colorScheme.tertiary
+            val pendingColor = MaterialTheme.colorScheme.outlineVariant
+            val progressBrush = when (transfer.status) {
+                UploadStatus.UPLOADING -> extColors.progressGradient
+                UploadStatus.COMPLETED -> Brush.horizontalGradient(listOf(completedColor, completedColor))
+                else -> Brush.horizontalGradient(listOf(pendingColor, pendingColor))
+            }
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                color = when (transfer.status) {
-                    UploadStatus.UPLOADING -> MaterialTheme.colorScheme.primary
-                    UploadStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.outlineVariant
-                },
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                    .drawBehind {
+                        val indicatorWidth = size.width * progress
+                        drawRoundRect(
+                            brush = progressBrush,
+                            size = Size(indicatorWidth, size.height),
+                            cornerRadius = CornerRadius(2.dp.toPx()),
+                        )
+                    }
             )
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -338,6 +382,51 @@ private fun TransferItem(
                     fontWeight = FontWeight.Medium,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun RecentBatchThumbnail(record: UploadRecord) {
+    Box(
+        modifier = Modifier
+            .size(100.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+    ) {
+        if (record.contentUri.isNotEmpty() && canPreviewThumbnail(record.fileName)) {
+            AsyncImage(
+                model = record.contentUri,
+                contentDescription = record.fileName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                Icons.Filled.Description,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier
+                    .size(32.dp)
+                    .align(Alignment.Center),
+            )
+        }
+        // Check badge
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(6.dp)
+                .size(22.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.tertiary),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Filled.CheckCircle,
+                contentDescription = "Completed",
+                tint = MaterialTheme.colorScheme.onTertiary,
+                modifier = Modifier.size(16.dp),
+            )
         }
     }
 }

@@ -261,7 +261,7 @@ private fun StitchBottomNav(
                 items.forEach { item ->
                     val selected = currentDestination?.hierarchy?.any { it.route == item.route } == true
                     val bg = if (selected) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
                     } else {
                         Color.Transparent
                     }

@@ -44,13 +44,14 @@ val InverseOnSurfaceLight = Color(0xFFF2F0F4)
 val InversePrimaryLight = Color(0xFFB2C5FF)
 
 // Azure Stream Design System — Dark Mode
-val PrimaryDark = Color(0xFFB2C5FF)
-val OnPrimaryDark = Color(0xFF002B75)
+// Primary: saturated azure that pops on dark surfaces (not pastel)
+val PrimaryDark = Color(0xFF6B9BFF)
+val OnPrimaryDark = Color(0xFF002060)
 val PrimaryContainerDark = Color(0xFF0056D2)
 val OnPrimaryContainerDark = Color(0xFFDAE2FF)
 
-val SecondaryDark = Color(0xFFBEC6FF)
-val OnSecondaryDark = Color(0xFF0026A0)
+val SecondaryDark = Color(0xFF8BA7FF)
+val OnSecondaryDark = Color(0xFF001B8C)
 val SecondaryContainerDark = Color(0xFF4967F4)
 val OnSecondaryContainerDark = Color(0xFFDEE0FF)
 

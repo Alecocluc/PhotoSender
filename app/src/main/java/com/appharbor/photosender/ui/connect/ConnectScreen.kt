@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,10 +28,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.SyncAlt
 import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -44,6 +47,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -53,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.appharbor.photosender.data.model.ConnectionState
+import com.appharbor.photosender.ui.theme.LocalExtendedColors
 
 @Composable
 fun ConnectScreen(
@@ -213,27 +218,37 @@ fun ConnectScreen(
                     Text("Disconnect", color = MaterialTheme.colorScheme.error)
                 }
             } else {
-                Button(
-                    onClick = {
-                        focusManager.clearFocus()
-                        viewModel.onConnect()
-                    },
-                    enabled = connectionState != ConnectionState.CONNECTING,
+                val extendedColors = LocalExtendedColors.current
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                    ),
+                        .height(52.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(extendedColors.buttonGradient)
+                        .clickable(
+                            enabled = connectionState != ConnectionState.CONNECTING,
+                            onClick = {
+                                focusManager.clearFocus()
+                                viewModel.onConnect()
+                            },
+                        ),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        "Connect Now",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.Bolt,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = Color.White,
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Connect Now",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                        )
+                    }
                 }
             }
         }
@@ -241,13 +256,75 @@ fun ConnectScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         // Info cards
-        InfoCard(
-            title = "Where to find it?",
-            description = "Open PhotoSender Desktop on your PC.\nYour IP address is displayed in the bottom-left corner of the dashboard.",
-            icon = Icons.Filled.SyncAlt,
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f),
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
+                .padding(20.dp),
+        ) {
+            Text(
+                text = "Where to find it?",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Open PhotoSender Desktop on your PC.\nYour IP address is displayed in the bottom-left corner of the dashboard.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Device illustration: Desktop ——— Phone
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Desktop device
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Computer,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp),
+                    )
+                }
+
+                // Connection line
+                HorizontalDivider(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 8.dp),
+                    thickness = 2.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
+
+                // Phone device
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.PhoneAndroid,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(28.dp),
+                    )
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
