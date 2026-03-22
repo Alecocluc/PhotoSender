@@ -214,28 +214,14 @@ class UploadManager @Inject constructor(
                 contentType = (record.fileName.toMediaTypeOrNull() ?: "application/octet-stream").toMediaType(),
                 content = fileBytes,
                 onProgress = { bytesWritten ->
-                    var delta = 0L
-                    _transferState.update { st ->
-                        val active = st.activeTransfers.toMutableList()
-                        val idx = active.indexOfFirst { it.recordId == record.id }
-                        val previousBytes = if (idx >= 0) active[idx].bytesTransferred else 0L
-                        delta = (bytesWritten - previousBytes).coerceAtLeast(0)
-
-                        val item = FileTransferProgress(
-                            recordId = record.id,
-                            fileName = record.fileName,
-                            contentUri = record.contentUri,
-                            fileSize = record.fileSize,
-                            bytesTransferred = bytesWritten,
-                            status = UploadStatus.UPLOADING,
-                        )
-                        if (idx >= 0) active[idx] = item else active.add(item)
-
-                        st.copy(
-                            activeTransfers = active,
-                            transferredBytes = (st.transferredBytes + delta).coerceAtMost(st.totalBytes),
-                        )
-                    }
+                    val delta = updateActiveTransfer(
+                        id = record.id,
+                        name = record.fileName,
+                        contentUri = record.contentUri,
+                        size = record.fileSize,
+                        transferred = bytesWritten,
+                        status = UploadStatus.UPLOADING,
+                    )
                     speedTracker.recordBytes(delta)
                     _transferState.update { st -> st.copy(currentSpeedBytesPerSec = speedTracker.getSpeed()) }
                 }
@@ -316,14 +302,21 @@ class UploadManager @Inject constructor(
         size: Long,
         transferred: Long,
         status: UploadStatus,
-    ) {
+    ): Long {
+        var delta = 0L
         _transferState.update { st ->
             val active = st.activeTransfers.toMutableList()
             val idx = active.indexOfFirst { it.recordId == id }
+            val previousBytes = if (idx >= 0) active[idx].bytesTransferred else 0L
+            delta = (transferred - previousBytes).coerceAtLeast(0)
             val item = FileTransferProgress(id, name, contentUri, size, transferred, status)
             if (idx >= 0) active[idx] = item else active.add(item)
-            st.copy(activeTransfers = active)
+            st.copy(
+                activeTransfers = active,
+                transferredBytes = (st.transferredBytes + delta).coerceAtMost(st.totalBytes),
+            )
         }
+        return delta
     }
 
     private fun removeActiveTransfer(id: Long) {
@@ -380,21 +373,43 @@ private class ProgressRequestBody(
 }
 
 private class SpeedTracker {
-    private var windowStartTime = System.currentTimeMillis()
+    private val windowMs = 1200L
+    private val samples = ArrayDeque<Sample>()
     private var bytesInWindow = 0L
+
+    private data class Sample(
+        val timeMs: Long,
+        val bytes: Long,
+    )
 
     fun recordBytes(bytes: Long) {
         if (bytes <= 0L) return
-        val now = System.currentTimeMillis()
-        if (now - windowStartTime > 1200L) {
-            windowStartTime = now
-            bytesInWindow = 0L
+        synchronized(this) {
+            val now = System.currentTimeMillis()
+            evictOldLocked(now)
+            samples.addLast(Sample(timeMs = now, bytes = bytes))
+            bytesInWindow += bytes
         }
-        bytesInWindow += bytes
     }
 
     fun getSpeed(): Long {
-        val elapsed = (System.currentTimeMillis() - windowStartTime).coerceAtLeast(1)
-        return bytesInWindow * 1000 / elapsed
+        synchronized(this) {
+            val now = System.currentTimeMillis()
+            evictOldLocked(now)
+            if (samples.isEmpty()) return 0L
+
+            val elapsed = (now - samples.first().timeMs).coerceAtLeast(1L)
+            return bytesInWindow * 1000 / elapsed
+        }
+    }
+
+    private fun evictOldLocked(now: Long) {
+        val cutoff = now - windowMs
+        while (samples.isNotEmpty() && samples.first().timeMs < cutoff) {
+            bytesInWindow -= samples.removeFirst().bytes
+        }
+        if (bytesInWindow < 0L) {
+            bytesInWindow = 0L
+        }
     }
 }

@@ -25,6 +25,7 @@ class SettingsViewModel @Inject constructor(
     val highSpeedTransferEnabled: StateFlow<Boolean> = appPreferences.highSpeedTransferEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    // TODO: Wire this flag into an actual archive/cleanup worker; currently only persisted via settings.
     val autoArchiveEnabled: StateFlow<Boolean> = appPreferences.autoArchiveEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
