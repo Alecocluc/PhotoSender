@@ -54,12 +54,29 @@ ipcMain.handle("get-status", async () => {
   }
 });
 
-ipcMain.handle("get-history", async () => {
+ipcMain.handle("get-history", async (_e, options = {}) => {
   try {
-    const res = await fetch(`http://127.0.0.1:${PORT}/history`);
+    const limit = Number(options.limit || 0);
+    const offset = Number(options.offset || 0);
+    const params = new URLSearchParams();
+    if (Number.isFinite(limit) && limit > 0) params.set("limit", String(Math.floor(limit)));
+    if (Number.isFinite(offset) && offset >= 0) params.set("offset", String(Math.floor(offset)));
+    const suffix = params.toString();
+    const res = await fetch(`http://127.0.0.1:${PORT}/history${suffix ? `?${suffix}` : ""}`);
     return await res.json();
   } catch {
-    return { totalReceived: 0, totalBytes: 0, historyCount: 0, lastTransferAt: 0, items: [] };
+    return {
+      totalReceived: 0,
+      totalBytes: 0,
+      historyCount: 0,
+      totalCount: 0,
+      lastTransferAt: 0,
+      offset: 0,
+      nextOffset: 0,
+      returnedCount: 0,
+      hasMore: false,
+      items: [],
+    };
   }
 });
 
@@ -70,6 +87,7 @@ ipcMain.handle("clear-history", async () => {
       headers: { "Content-Type": "application/json" },
       body: "{}",
     });
+    if (!res.ok) return { success: false };
     return await res.json();
   } catch {
     return { success: false };

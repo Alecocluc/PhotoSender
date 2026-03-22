@@ -9,6 +9,9 @@ const os = require("os");
 let totalReceived = 0;
 let totalBytes = 0;
 const startTime = Date.now();
+const MAX_HISTORY_ENTRIES = 5000;
+const DEFAULT_HISTORY_PAGE_SIZE = 100;
+const MAX_HISTORY_PAGE_SIZE = 500;
 /** @type {{ fileName: string, bucketName: string, size: number, time: number, status: string }[]} */
 const activityLog = [];
 /** @type {{ size: number, time: number }[]} */
@@ -23,7 +26,9 @@ function loadHistoryState() {
     totalReceived = Number(parsed.totalReceived || 0);
     totalBytes = Number(parsed.totalBytes || 0);
     activityLog.length = 0;
-    const items = Array.isArray(parsed.activityLog) ? parsed.activityLog : [];
+    const items = Array.isArray(parsed.activityLog)
+      ? parsed.activityLog.slice(-MAX_HISTORY_ENTRIES)
+      : [];
     for (const item of items) {
       activityLog.push({
         fileName: String(item.fileName || ""),
@@ -61,6 +66,35 @@ function parsePositiveTimestampMs(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 0;
   return Math.floor(parsed);
+}
+
+function parseBoundedInt(value, fallback, min, max) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const intValue = Math.floor(parsed);
+  if (intValue < min) return min;
+  if (intValue > max) return max;
+  return intValue;
+}
+
+function buildHistoryPage(offset, limit) {
+  const totalCount = activityLog.length;
+  const safeOffset = parseBoundedInt(offset, 0, 0, totalCount);
+  const safeLimit = parseBoundedInt(limit, DEFAULT_HISTORY_PAGE_SIZE, 1, MAX_HISTORY_PAGE_SIZE);
+
+  const endExclusive = totalCount - safeOffset;
+  const startInclusive = Math.max(endExclusive - safeLimit, 0);
+  const items = activityLog.slice(startInclusive, endExclusive).reverse();
+
+  return {
+    items,
+    totalCount,
+    offset: safeOffset,
+    limit: safeLimit,
+    returnedCount: items.length,
+    nextOffset: safeOffset + items.length,
+    hasMore: startInclusive > 0,
+  };
 }
 
 function createServer(downloadPath, options = {}) {
@@ -111,12 +145,19 @@ function createServer(downloadPath, options = {}) {
   });
 
   app.get("/history", (_req, res) => {
+    const page = buildHistoryPage(_req.query.offset, _req.query.limit);
     res.json({
       totalReceived,
       totalBytes,
       historyCount: activityLog.length,
       lastTransferAt: activityLog[activityLog.length - 1]?.time || 0,
-      items: activityLog.slice().reverse(),
+      totalCount: page.totalCount,
+      offset: page.offset,
+      limit: page.limit,
+      returnedCount: page.returnedCount,
+      nextOffset: page.nextOffset,
+      hasMore: page.hasMore,
+      items: page.items,
     });
   });
 
@@ -225,6 +266,9 @@ function createServer(downloadPath, options = {}) {
       status: "saved",
     };
     activityLog.push(entry);
+    while (activityLog.length > MAX_HISTORY_ENTRIES) {
+      activityLog.shift();
+    }
     saveHistoryState();
 
     broadcast("file-received", entry);

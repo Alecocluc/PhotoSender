@@ -287,6 +287,9 @@
             <p>No transfers recorded yet</p>
           </div>
         </div>
+        <div style="display: flex; justify-content: center; margin-top: 14px;">
+          <button class="btn-secondary" id="btn-load-more-log" style="width: auto; margin-top: 0; display: none;">Load More</button>
+        </div>
       </div>
     </div>
   </div>
@@ -312,7 +315,10 @@
       <div class="card card-low" style="padding: 24px; border-radius: 20px;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
           <h3 style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em;">Recent Activity</h3>
-          <button class="btn-secondary" id="btn-clear-history" style="width: auto; margin-top: 0; color: var(--error);">Clear History</button>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="btn-secondary" id="btn-load-more-history" style="width: auto; margin-top: 0; display: none;">Load More</button>
+            <button class="btn-secondary" id="btn-clear-history" style="width: auto; margin-top: 0; color: var(--error);">Clear History</button>
+          </div>
         </div>
         <div id="history-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 500px; overflow-y: auto;">
           <div class="empty-state">
@@ -376,6 +382,7 @@
   });
 
   // State
+  const HISTORY_PAGE_SIZE = 100;
   let recentItems = [];
   let historyItems = [];
   let historyStats = {
@@ -383,6 +390,10 @@
     totalBytes: 0,
     lastTransferAt: 0,
   };
+  let historyOffset = 0;
+  let historyTotalCount = 0;
+  let historyHasMore = false;
+  let historyLoading = false;
   let lastKnownHistoryCount = -1;
 
   // Initialize
@@ -426,6 +437,9 @@
       recentItems.unshift(data);
       if (recentItems.length > 100) recentItems.pop();
       historyItems.unshift(data);
+      historyOffset += 1;
+      historyTotalCount += 1;
+      historyHasMore = historyOffset < historyTotalCount;
       historyStats.totalReceived += 1;
       historyStats.totalBytes += Number(data.size || 0);
       historyStats.lastTransferAt = Date.now();
@@ -434,27 +448,61 @@
       renderHistory();
     });
 
+    document.getElementById("btn-load-more-history").addEventListener("click", () => {
+      loadMoreHistory();
+    });
+
+    document.getElementById("btn-load-more-log").addEventListener("click", () => {
+      loadMoreHistory();
+    });
+
     document.getElementById("btn-clear-history").addEventListener("click", async () => {
-      await window.api.clearHistory();
+      const result = await window.api.clearHistory();
+      if (!result || result.success !== true) {
+        await refreshHistory({ reset: true });
+        return;
+      }
+
       recentItems = [];
       historyItems = [];
       historyStats = { totalReceived: 0, totalBytes: 0, lastTransferAt: 0 };
+      historyOffset = 0;
+      historyTotalCount = 0;
+      historyHasMore = false;
+      lastKnownHistoryCount = 0;
       renderActivity();
       renderFullLog();
       renderHistory();
     });
 
     // Poll status
-    await refreshHistory();
+    await refreshHistory({ reset: true });
     renderHistory();
     pollStatus();
     setInterval(pollStatus, 2000);
   }
 
-  async function refreshHistory() {
+  async function refreshHistory({ reset = false } = {}) {
+    if (historyLoading) return;
+    historyLoading = true;
+    updateHistoryLoadButtons();
+
+    const requestOffset = reset ? 0 : historyOffset;
     try {
-      const h = await window.api.getHistory();
-      historyItems = Array.isArray(h.items) ? h.items : [];
+      const h = await window.api.getHistory({ limit: HISTORY_PAGE_SIZE, offset: requestOffset });
+      const items = Array.isArray(h.items) ? h.items : [];
+
+      if (reset) {
+        historyItems = items;
+      } else {
+        historyItems = historyItems.concat(items);
+      }
+
+      historyOffset = reset ? items.length : historyOffset + items.length;
+      historyTotalCount = Number(h.historyCount || h.totalCount || historyItems.length);
+      historyHasMore = Boolean(h.hasMore) || historyOffset < historyTotalCount;
+      lastKnownHistoryCount = historyTotalCount;
+
       historyStats = {
         totalReceived: Number(h.totalReceived || 0),
         totalBytes: Number(h.totalBytes || 0),
@@ -464,7 +512,29 @@
       renderHistory();
     } catch {
       // Ignore history refresh failures; status polling will still update core stats.
+    } finally {
+      historyLoading = false;
+      updateHistoryLoadButtons();
     }
+  }
+
+  async function loadMoreHistory() {
+    if (!historyHasMore || historyLoading) return;
+    await refreshHistory({ reset: false });
+  }
+
+  function updateHistoryLoadButtons() {
+    const btnHistory = document.getElementById("btn-load-more-history");
+    const btnLog = document.getElementById("btn-load-more-log");
+    const show = historyLoading || historyHasMore;
+    const label = historyLoading ? "Loading..." : "Load More";
+
+    [btnHistory, btnLog].forEach((btn) => {
+      if (!btn) return;
+      btn.style.display = show ? "inline-flex" : "none";
+      btn.disabled = historyLoading || !historyHasMore;
+      btn.textContent = label;
+    });
   }
 
   async function changeFolder() {
@@ -496,8 +566,7 @@
 
       const historyCount = Number(s.historyCount || 0);
       if (historyCount !== lastKnownHistoryCount) {
-        lastKnownHistoryCount = historyCount;
-        await refreshHistory();
+        await refreshHistory({ reset: true });
       }
 
       renderActivity();
@@ -574,11 +643,11 @@
     const list = document.getElementById("history-list");
     if (historyItems.length === 0) {
       list.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">history</span><p>No history yet</p></div>';
+      updateHistoryLoadButtons();
       return;
     }
 
     list.innerHTML = historyItems
-      .slice(0, 500)
       .map((item) => {
         const t = new Date(item.time);
         return `
@@ -592,6 +661,8 @@
         </div>`;
       })
       .join("");
+
+    updateHistoryLoadButtons();
   }
 
   function timeAgo(ts) {
