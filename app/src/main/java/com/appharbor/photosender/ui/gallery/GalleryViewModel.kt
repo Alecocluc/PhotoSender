@@ -39,11 +39,14 @@ class GalleryViewModel @Inject constructor(
     private val _totalAssetCount = MutableStateFlow(0)
     val totalAssetCount: StateFlow<Int> = _totalAssetCount.asStateFlow()
 
+    private val _allMediaIds = MutableStateFlow<Set<Long>>(emptySet())
+
     fun loadFolders() {
         viewModelScope.launch {
             _isLoading.value = true
             val allMedia = mediaRepository.loadAllMedia(_filter.value)
             _totalAssetCount.value = allMedia.size
+            _allMediaIds.value = allMedia.map { it.id }.toSet()
             _folders.value = mediaRepository.loadFolders(_filter.value)
             _isLoading.value = false
         }
@@ -80,6 +83,20 @@ class GalleryViewModel @Inject constructor(
 
     fun isAllSelected(items: List<MediaItem>): Boolean {
         return items.isNotEmpty() && items.all { it.id in _selectedIds.value }
+    }
+
+    fun selectAllMedia() {
+        viewModelScope.launch {
+            val allMedia = mediaRepository.loadAllMedia(_filter.value)
+            _selectedIds.update { current ->
+                current + allMedia.map { it.id }.toSet()
+            }
+        }
+    }
+
+    fun isAllMediaSelected(): Boolean {
+        val allIds = _allMediaIds.value
+        return allIds.isNotEmpty() && allIds.all { it in _selectedIds.value }
     }
 
     fun startTransfer() {

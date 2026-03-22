@@ -54,6 +54,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.appharbor.photosender.data.model.MediaFilter
 import com.appharbor.photosender.data.model.MediaFolder
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Deselect
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.ButtonDefaults
 
 @Composable
 fun GalleryScreen(
@@ -164,6 +168,39 @@ fun GalleryScreen(
                         }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
+
+                    // Select All Media button
+                    if (totalAssets > 0) {
+                        val allSelected = viewModel.isAllMediaSelected()
+                        FilledTonalButton(
+                            onClick = {
+                                if (allSelected) {
+                                    viewModel.deselectAll()
+                                } else {
+                                    viewModel.selectAllMedia()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = if (allSelected) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surfaceContainerHigh,
+                            ),
+                        ) {
+                            Icon(
+                                imageVector = if (allSelected) Icons.Filled.Deselect else Icons.Filled.SelectAll,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (allSelected) "Deselect All ($totalAssets)"
+                                else "Select All Media ($totalAssets)",
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
                 }
             }
 
