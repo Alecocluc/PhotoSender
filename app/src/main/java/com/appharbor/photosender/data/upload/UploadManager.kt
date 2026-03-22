@@ -3,6 +3,7 @@ package com.appharbor.photosender.data.upload
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
+import android.provider.MediaStore
 import com.appharbor.photosender.data.db.UploadRecord
 import com.appharbor.photosender.data.db.UploadRecordDao
 import com.appharbor.photosender.data.db.UploadStatus
@@ -210,6 +211,7 @@ class UploadManager @Inject constructor(
                 ?: throw Exception("Cannot open file")
 
             val fileBytes = inputStream.use { it.readBytes() }
+            val sourceTimestampMs = resolveSourceTimestampMillis(uri)
             val progressBody = ProgressRequestBody(
                 contentType = (record.fileName.toMediaTypeOrNull() ?: "application/octet-stream").toMediaType(),
                 content = fileBytes,
@@ -235,6 +237,7 @@ class UploadManager @Inject constructor(
                 .addFormDataPart("fileSize", record.fileSize.toString())
                 .addFormDataPart("md5Hash", md5)
                 .addFormDataPart("mimeType", guessMimeType(record.fileName))
+                .addFormDataPart("sourceTimestampMs", sourceTimestampMs.toString())
                 .addFormDataPart("file", record.fileName, progressBody)
                 .build()
 
@@ -343,6 +346,35 @@ class UploadManager @Inject constructor(
 
     private fun String.toMediaTypeOrNull(): String? {
         return guessMimeType(this).takeIf { it != "application/octet-stream" }
+    }
+
+    private fun resolveSourceTimestampMillis(uri: Uri): Long {
+        return runCatching {
+            contentResolver.query(
+                uri,
+                arrayOf("datetaken", MediaStore.MediaColumns.DATE_MODIFIED),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val takenCol = cursor.getColumnIndex("datetaken")
+                    if (takenCol >= 0) {
+                        val taken = cursor.getLong(takenCol)
+                        if (taken > 0L) return@runCatching taken
+                    }
+
+                    val modifiedCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATE_MODIFIED)
+                    if (modifiedCol >= 0) {
+                        val modified = cursor.getLong(modifiedCol)
+                        if (modified > 0L) {
+                            return@runCatching if (modified < 100_000_000_000L) modified * 1000L else modified
+                        }
+                    }
+                }
+                0L
+            } ?: 0L
+        }.getOrDefault(0L)
     }
 
     private suspend fun parallelSlots(): Int {

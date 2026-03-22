@@ -7,6 +7,7 @@ const PORT = 3210;
 let mainWindow;
 let downloadPath = path.join(app.getPath("pictures"), "PhotoSender");
 let serverInstance;
+let historyStatePath;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -34,7 +35,7 @@ function createWindow() {
 
 function startServer() {
   fs.mkdirSync(downloadPath, { recursive: true });
-  const expressApp = createServer(downloadPath);
+  const expressApp = createServer(downloadPath, { historyStatePath });
 
   serverInstance = expressApp.listen(PORT, "0.0.0.0", () => {
     console.log(`PhotoSender server listening on port ${PORT}`);
@@ -50,6 +51,28 @@ ipcMain.handle("get-status", async () => {
     return await res.json();
   } catch {
     return { totalReceived: 0, totalBytes: 0, uptimeMs: 0, recentActivity: [] };
+  }
+});
+
+ipcMain.handle("get-history", async () => {
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT}/history`);
+    return await res.json();
+  } catch {
+    return { totalReceived: 0, totalBytes: 0, historyCount: 0, lastTransferAt: 0, items: [] };
+  }
+});
+
+ipcMain.handle("clear-history", async () => {
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT}/history/clear`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    return await res.json();
+  } catch {
+    return { success: false };
   }
 });
 
@@ -90,6 +113,7 @@ process.on("message", (msg) => {
 });
 
 app.whenReady().then(() => {
+  historyStatePath = path.join(app.getPath("userData"), "history-state.json");
   startServer();
   createWindow();
 });

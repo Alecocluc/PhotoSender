@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
   getStatus: () => ipcRenderer.invoke("get-status"),
+  getHistory: () => ipcRenderer.invoke("get-history"),
+  clearHistory: () => ipcRenderer.invoke("clear-history"),
   getLocalIPs: () => ipcRenderer.invoke("get-local-ips"),
   getDownloadPath: () => ipcRenderer.invoke("get-download-path"),
   chooseFolder: () => ipcRenderer.invoke("choose-folder"),

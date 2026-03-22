@@ -376,7 +376,14 @@
   });
 
   // State
-  let activityItems = [];
+  let recentItems = [];
+  let historyItems = [];
+  let historyStats = {
+    totalReceived: 0,
+    totalBytes: 0,
+    lastTransferAt: 0,
+  };
+  let lastKnownHistoryCount = -1;
 
   // Initialize
   async function init() {
@@ -416,24 +423,48 @@
 
     // Listen for new files
     window.api.onFileReceived((data) => {
-      activityItems.unshift(data);
-      if (activityItems.length > 100) activityItems.pop();
+      recentItems.unshift(data);
+      if (recentItems.length > 100) recentItems.pop();
+      historyItems.unshift(data);
+      historyStats.totalReceived += 1;
+      historyStats.totalBytes += Number(data.size || 0);
+      historyStats.lastTransferAt = Date.now();
       renderActivity();
       renderFullLog();
       renderHistory();
     });
 
-    document.getElementById("btn-clear-history").addEventListener("click", () => {
-      activityItems = [];
+    document.getElementById("btn-clear-history").addEventListener("click", async () => {
+      await window.api.clearHistory();
+      recentItems = [];
+      historyItems = [];
+      historyStats = { totalReceived: 0, totalBytes: 0, lastTransferAt: 0 };
       renderActivity();
       renderFullLog();
       renderHistory();
     });
 
     // Poll status
+    await refreshHistory();
     renderHistory();
     pollStatus();
     setInterval(pollStatus, 2000);
+  }
+
+  async function refreshHistory() {
+    try {
+      const h = await window.api.getHistory();
+      historyItems = Array.isArray(h.items) ? h.items : [];
+      historyStats = {
+        totalReceived: Number(h.totalReceived || 0),
+        totalBytes: Number(h.totalBytes || 0),
+        lastTransferAt: Number(h.lastTransferAt || 0),
+      };
+      renderFullLog();
+      renderHistory();
+    } catch {
+      // Ignore history refresh failures; status polling will still update core stats.
+    }
   }
 
   async function changeFolder() {
@@ -458,12 +489,19 @@
       const sec = String(Math.floor((uptimeMs % 60000) / 1000)).padStart(2, "0");
       document.getElementById("stat-uptime").textContent = `${h}:${m}:${sec}`;
 
-      if (s.recentActivity && s.recentActivity.length > 0 && activityItems.length === 0) {
-        activityItems = s.recentActivity;
-        renderActivity();
-        renderFullLog();
-        renderHistory();
+      recentItems = Array.isArray(s.recentActivity) ? s.recentActivity : [];
+      historyStats.totalReceived = Number(s.totalReceived || 0);
+      historyStats.totalBytes = Number(s.totalBytes || 0);
+      historyStats.lastTransferAt = Number(s.lastTransferAt || historyStats.lastTransferAt || 0);
+
+      const historyCount = Number(s.historyCount || 0);
+      if (historyCount !== lastKnownHistoryCount) {
+        lastKnownHistoryCount = historyCount;
+        await refreshHistory();
       }
+
+      renderActivity();
+      renderHistory();
     } catch (e) {
       /* ignore */
     }
@@ -471,11 +509,11 @@
 
   function renderActivity() {
     const list = document.getElementById("activity-list");
-    if (activityItems.length === 0) {
+    if (recentItems.length === 0) {
       list.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">hourglass_empty</span><p>Waiting for transfers...</p></div>';
       return;
     }
-    list.innerHTML = activityItems
+    list.innerHTML = recentItems
       .slice(0, 20)
       .map((item) => {
         const ago = timeAgo(item.time);
@@ -501,11 +539,11 @@
 
   function renderFullLog() {
     const el = document.getElementById("full-log");
-    if (activityItems.length === 0) {
+    if (historyItems.length === 0) {
       el.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">history</span><p>No transfers recorded yet</p></div>';
       return;
     }
-    el.innerHTML = activityItems
+    el.innerHTML = historyItems
       .map((item) => {
         const t = new Date(item.time);
         const ts = t.toLocaleString();
@@ -523,9 +561,9 @@
   }
 
   function renderHistory() {
-    const totalFiles = activityItems.length;
-    const totalBytes = activityItems.reduce((sum, item) => sum + (item.size || 0), 0);
-    const lastSync = activityItems[0] ? new Date(activityItems[0].time) : null;
+    const totalFiles = Number(historyStats.totalReceived || 0);
+    const totalBytes = Number(historyStats.totalBytes || 0);
+    const lastSync = historyStats.lastTransferAt ? new Date(historyStats.lastTransferAt) : null;
 
     document.getElementById("history-total-files").textContent = String(totalFiles);
     document.getElementById("history-total-bytes").textContent = formatBytes(totalBytes);
@@ -534,13 +572,13 @@
       : "Never";
 
     const list = document.getElementById("history-list");
-    if (activityItems.length === 0) {
+    if (historyItems.length === 0) {
       list.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">history</span><p>No history yet</p></div>';
       return;
     }
 
-    list.innerHTML = activityItems
-      .slice(0, 50)
+    list.innerHTML = historyItems
+      .slice(0, 500)
       .map((item) => {
         const t = new Date(item.time);
         return `

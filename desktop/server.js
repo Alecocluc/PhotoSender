@@ -13,14 +13,66 @@ const startTime = Date.now();
 const activityLog = [];
 /** @type {{ size: number, time: number }[]} */
 const recentByteEvents = [];
+let historyStatePath = null;
 
-function createServer(downloadPath) {
+function loadHistoryState() {
+  if (!historyStatePath || !fs.existsSync(historyStatePath)) return;
+  try {
+    const raw = fs.readFileSync(historyStatePath, "utf8");
+    const parsed = JSON.parse(raw);
+    totalReceived = Number(parsed.totalReceived || 0);
+    totalBytes = Number(parsed.totalBytes || 0);
+    activityLog.length = 0;
+    const items = Array.isArray(parsed.activityLog) ? parsed.activityLog : [];
+    for (const item of items) {
+      activityLog.push({
+        fileName: String(item.fileName || ""),
+        bucketName: String(item.bucketName || "Unsorted"),
+        size: Number(item.size || 0),
+        time: Number(item.time || Date.now()),
+        status: String(item.status || "saved"),
+      });
+    }
+  } catch {
+    totalReceived = 0;
+    totalBytes = 0;
+    activityLog.length = 0;
+  }
+}
+
+function saveHistoryState() {
+  if (!historyStatePath) return;
+  try {
+    const dir = path.dirname(historyStatePath);
+    fs.mkdirSync(dir, { recursive: true });
+    const tmp = `${historyStatePath}.tmp`;
+    fs.writeFileSync(
+      tmp,
+      JSON.stringify({ totalReceived, totalBytes, activityLog }, null, 2),
+      "utf8"
+    );
+    fs.renameSync(tmp, historyStatePath);
+  } catch {
+    // Best effort persistence; ignore write failures.
+  }
+}
+
+function parsePositiveTimestampMs(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.floor(parsed);
+}
+
+function createServer(downloadPath, options = {}) {
+  historyStatePath = options.historyStatePath || null;
+  loadHistoryState();
+
   const app = express();
 
   app.use(
     cors({
       origin: (origin, cb) => cb(null, true),
-      methods: ["GET", "POST"],
+      methods: ["GET", "POST", "DELETE"],
     })
   );
   app.use(express.json());
@@ -48,12 +100,33 @@ function createServer(downloadPath) {
     res.json({
       totalReceived,
       totalBytes,
+      historyCount: activityLog.length,
+      lastTransferAt: activityLog[activityLog.length - 1]?.time || 0,
       uptimeMs,
       currentSpeedBytesPerSec,
       averageSpeedBytesPerSec,
       downloadPath,
       recentActivity: activityLog.slice(-50).reverse(),
     });
+  });
+
+  app.get("/history", (_req, res) => {
+    res.json({
+      totalReceived,
+      totalBytes,
+      historyCount: activityLog.length,
+      lastTransferAt: activityLog[activityLog.length - 1]?.time || 0,
+      items: activityLog.slice().reverse(),
+    });
+  });
+
+  app.post("/history/clear", (_req, res) => {
+    totalReceived = 0;
+    totalBytes = 0;
+    activityLog.length = 0;
+    recentByteEvents.length = 0;
+    saveHistoryState();
+    res.json({ success: true });
   });
 
   // Activity log stream (SSE)
@@ -112,7 +185,7 @@ function createServer(downloadPath) {
       return res.status(400).json({ success: false, error: "No file provided" });
     }
 
-    const { md5Hash, bucketName, fileName } = req.body;
+    const { md5Hash, bucketName, fileName, sourceTimestampMs } = req.body;
     const filePath = req.file.path;
     const fileSize = req.file.size;
 
@@ -130,6 +203,16 @@ function createServer(downloadPath) {
       }
     }
 
+    const sourceTimeMs = parsePositiveTimestampMs(sourceTimestampMs);
+    if (sourceTimeMs > 0) {
+      try {
+        const originalDate = new Date(sourceTimeMs);
+        fs.utimesSync(filePath, originalDate, originalDate);
+      } catch {
+        // Some filesystems may reject specific timestamp updates.
+      }
+    }
+
     totalReceived++;
     totalBytes += fileSize;
     recentByteEvents.push({ size: fileSize, time: Date.now() });
@@ -142,6 +225,7 @@ function createServer(downloadPath) {
       status: "saved",
     };
     activityLog.push(entry);
+    saveHistoryState();
 
     broadcast("file-received", entry);
 
