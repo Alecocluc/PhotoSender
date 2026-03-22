@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:*; img-src 'self' data:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:*; img-src 'self' data:;" />
   <title>PhotoSender Desktop</title>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
@@ -57,7 +57,7 @@
     .status-dot.off { background: var(--error); box-shadow: 0 0 8px rgba(186,26,26,0.3); }
 
     /* Content area */
-    .content { padding: 32px; display: grid; grid-template-columns: 1fr 380px; gap: 28px; flex: 1; }
+    .content { padding: 32px; display: grid; grid-template-columns: 1fr 320px; gap: 24px; flex: 1; }
     .left-col { display: flex; flex-direction: column; gap: 24px; }
     .right-col { display: flex; flex-direction: column; gap: 24px; }
 
@@ -68,14 +68,14 @@
     .card-surface { background: var(--surface-container); }
 
     /* Server Status */
-    .server-card { padding: 32px; position: relative; overflow: hidden; }
+    .server-card { padding: 28px; position: relative; overflow: hidden; }
     .server-card .glow { position: absolute; top: 16px; right: 24px; width: 12px; height: 12px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 12px rgba(0,64,161,0.5); }
     .server-card .glow.off { background: var(--error); box-shadow: 0 0 12px rgba(186,26,26,0.4); }
     .server-label { font-size: 13px; font-weight: 700; color: var(--primary); margin-bottom: 4px; letter-spacing: -0.01em; }
     .server-title { font-size: 36px; font-weight: 800; letter-spacing: -0.04em; margin-bottom: 24px; }
-    .ip-section { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+    .ip-section { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .ip-label { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--on-surface-variant); margin-bottom: 8px; }
-    .ip-address { font-size: 28px; font-family: 'Manrope', monospace; font-weight: 500; letter-spacing: -0.02em; }
+    .ip-address { font-size: 26px; font-family: 'Manrope', monospace; font-weight: 500; letter-spacing: -0.02em; }
     .ip-hint { font-size: 10px; color: rgba(66,70,84,0.6); }
     .btn-gradient { background: linear-gradient(135deg, var(--primary), var(--primary-container)); color: #fff; border: none; padding: 12px 24px; border-radius: 12px; font-family: 'Manrope'; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: transform 0.1s; box-shadow: 0 4px 16px rgba(0,64,161,0.2); }
     .btn-gradient:hover { transform: scale(1.03); }
@@ -102,16 +102,16 @@
     .stat-primary .stat-label { color: rgba(255,255,255,0.7); }
 
     /* Activity feed */
-    .activity-card { padding: 24px; display: flex; flex-direction: column; flex: 1; }
-    .activity-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-    .activity-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
-    .live-badge { padding: 4px 10px; border-radius: 6px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
-    .activity-list { display: flex; flex-direction: column; gap: 20px; flex: 1; overflow-y: auto; }
-    .activity-item { display: flex; gap: 14px; cursor: pointer; }
-    .activity-thumb { width: 48px; height: 48px; border-radius: 12px; background: var(--surface-container-highest); display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
-    .activity-thumb .material-symbols-outlined { color: var(--primary); font-size: 22px; }
+    .activity-card { padding: 20px; display: flex; flex-direction: column; flex: 1; }
+    .activity-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .activity-title { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; }
+    .live-badge { padding: 3px 8px; border-radius: 6px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+    .activity-list { display: flex; flex-direction: column; gap: 14px; flex: 1; overflow-y: auto; }
+    .activity-item { display: flex; gap: 10px; cursor: pointer; }
+    .activity-thumb { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-container-highest); display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
+    .activity-thumb .material-symbols-outlined { color: var(--primary); font-size: 20px; }
     .activity-info { flex: 1; min-width: 0; }
-    .activity-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .activity-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .activity-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
     .activity-time { font-size: 12px; color: var(--on-surface-variant); }
     .activity-status { font-size: 10px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 4px; }
@@ -198,7 +198,7 @@
   <div class="content" id="page-dashboard">
     <div class="left-col">
       <!-- Top bento: server + location -->
-      <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px;">
+      <div style="display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px;">
         <!-- Server Status -->
         <div class="card card-low server-card">
           <div class="glow" id="server-glow"></div>
