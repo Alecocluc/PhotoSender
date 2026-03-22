@@ -167,6 +167,10 @@
       <span class="material-symbols-outlined">analytics</span>
       Activity Log
     </a>
+    <a class="nav-item" data-page="history">
+      <span class="material-symbols-outlined">history</span>
+      History
+    </a>
     <a class="nav-item" data-page="settings">
       <span class="material-symbols-outlined">settings</span>
       Settings
@@ -287,6 +291,39 @@
     </div>
   </div>
 
+  <!-- History Page (hidden) -->
+  <div class="content" id="page-history" style="display: none;">
+    <div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 20px;">
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 14px;">
+        <div class="card card-surface" style="padding: 18px; border-radius: 16px;">
+          <div class="stat-label">Total Files</div>
+          <div class="stat-value" id="history-total-files">0</div>
+        </div>
+        <div class="card card-surface" style="padding: 18px; border-radius: 16px;">
+          <div class="stat-label">Last Sync Date</div>
+          <div style="font-size: 24px; font-weight: 800; letter-spacing: -0.03em;" id="history-last-sync">Never</div>
+        </div>
+        <div class="card stat-primary" style="padding: 18px; border-radius: 16px;">
+          <div class="stat-label">Total Transferred</div>
+          <div style="font-size: 24px; font-weight: 800; letter-spacing: -0.03em;" id="history-total-bytes">0 B</div>
+        </div>
+      </div>
+
+      <div class="card card-low" style="padding: 24px; border-radius: 20px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+          <h3 style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em;">Recent Activity</h3>
+          <button class="btn-secondary" id="btn-clear-history" style="width: auto; margin-top: 0; color: var(--error);">Clear History</button>
+        </div>
+        <div id="history-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 500px; overflow-y: auto;">
+          <div class="empty-state">
+            <span class="material-symbols-outlined">history</span>
+            <p>No history yet</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings Page (hidden) -->
   <div class="content" id="page-settings" style="display: none;">
     <div style="grid-column: 1 / -1; max-width: 600px;">
@@ -319,7 +356,12 @@
 
 <script>
   // Navigation
-  const pages = { dashboard: "Dashboard Overview", activity: "Activity Log", settings: "Settings" };
+  const pages = {
+    dashboard: "Dashboard Overview",
+    activity: "Activity Log",
+    history: "History",
+    settings: "Settings",
+  };
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.addEventListener("click", () => {
       const page = item.dataset.page;
@@ -378,9 +420,18 @@
       if (activityItems.length > 100) activityItems.pop();
       renderActivity();
       renderFullLog();
+      renderHistory();
+    });
+
+    document.getElementById("btn-clear-history").addEventListener("click", () => {
+      activityItems = [];
+      renderActivity();
+      renderFullLog();
+      renderHistory();
     });
 
     // Poll status
+    renderHistory();
     pollStatus();
     setInterval(pollStatus, 2000);
   }
@@ -406,6 +457,7 @@
         activityItems = s.recentActivity;
         renderActivity();
         renderFullLog();
+        renderHistory();
       }
     } catch (e) {
       /* ignore */
@@ -460,6 +512,40 @@
             <div style="font-size:11px; color:var(--on-surface-variant);">${escapeHtml(item.bucketName)} &bull; ${formatBytes(item.size)}</div>
           </div>
           <div style="font-size:11px; color:var(--on-surface-variant); white-space:nowrap;">${ts}</div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function renderHistory() {
+    const totalFiles = activityItems.length;
+    const totalBytes = activityItems.reduce((sum, item) => sum + (item.size || 0), 0);
+    const lastSync = activityItems[0] ? new Date(activityItems[0].time) : null;
+
+    document.getElementById("history-total-files").textContent = String(totalFiles);
+    document.getElementById("history-total-bytes").textContent = formatBytes(totalBytes);
+    document.getElementById("history-last-sync").textContent = lastSync
+      ? lastSync.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+      : "Never";
+
+    const list = document.getElementById("history-list");
+    if (activityItems.length === 0) {
+      list.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">history</span><p>No history yet</p></div>';
+      return;
+    }
+
+    list.innerHTML = activityItems
+      .slice(0, 50)
+      .map((item) => {
+        const t = new Date(item.time);
+        return `
+        <div style="display:flex; align-items:center; gap:12px; padding:10px 0;">
+          <span class="material-symbols-outlined filled" style="color:var(--primary); font-size:18px;">check_circle</span>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(item.fileName)}</div>
+            <div style="font-size:11px; color:var(--on-surface-variant);">${escapeHtml(item.bucketName)} &bull; ${formatBytes(item.size)}</div>
+          </div>
+          <div style="font-size:11px; color:var(--on-surface-variant); white-space:nowrap;">${t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
         </div>`;
       })
       .join("");

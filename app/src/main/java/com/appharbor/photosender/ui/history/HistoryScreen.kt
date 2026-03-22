@@ -17,12 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Photo
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,7 +44,6 @@ fun HistoryScreen(
     viewModel: HistoryViewModel = hiltViewModel()
 ) {
     val completedCount by viewModel.completedCount.collectAsStateWithLifecycle()
-    val totalBytes by viewModel.totalTransferredBytes.collectAsStateWithLifecycle()
     val lastSync by viewModel.lastSyncTimestamp.collectAsStateWithLifecycle()
     val recentHistory by viewModel.recentHistory.collectAsStateWithLifecycle()
 
@@ -88,59 +82,34 @@ fun HistoryScreen(
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
             )
-            Spacer(modifier = Modifier.height(20.dp))
-        }
-
-        // Stats cards
-        item {
+            Text(
+                text = "Recent transfer activity and outcomes",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                StatCard(
-                    title = "Total Files",
-                    value = completedCount.toString(),
-                    icon = Icons.Filled.Photo,
-                    modifier = Modifier.weight(1f),
-                )
-                StatCard(
-                    title = "Last Sync Date",
-                    value = if (lastSync > 0) {
-                        SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(lastSync))
-                    } else "Never",
-                    icon = Icons.Filled.DateRange,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            StatCard(
-                title = "Total Transferred",
-                value = viewModel.formatBytes(totalBytes),
-                icon = Icons.Filled.CloudDone,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-
-        // Recent Activity header
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Recent Activity",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
+                    text = "$completedCount files",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
                 )
+                Text(
+                    text = if (lastSync > 0) {
+                        "Last sync ${SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(Date(lastSync))}"
+                    } else {
+                        "No completed sync yet"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.weight(1f))
                 if (recentHistory.isNotEmpty()) {
                     TextButton(onClick = { showClearDialog = true }) {
-                        Text(
-                            "Clear History",
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.labelMedium,
-                        )
+                        Text("Clear", color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -177,41 +146,6 @@ fun HistoryScreen(
         }
 
         item { Spacer(modifier = Modifier.height(32.dp)) }
-    }
-}
-
-@Composable
-private fun StatCard(
-    title: String,
-    value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(16.dp),
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(28.dp),
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
     }
 }
 

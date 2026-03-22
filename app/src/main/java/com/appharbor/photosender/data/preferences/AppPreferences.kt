@@ -3,6 +3,7 @@ package com.appharbor.photosender.data.preferences
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -15,6 +16,12 @@ import javax.inject.Singleton
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "photosender_prefs")
 
+enum class ThemeMode {
+    SYSTEM,
+    LIGHT,
+    DARK,
+}
+
 @Singleton
 class AppPreferences @Inject constructor(
     @ApplicationContext private val context: Context
@@ -22,6 +29,10 @@ class AppPreferences @Inject constructor(
     private val lastIpKey = stringPreferencesKey("last_ip_address")
     private val downloadPathKey = stringPreferencesKey("download_path")
     private val uploadedHashesKey = stringSetPreferencesKey("uploaded_hashes")
+    private val themeModeKey = stringPreferencesKey("theme_mode")
+    private val dynamicColorEnabledKey = booleanPreferencesKey("dynamic_color_enabled")
+    private val highSpeedTransferEnabledKey = booleanPreferencesKey("high_speed_transfer_enabled")
+    private val autoArchiveEnabledKey = booleanPreferencesKey("auto_archive_enabled")
 
     val lastIpAddress: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[lastIpKey] ?: ""
@@ -29,6 +40,22 @@ class AppPreferences @Inject constructor(
 
     val downloadPath: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[downloadPathKey] ?: ""
+    }
+
+    val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
+        ThemeMode.entries.firstOrNull { it.name == prefs[themeModeKey] } ?: ThemeMode.SYSTEM
+    }
+
+    val dynamicColorEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[dynamicColorEnabledKey] ?: true
+    }
+
+    val highSpeedTransferEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[highSpeedTransferEnabledKey] ?: true
+    }
+
+    val autoArchiveEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[autoArchiveEnabledKey] ?: false
     }
 
     suspend fun saveLastIpAddress(ip: String) {
@@ -40,6 +67,30 @@ class AppPreferences @Inject constructor(
     suspend fun saveDownloadPath(path: String) {
         context.dataStore.edit { prefs ->
             prefs[downloadPathKey] = path
+        }
+    }
+
+    suspend fun saveThemeMode(mode: ThemeMode) {
+        context.dataStore.edit { prefs ->
+            prefs[themeModeKey] = mode.name
+        }
+    }
+
+    suspend fun saveDynamicColorEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[dynamicColorEnabledKey] = enabled
+        }
+    }
+
+    suspend fun saveHighSpeedTransferEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[highSpeedTransferEnabledKey] = enabled
+        }
+    }
+
+    suspend fun saveAutoArchiveEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[autoArchiveEnabledKey] = enabled
         }
     }
 

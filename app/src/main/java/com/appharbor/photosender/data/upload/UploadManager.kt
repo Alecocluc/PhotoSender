@@ -8,6 +8,7 @@ import com.appharbor.photosender.data.db.UploadRecordDao
 import com.appharbor.photosender.data.db.UploadStatus
 import com.appharbor.photosender.data.model.MediaItem
 import com.appharbor.photosender.data.network.ConnectionManager
+import com.appharbor.photosender.data.preferences.AppPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -18,6 +19,7 @@ import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -36,6 +38,7 @@ import javax.inject.Singleton
 data class FileTransferProgress(
     val recordId: Long,
     val fileName: String,
+    val contentUri: String,
     val fileSize: Long,
     val bytesTransferred: Long,
     val status: UploadStatus,
@@ -66,9 +69,9 @@ class UploadManager @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val uploadRecordDao: UploadRecordDao,
     private val connectionManager: ConnectionManager,
+    private val appPreferences: AppPreferences,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val semaphore = Semaphore(6)
     private val contentResolver: ContentResolver = context.contentResolver
 
     private val _transferState = MutableStateFlow(TransferState())
@@ -120,6 +123,7 @@ class UploadManager @Inject constructor(
                 )
             }
             speedTracker = SpeedTracker()
+            val semaphore = Semaphore(parallelSlots())
 
             val uploadJobs = allToUpload.map { record ->
                 launch {
@@ -148,6 +152,7 @@ class UploadManager @Inject constructor(
                     )
                 }
                 speedTracker = SpeedTracker()
+                val semaphore = Semaphore(parallelSlots())
 
                 val jobs = pending.map { record ->
                     launch {
@@ -176,7 +181,7 @@ class UploadManager @Inject constructor(
     private suspend fun uploadFile(record: UploadRecord) {
         // Update status to UPLOADING
         uploadRecordDao.update(record.copy(status = UploadStatus.UPLOADING))
-        updateActiveTransfer(record.id, record.fileName, record.fileSize, 0, UploadStatus.UPLOADING)
+        updateActiveTransfer(record.id, record.fileName, record.contentUri, record.fileSize, 0, UploadStatus.UPLOADING)
 
         try {
             val uri = Uri.parse(record.contentUri)
@@ -191,7 +196,7 @@ class UploadManager @Inject constructor(
                 _transferState.update { st ->
                     st.copy(
                         completedFiles = st.completedFiles + 1,
-                        transferredBytes = st.transferredBytes + record.fileSize,
+                        transferredBytes = (st.transferredBytes + record.fileSize).coerceAtMost(st.totalBytes),
                     )
                 }
                 removeActiveTransfer(record.id)
@@ -208,14 +213,30 @@ class UploadManager @Inject constructor(
                 contentType = (record.fileName.toMediaTypeOrNull() ?: "application/octet-stream").toMediaType(),
                 content = fileBytes,
                 onProgress = { bytesWritten ->
-                    updateActiveTransfer(record.id, record.fileName, record.fileSize, bytesWritten, UploadStatus.UPLOADING)
-                    speedTracker.recordBytes(bytesWritten)
+                    var delta = 0L
                     _transferState.update { st ->
+                        val active = st.activeTransfers.toMutableList()
+                        val idx = active.indexOfFirst { it.recordId == record.id }
+                        val previousBytes = if (idx >= 0) active[idx].bytesTransferred else 0L
+                        delta = (bytesWritten - previousBytes).coerceAtLeast(0)
+
+                        val item = FileTransferProgress(
+                            recordId = record.id,
+                            fileName = record.fileName,
+                            contentUri = record.contentUri,
+                            fileSize = record.fileSize,
+                            bytesTransferred = bytesWritten,
+                            status = UploadStatus.UPLOADING,
+                        )
+                        if (idx >= 0) active[idx] = item else active.add(item)
+
                         st.copy(
-                            transferredBytes = st.transferredBytes + bytesWritten - (st.activeTransfers.find { it.recordId == record.id }?.bytesTransferred ?: 0),
-                            currentSpeedBytesPerSec = speedTracker.getSpeed(),
+                            activeTransfers = active,
+                            transferredBytes = (st.transferredBytes + delta).coerceAtMost(st.totalBytes),
                         )
                     }
+                    speedTracker.recordBytes(delta)
+                    _transferState.update { st -> st.copy(currentSpeedBytesPerSec = speedTracker.getSpeed()) }
                 }
             )
 
@@ -246,7 +267,12 @@ class UploadManager @Inject constructor(
                     )
                 )
                 _transferState.update { st ->
-                    st.copy(completedFiles = st.completedFiles + 1)
+                    val activeTransferred = st.activeTransfers.find { it.recordId == record.id }?.bytesTransferred ?: 0L
+                    val finalDelta = (record.fileSize - activeTransferred).coerceAtLeast(0)
+                    st.copy(
+                        completedFiles = st.completedFiles + 1,
+                        transferredBytes = (st.transferredBytes + finalDelta).coerceAtMost(st.totalBytes),
+                    )
                 }
             } else {
                 throw Exception("Server returned ${response.code}")
@@ -276,11 +302,18 @@ class UploadManager @Inject constructor(
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
-    private fun updateActiveTransfer(id: Long, name: String, size: Long, transferred: Long, status: UploadStatus) {
+    private fun updateActiveTransfer(
+        id: Long,
+        name: String,
+        contentUri: String,
+        size: Long,
+        transferred: Long,
+        status: UploadStatus,
+    ) {
         _transferState.update { st ->
             val active = st.activeTransfers.toMutableList()
             val idx = active.indexOfFirst { it.recordId == id }
-            val item = FileTransferProgress(id, name, size, transferred, status)
+            val item = FileTransferProgress(id, name, contentUri, size, transferred, status)
             if (idx >= 0) active[idx] = item else active.add(item)
             st.copy(activeTransfers = active)
         }
@@ -311,6 +344,10 @@ class UploadManager @Inject constructor(
     private fun String.toMediaTypeOrNull(): String? {
         return guessMimeType(this).takeIf { it != "application/octet-stream" }
     }
+
+    private suspend fun parallelSlots(): Int {
+        return if (appPreferences.highSpeedTransferEnabled.first()) 6 else 3
+    }
 }
 
 private class ProgressRequestBody(
@@ -323,7 +360,6 @@ private class ProgressRequestBody(
 
     override fun writeTo(sink: BufferedSink) {
         val source = content.inputStream().source()
-        val buffer = ByteArray(8192)
         var totalWritten = 0L
         source.use { src ->
             var read: Long
@@ -337,15 +373,21 @@ private class ProgressRequestBody(
 }
 
 private class SpeedTracker {
-    private var startTime = System.currentTimeMillis()
-    private var totalBytes = 0L
+    private var windowStartTime = System.currentTimeMillis()
+    private var bytesInWindow = 0L
 
     fun recordBytes(bytes: Long) {
-        totalBytes = bytes
+        if (bytes <= 0L) return
+        val now = System.currentTimeMillis()
+        if (now - windowStartTime > 1200L) {
+            windowStartTime = now
+            bytesInWindow = 0L
+        }
+        bytesInWindow += bytes
     }
 
     fun getSpeed(): Long {
-        val elapsed = (System.currentTimeMillis() - startTime).coerceAtLeast(1)
-        return totalBytes * 1000 / elapsed
+        val elapsed = (System.currentTimeMillis() - windowStartTime).coerceAtLeast(1)
+        return bytesInWindow * 1000 / elapsed
     }
 }

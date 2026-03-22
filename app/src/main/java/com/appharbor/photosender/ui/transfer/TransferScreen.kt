@@ -28,16 +28,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.appharbor.photosender.data.db.UploadStatus
 import com.appharbor.photosender.data.upload.FileTransferProgress
 
@@ -252,20 +256,29 @@ private fun TransferItem(
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = when (transfer.status) {
-                    UploadStatus.UPLOADING -> Icons.Filled.CloudUpload
-                    UploadStatus.COMPLETED -> Icons.Filled.CheckCircle
-                    else -> Icons.Filled.HourglassEmpty
-                },
-                contentDescription = null,
-                tint = when (transfer.status) {
-                    UploadStatus.UPLOADING -> MaterialTheme.colorScheme.primary
-                    UploadStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.size(22.dp),
-            )
+            if (transfer.contentUri.isNotEmpty()) {
+                AsyncImage(
+                    model = transfer.contentUri,
+                    contentDescription = transfer.fileName,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    imageVector = when (transfer.status) {
+                        UploadStatus.UPLOADING -> Icons.Filled.CloudUpload
+                        UploadStatus.COMPLETED -> Icons.Filled.CheckCircle
+                        else -> Icons.Filled.HourglassEmpty
+                    },
+                    contentDescription = null,
+                    tint = when (transfer.status) {
+                        UploadStatus.UPLOADING -> MaterialTheme.colorScheme.primary
+                        UploadStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.size(22.dp),
+                )
+            }
         }
 
         Spacer(modifier = Modifier.width(12.dp))
@@ -274,26 +287,23 @@ private fun TransferItem(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = transfer.fileName.take(28) + if (transfer.fileName.length > 28) "..." else "",
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                 )
-                // Status badge
-                val (badgeColor, badgeText) = when (transfer.status) {
-                    UploadStatus.UPLOADING -> MaterialTheme.colorScheme.primary to "UPLOADING"
-                    UploadStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary to "DONE"
-                    UploadStatus.PENDING -> MaterialTheme.colorScheme.onSurfaceVariant to "PENDING"
-                    UploadStatus.FAILED -> MaterialTheme.colorScheme.error to "FAILED"
-                }
-                Text(
-                    text = badgeText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = badgeColor,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                StatusChip(status = transfer.status)
             }
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "${formatBytes(transfer.bytesTransferred)} / ${formatBytes(transfer.fileSize)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
             Spacer(modifier = Modifier.height(6.dp))
 
             // Progress bar
@@ -329,5 +339,44 @@ private fun TransferItem(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun StatusChip(status: UploadStatus) {
+    val (label, container, content) = when (status) {
+        UploadStatus.UPLOADING -> Triple(
+            "UPLOADING",
+            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f),
+            MaterialTheme.colorScheme.tertiary,
+        )
+        UploadStatus.COMPLETED -> Triple(
+            "DONE",
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f),
+            MaterialTheme.colorScheme.primary,
+        )
+        UploadStatus.PENDING -> Triple(
+            "PENDING",
+            MaterialTheme.colorScheme.surfaceContainerHighest,
+            MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        UploadStatus.FAILED -> Triple(
+            "FAILED",
+            MaterialTheme.colorScheme.errorContainer,
+            MaterialTheme.colorScheme.error,
+        )
+    }
+
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = container,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = content,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+        )
     }
 }

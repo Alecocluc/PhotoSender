@@ -4,37 +4,39 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.clickable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.SwapHorizontalCircle
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PhotoLibrary
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material.icons.outlined.SwapHorizontalCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -44,9 +46,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -62,7 +68,9 @@ import com.appharbor.photosender.ui.gallery.GalleryScreen
 import com.appharbor.photosender.ui.history.HistoryScreen
 import com.appharbor.photosender.ui.theme.Manrope
 import com.appharbor.photosender.ui.theme.PhotoSenderTheme
+import com.appharbor.photosender.ui.settings.SettingsScreen
 import com.appharbor.photosender.ui.transfer.TransferScreen
+import com.appharbor.photosender.data.preferences.ThemeMode
 import dagger.hilt.android.AndroidEntryPoint
 
 data class BottomNavItem(
@@ -78,9 +86,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            PhotoSenderTheme {
-                PhotoSenderApp()
-            }
+            PhotoSenderApp()
         }
     }
 }
@@ -88,6 +94,20 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PhotoSenderApp() {
+    val mainViewModel: MainViewModel = hiltViewModel()
+    val themeMode by mainViewModel.themeMode.collectAsStateWithLifecycle()
+    val dynamicColorEnabled by mainViewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
+    val isSystemDark = isSystemInDarkTheme()
+    val darkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemDark
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+
+    PhotoSenderTheme(
+        darkTheme = darkTheme,
+        dynamicColor = dynamicColorEnabled,
+    ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -98,6 +118,7 @@ fun PhotoSenderApp() {
             BottomNavItem(Screen.Gallery.route, "Gallery", Icons.Filled.PhotoLibrary, Icons.Outlined.PhotoLibrary),
             BottomNavItem(Screen.Transfer.route, "Transfer", Icons.Filled.SwapHorizontalCircle, Icons.Outlined.SwapHorizontalCircle),
             BottomNavItem(Screen.History.route, "History", Icons.Filled.History, Icons.Outlined.History),
+            BottomNavItem(Screen.Settings.route, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
         )
     }
 
@@ -136,49 +157,19 @@ fun PhotoSenderApp() {
                 enter = fadeIn(),
                 exit = fadeOut(),
             ) {
-                NavigationBar(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    tonalElevation = 0.dp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                ) {
-                    bottomNavItems.forEach { item ->
-                        val selected = currentDestination?.hierarchy?.any { it.route == item.route } == true
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = {
-                                navController.navigate(item.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = {
-                                Icon(
-                                    imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                                    contentDescription = item.label
-                                )
-                            },
-                            label = {
-                                Text(
-                                    text = item.label,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.primary,
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f),
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        )
+                StitchBottomNav(
+                    items = bottomNavItems,
+                    currentDestination = currentDestination,
+                    onItemSelected = { route ->
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
-                }
+                )
             }
         }
     ) { innerPadding ->
@@ -232,6 +223,78 @@ fun PhotoSenderApp() {
             }
             composable(Screen.History.route) {
                 HistoryScreen()
+            }
+            composable(Screen.Settings.route) {
+                SettingsScreen()
+            }
+        }
+    }
+    }
+}
+
+@Composable
+private fun StitchBottomNav(
+    items: List<BottomNavItem>,
+    currentDestination: androidx.navigation.NavDestination?,
+    onItemSelected: (String) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Transparent)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.86f),
+            tonalElevation = 0.dp,
+            shadowElevation = 14.dp,
+            shape = RoundedCornerShape(28.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                items.forEach { item ->
+                    val selected = currentDestination?.hierarchy?.any { it.route == item.route } == true
+                    val bg = if (selected) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+                    } else {
+                        Color.Transparent
+                    }
+                    val fg = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(bg)
+                            .clickable { onItemSelected(item.route) }
+                            .padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(
+                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                            contentDescription = item.label,
+                            tint = fg,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = item.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                            color = fg,
+                        )
+                    }
+                }
             }
         }
     }
