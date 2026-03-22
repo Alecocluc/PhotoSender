@@ -1,0 +1,20 @@
+{
+  "name": "photosender-desktop",
+  "version": "1.0.0",
+  "description": "PhotoSender Desktop - Wireless photo & video receiver",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.2"
+  },
+  "devDependencies": {
+    "electron": "^33.3.1"
+  },
+  "author": "AppHarbor",
+  "license": "MIT"
+}
