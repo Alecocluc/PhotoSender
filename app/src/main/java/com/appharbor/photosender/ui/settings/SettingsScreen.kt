@@ -1,6 +1,7 @@
 package com.appharbor.photosender.ui.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,21 +22,24 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.Brightness6
 import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.appharbor.photosender.data.preferences.ThemeMode
+import com.appharbor.photosender.ui.theme.LocalExtendedColors
 
 @Composable
 fun SettingsScreen(
@@ -159,32 +163,42 @@ private fun SectionCard(
 private fun ThemeModeChip(
     label: String,
     selected: Boolean,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     onClick: () -> Unit,
 ) {
-    FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+    val extColors = LocalExtendedColors.current
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(20.dp))
+            .then(
+                if (selected) Modifier.background(extColors.buttonGradient)
+                else Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
             )
-        },
-        leadingIcon = {
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
+                tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
             )
-        },
-    )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
 }
 
 @Composable
 private fun SettingsToggleRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     title: String,
     subtitle: String,
     checked: Boolean,
@@ -228,6 +242,14 @@ private fun SettingsToggleRow(
             )
         }
 
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                checkedBorderColor = MaterialTheme.colorScheme.primary,
+            ),
+        )
     }
 }

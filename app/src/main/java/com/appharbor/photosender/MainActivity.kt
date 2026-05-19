@@ -51,6 +51,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.isSystemInDarkTheme
+import com.appharbor.photosender.ui.theme.LocalExtendedColors
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -124,6 +128,9 @@ fun PhotoSenderApp() {
 
     val showBottomBar = currentDestination?.route in bottomNavItems.map { it.route }
 
+    val extendedColors = LocalExtendedColors.current
+    val gradientBrush = extendedColors.buttonGradient
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -133,16 +140,25 @@ fun PhotoSenderApp() {
                             imageVector = Icons.Outlined.Sensors,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier
+                                .size(24.dp)
+                                .graphicsLayer(alpha = 0.99f)
+                                .drawWithContent {
+                                    drawContent()
+                                    drawRect(
+                                        brush = gradientBrush,
+                                        blendMode = BlendMode.SrcAtop,
+                                    )
+                                }
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "PhotoSender",
                             style = MaterialTheme.typography.titleLarge.copy(
                                 fontFamily = Manrope,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                brush = gradientBrush,
                             ),
-                            color = MaterialTheme.colorScheme.primary
                         )
                     }
                 },
@@ -258,6 +274,7 @@ private fun StitchBottomNav(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val navGradient = LocalExtendedColors.current.buttonGradient
                 items.forEach { item ->
                     val selected = currentDestination?.hierarchy?.any { it.route == item.route } == true
                     val bg = if (selected) {
@@ -265,11 +282,18 @@ private fun StitchBottomNav(
                     } else {
                         Color.Transparent
                     }
-                    val fg = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+
+                    val gradientMod = if (selected) {
+                        Modifier
+                            .graphicsLayer(alpha = 0.99f)
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(
+                                    brush = navGradient,
+                                    blendMode = BlendMode.SrcAtop,
+                                )
+                            }
+                    } else Modifier
 
                     Column(
                         modifier = Modifier
@@ -277,13 +301,14 @@ private fun StitchBottomNav(
                             .clip(RoundedCornerShape(18.dp))
                             .background(bg)
                             .clickable { onItemSelected(item.route) }
-                            .padding(vertical = 8.dp),
+                            .padding(vertical = 8.dp)
+                            .then(gradientMod),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Icon(
                             imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
                             contentDescription = item.label,
-                            tint = fg,
+                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp),
                         )
                         Spacer(modifier = Modifier.height(4.dp))
@@ -291,7 +316,7 @@ private fun StitchBottomNav(
                             text = item.label,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = fg,
+                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

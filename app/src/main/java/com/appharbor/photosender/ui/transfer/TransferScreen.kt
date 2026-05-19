@@ -91,10 +91,12 @@ fun TransferScreen(
                     fontWeight = FontWeight.Bold,
                 )
                 Column(horizontalAlignment = Alignment.End) {
+                    val extColors = LocalExtendedColors.current
                     Text(
                         text = viewModel.formatSpeed(state.currentSpeedBytesPerSec),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            brush = extColors.progressGradient,
+                        ),
                         fontWeight = FontWeight.SemiBold,
                     )
                     val eta = viewModel.formatTime(state.estimatedSecondsRemaining)

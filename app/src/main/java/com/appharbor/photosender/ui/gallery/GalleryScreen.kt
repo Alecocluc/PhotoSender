@@ -29,8 +29,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -148,23 +146,25 @@ fun GalleryScreen(
                         items(filters.size) { idx ->
                             val (f, label) = filters[idx]
                             val selected = filter == f
-                            AssistChip(
-                                onClick = { viewModel.setFilter(f) },
-                                label = {
-                                    Text(
-                                        label,
-                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            val extColors = LocalExtendedColors.current
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .then(
+                                        if (selected) Modifier.background(extColors.buttonGradient)
+                                        else Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                     )
-                                },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    containerColor = if (selected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    labelColor = if (selected) MaterialTheme.colorScheme.onPrimary
-                                    else MaterialTheme.colorScheme.onSurface,
-                                ),
-                                border = null,
-                                shape = RoundedCornerShape(20.dp),
-                            )
+                                    .clickable { viewModel.setFilter(f) }
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    label,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                )
+                            }
                         }
                     }
                     Spacer(modifier = Modifier.height(12.dp))
