@@ -3,18 +3,74 @@ const path = require("path");
 const fs = require("fs");
 const { createServer, getLocalIPs } = require("./server");
 
-const PORT = 3210;
+const DEFAULT_PORT = 3210;
+const MIN_PORT = 1024;
+const MAX_PORT = 65535;
+
 let mainWindow;
-let downloadPath = path.join(app.getPath("pictures"), "PhotoSender");
 let serverInstance;
 let historyStatePath;
+let settingsPath;
+
+let settings = {
+  downloadPath: "",
+  port: DEFAULT_PORT,
+  theme: "system", // 'system' | 'light' | 'dark'
+  autoOpenFolder: false,
+  launchAtStartup: false,
+};
+
+function loadSettings() {
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const raw = fs.readFileSync(settingsPath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        settings = { ...settings, ...parsed };
+      }
+    }
+  } catch {
+    // ignore — fall back to defaults
+  }
+  if (!settings.downloadPath || typeof settings.downloadPath !== "string") {
+    settings.downloadPath = path.join(app.getPath("pictures"), "PhotoSender");
+  }
+  const port = Number(settings.port);
+  if (!Number.isFinite(port) || port < MIN_PORT || port > MAX_PORT) {
+    settings.port = DEFAULT_PORT;
+  } else {
+    settings.port = Math.floor(port);
+  }
+  if (!["system", "light", "dark"].includes(settings.theme)) {
+    settings.theme = "system";
+  }
+}
+
+function saveSettings() {
+  try {
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    const tmp = `${settingsPath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(settings, null, 2), "utf8");
+    fs.renameSync(tmp, settingsPath);
+  } catch {
+    // best effort
+  }
+}
+
+function applyLaunchAtStartup() {
+  try {
+    app.setLoginItemSettings({ openAtLogin: !!settings.launchAtStartup });
+  } catch {
+    // not supported on all platforms
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
-    minWidth: 960,
-    minHeight: 640,
+    minWidth: 480,
+    minHeight: 560,
     title: "PhotoSender Desktop",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -22,7 +78,7 @@ function createWindow() {
       nodeIntegration: false,
     },
     show: false,
-    backgroundColor: "#f7f9fb",
+    backgroundColor: settings.theme === "dark" ? "#0f172a" : "#f7f9fb",
   });
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
@@ -33,21 +89,60 @@ function createWindow() {
   });
 }
 
-function startServer() {
-  fs.mkdirSync(downloadPath, { recursive: true });
-  const expressApp = createServer(downloadPath, { historyStatePath });
+function broadcastToRenderer(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload);
+  }
+}
 
-  serverInstance = expressApp.listen(PORT, "0.0.0.0", () => {
-    console.log(`PhotoSender server listening on port ${PORT}`);
-    const ips = getLocalIPs();
-    console.log("Local IPs:", ips.join(", "));
+function stopServer() {
+  return new Promise((resolve) => {
+    if (!serverInstance) return resolve();
+    const ref = serverInstance;
+    serverInstance = null;
+    try {
+      ref.close(() => resolve());
+    } catch {
+      resolve();
+    }
   });
 }
 
-// IPC handlers
+async function startServer() {
+  await stopServer();
+  fs.mkdirSync(settings.downloadPath, { recursive: true });
+  const expressApp = createServer(settings.downloadPath, {
+    historyStatePath,
+    onFileReceived: (entry) => {
+      broadcastToRenderer("file-received", entry);
+      if (settings.autoOpenFolder) {
+        const bucket = entry?.bucketName || "Unsorted";
+        const target = path.join(settings.downloadPath, bucket);
+        if (fs.existsSync(target)) shell.openPath(target);
+      }
+    },
+  });
+
+  return new Promise((resolve, reject) => {
+    const server = expressApp.listen(settings.port, "0.0.0.0", () => {
+      serverInstance = server;
+      console.log(`PhotoSender server listening on port ${settings.port}`);
+      broadcastToRenderer("server-state", { running: true, port: settings.port, error: null });
+      resolve();
+    });
+    server.once("error", (err) => {
+      console.error("Server bind error:", err.message);
+      broadcastToRenderer("server-state", { running: false, port: settings.port, error: err.message });
+      reject(err);
+    });
+  });
+}
+
+// ── IPC handlers ───────────────────────────────────────────────────────────
+
 ipcMain.handle("get-status", async () => {
   try {
-    const res = await fetch(`http://127.0.0.1:${PORT}/status`);
+    const res = await fetch(`http://127.0.0.1:${settings.port}/status`);
     return await res.json();
   } catch {
     return { totalReceived: 0, totalBytes: 0, uptimeMs: 0, recentActivity: [] };
@@ -62,7 +157,7 @@ ipcMain.handle("get-history", async (_e, options = {}) => {
     if (Number.isFinite(limit) && limit > 0) params.set("limit", String(Math.floor(limit)));
     if (Number.isFinite(offset) && offset >= 0) params.set("offset", String(Math.floor(offset)));
     const suffix = params.toString();
-    const res = await fetch(`http://127.0.0.1:${PORT}/history${suffix ? `?${suffix}` : ""}`);
+    const res = await fetch(`http://127.0.0.1:${settings.port}/history${suffix ? `?${suffix}` : ""}`);
     return await res.json();
   } catch {
     return {
@@ -82,7 +177,7 @@ ipcMain.handle("get-history", async (_e, options = {}) => {
 
 ipcMain.handle("clear-history", async () => {
   try {
-    const res = await fetch(`http://127.0.0.1:${PORT}/history/clear`, {
+    const res = await fetch(`http://127.0.0.1:${settings.port}/history/clear`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
@@ -96,48 +191,106 @@ ipcMain.handle("clear-history", async () => {
 
 ipcMain.handle("get-local-ips", () => getLocalIPs());
 
-ipcMain.handle("get-download-path", () => downloadPath);
+ipcMain.handle("get-settings", () => ({ ...settings }));
 
-ipcMain.handle("get-port", () => PORT);
+ipcMain.handle("update-settings", async (_e, patch = {}) => {
+  const prev = { ...settings };
+  const next = { ...settings };
+  let needsRestart = false;
+
+  if (typeof patch.theme === "string" && ["system", "light", "dark"].includes(patch.theme)) {
+    next.theme = patch.theme;
+  }
+  if (typeof patch.autoOpenFolder === "boolean") next.autoOpenFolder = patch.autoOpenFolder;
+  if (typeof patch.launchAtStartup === "boolean") next.launchAtStartup = patch.launchAtStartup;
+  if (typeof patch.port === "number" || typeof patch.port === "string") {
+    const p = Math.floor(Number(patch.port));
+    if (Number.isFinite(p) && p >= MIN_PORT && p <= MAX_PORT && p !== prev.port) {
+      next.port = p;
+      needsRestart = true;
+    }
+  }
+  if (typeof patch.downloadPath === "string" && patch.downloadPath && patch.downloadPath !== prev.downloadPath) {
+    next.downloadPath = patch.downloadPath;
+    needsRestart = true;
+  }
+
+  settings = next;
+  saveSettings();
+
+  if (next.launchAtStartup !== prev.launchAtStartup) applyLaunchAtStartup();
+
+  if (needsRestart) {
+    try {
+      await startServer();
+      return { success: true, settings: { ...settings }, restarted: true };
+    } catch (err) {
+      // Rollback breaking changes
+      settings = prev;
+      saveSettings();
+      try {
+        await startServer();
+      } catch {
+        /* fatal — UI will see server-state error */
+      }
+      return { success: false, error: err.message, settings: { ...settings } };
+    }
+  }
+
+  return { success: true, settings: { ...settings }, restarted: false };
+});
 
 ipcMain.handle("choose-folder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openDirectory"],
-    defaultPath: downloadPath,
+    defaultPath: settings.downloadPath,
   });
   if (!result.canceled && result.filePaths[0]) {
-    downloadPath = result.filePaths[0];
-    // Restart server with new path
-    if (serverInstance) {
-      serverInstance.close(() => startServer());
+    const newPath = result.filePaths[0];
+    if (newPath !== settings.downloadPath) {
+      settings.downloadPath = newPath;
+      saveSettings();
+      try {
+        await startServer();
+      } catch {
+        /* ignore — surfaced via server-state */
+      }
     }
-    return downloadPath;
+    return settings.downloadPath;
   }
-  return downloadPath;
+  return settings.downloadPath;
 });
 
 ipcMain.handle("open-folder", async (_e, p) => {
-  const target = p || downloadPath;
+  const target = p || settings.downloadPath;
   if (fs.existsSync(target)) {
     await shell.openPath(target);
   }
 });
 
-// Forward SSE events from Express to renderer
-process.on("message", (msg) => {
-  if (msg.type === "file-received" && mainWindow) {
-    mainWindow.webContents.send("file-received", msg.data);
+ipcMain.handle("open-external", async (_e, url) => {
+  if (typeof url === "string" && /^https?:\/\//i.test(url)) {
+    await shell.openExternal(url);
   }
 });
 
-app.whenReady().then(() => {
+// ── App lifecycle ──────────────────────────────────────────────────────────
+
+app.whenReady().then(async () => {
   historyStatePath = path.join(app.getPath("userData"), "history-state.json");
-  startServer();
+  settingsPath = path.join(app.getPath("userData"), "settings.json");
+  loadSettings();
+  applyLaunchAtStartup();
+  try {
+    await startServer();
+  } catch {
+    /* surfaced via server-state event */
+  }
   createWindow();
 });
 
-app.on("window-all-closed", () => {
-  if (serverInstance) serverInstance.close();
+app.on("window-all-closed", async () => {
+  await stopServer();
   app.quit();
 });
 

@@ -99,6 +99,7 @@ function buildHistoryPage(offset, limit) {
 
 function createServer(downloadPath, options = {}) {
   historyStatePath = options.historyStatePath || null;
+  const onFileReceived = typeof options.onFileReceived === "function" ? options.onFileReceived : null;
   loadHistoryState();
 
   const app = express();
@@ -273,9 +274,12 @@ function createServer(downloadPath, options = {}) {
 
     broadcast("file-received", entry);
 
-    // Notify Electron main process if available
-    if (process.send) {
-      process.send({ type: "file-received", data: entry });
+    if (onFileReceived) {
+      try {
+        onFileReceived(entry);
+      } catch {
+        // never let listener errors break the upload response
+      }
     }
 
     res.json({

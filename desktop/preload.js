@@ -1,20 +1,28 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("api", {
+  // Queries
   getStatus: () => ipcRenderer.invoke("get-status"),
   getHistory: (options) => ipcRenderer.invoke("get-history", options),
-  clearHistory: () => ipcRenderer.invoke("clear-history"),
   getLocalIPs: () => ipcRenderer.invoke("get-local-ips"),
-  getDownloadPath: () => ipcRenderer.invoke("get-download-path"),
+  getSettings: () => ipcRenderer.invoke("get-settings"),
+
+  // Mutations
+  clearHistory: () => ipcRenderer.invoke("clear-history"),
   chooseFolder: () => ipcRenderer.invoke("choose-folder"),
   openFolder: (p) => ipcRenderer.invoke("open-folder", p),
-  getPort: () => ipcRenderer.invoke("get-port"),
+  openExternal: (url) => ipcRenderer.invoke("open-external", url),
+  updateSettings: (patch) => ipcRenderer.invoke("update-settings", patch),
 
-  // SSE-like events from main process
+  // Push events (from main → renderer)
   onFileReceived: (cb) => {
-    ipcRenderer.on("file-received", (_e, data) => cb(data));
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on("file-received", handler);
+    return () => ipcRenderer.removeListener("file-received", handler);
   },
-  onStatsUpdate: (cb) => {
-    ipcRenderer.on("stats-update", (_e, data) => cb(data));
+  onServerState: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on("server-state", handler);
+    return () => ipcRenderer.removeListener("server-state", handler);
   },
 });

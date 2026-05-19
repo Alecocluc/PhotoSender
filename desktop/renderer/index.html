@@ -1,699 +1,1323 @@
 <!DOCTYPE html>
-<html class="light" lang="en">
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src 'self' http://127.0.0.1:*; img-src 'self' data:;" />
-  <title>PhotoSender Desktop</title>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
-  <style>
-    :root {
-      --primary: #0040a1;
-      --primary-container: #0056d2;
-      --on-primary: #fff;
-      --surface: #f7f9fb;
-      --surface-dim: #d8dadc;
-      --surface-container-lowest: #fff;
-      --surface-container-low: #f2f4f6;
-      --surface-container: #eceef0;
-      --surface-container-high: #e6e8ea;
-      --surface-container-highest: #e0e3e5;
-      --on-surface: #191c1e;
-      --on-surface-variant: #424654;
-      --secondary: #4a5d8e;
-      --secondary-container: #b3c5fd;
-      --on-secondary-container: #3e5181;
-      --tertiary: #822800;
-      --outline-variant: #c3c6d6;
-      --error: #ba1a1a;
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: http://127.0.0.1:* http://localhost:*; connect-src http://127.0.0.1:* http://localhost:*; script-src 'self' 'unsafe-inline';" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>PhotoSender Desktop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
+<style>
+  /* ── Tokens (light = Stitch Precision Pilot) ───────────────────────── */
+  :root {
+    --bg: #f1f5f9;            /* slate-100, app background */
+    --surface: #ffffff;
+    --surface-2: #f8fafc;     /* slate-50, inner cards */
+    --surface-3: #f1f5f9;
+    --sidebar: #ffffff;
+    --sidebar-fg: #0f172a;
+    --sidebar-muted: #64748b;
+    --topbar: rgba(255, 255, 255, 0.78);
+    --topbar-border: rgba(15, 23, 42, 0.06);
+    --footer: rgba(255, 255, 255, 0.85);
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --text-soft: #475569;
+    --label: #94a3b8;
+    --primary: #0040a1;
+    --primary-2: #0056d2;
+    --primary-fg: #ffffff;
+    --primary-soft: #dbeafe;
+    --primary-soft-fg: #0040a1;
+    --primary-pulse: #0056d2;
+    --success: #16a34a;
+    --success-bg: #dcfce7;
+    --success-fg: #15803d;
+    --warning-bg: #fef3c7;
+    --warning-fg: #92400e;
+    --danger: #dc2626;
+    --danger-bg: #fee2e2;
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow: 0 4px 16px -6px rgba(15, 23, 42, 0.10);
+    --shadow-lg: 0 24px 48px -24px rgba(15, 23, 42, 0.22);
+    --radius-sm: 10px;
+    --radius: 16px;
+    --radius-lg: 24px;
+    --gradient: linear-gradient(135deg, #0040a1 0%, #0056d2 100%);
+  }
+  [data-theme="dark"] {
+    --bg: #020617;
+    --surface: #0f172a;
+    --surface-2: #1e293b;
+    --surface-3: #0f172a;
+    --sidebar: #0f172a;
+    --sidebar-fg: #f1f5f9;
+    --sidebar-muted: #94a3b8;
+    --topbar: rgba(15, 23, 42, 0.78);
+    --topbar-border: rgba(148, 163, 184, 0.08);
+    --footer: rgba(2, 6, 23, 0.85);
+    --border: #1e293b;
+    --border-strong: #334155;
+    --text: #f8fafc;
+    --text-muted: #94a3b8;
+    --text-soft: #cbd5e1;
+    --label: #64748b;
+    --primary: #3b82f6;
+    --primary-2: #60a5fa;
+    --primary-fg: #0b1220;
+    --primary-soft: rgba(59, 130, 246, 0.18);
+    --primary-soft-fg: #93c5fd;
+    --primary-pulse: #60a5fa;
+    --success: #34d399;
+    --success-bg: rgba(52, 211, 153, 0.14);
+    --success-fg: #6ee7b7;
+    --warning-bg: rgba(251, 191, 36, 0.18);
+    --warning-fg: #fcd34d;
+    --danger: #f87171;
+    --danger-bg: rgba(248, 113, 113, 0.18);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow: 0 4px 16px -6px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 24px 48px -24px rgba(0, 0, 0, 0.7);
+    --gradient: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    transition: background-color 0.2s ease, color 0.2s ease;
+  }
+  .icon { font-family: "Material Symbols Outlined"; font-size: 20px; line-height: 1; vertical-align: middle; user-select: none; }
+  .icon.lg { font-size: 24px; }
+  .icon.sm { font-size: 18px; }
+  .icon.xs { font-size: 16px; }
+  .icon.fill { font-variation-settings: "FILL" 1; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+  /* ── Layout shell ───────────────────────────────────────────────────── */
+  .app {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    grid-template-rows: 64px 1fr 44px;
+    grid-template-areas:
+      "sidebar topbar"
+      "sidebar main"
+      "sidebar footer";
+    height: 100vh;
+  }
+
+  /* ── Sidebar ────────────────────────────────────────────────────────── */
+  .sidebar {
+    grid-area: sidebar;
+    background: var(--sidebar);
+    color: var(--sidebar-fg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 20px 14px 16px;
+    gap: 4px;
+    overflow-y: auto;
+  }
+  .sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 8px 22px;
+  }
+  .brand-logo {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    background: var(--gradient);
+    display: grid; place-items: center;
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 6px 16px -8px rgba(0, 64, 161, 0.6);
+  }
+  .brand-text { display: flex; flex-direction: column; min-width: 0; }
+  .brand-name { font-weight: 800; font-size: 16px; letter-spacing: -0.01em; line-height: 1.1; }
+  .brand-sub { font-weight: 700; font-size: 9px; letter-spacing: 0.18em; color: var(--label); text-transform: uppercase; margin-top: 2px; }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    color: var(--sidebar-muted);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    user-select: none;
+    border: 0;
+    background: transparent;
+    width: 100%;
+    text-align: left;
+    position: relative;
+  }
+  .nav-item:hover { background: var(--surface-2); color: var(--sidebar-fg); }
+  .nav-item.active {
+    background: var(--primary-soft);
+    color: var(--primary-soft-fg);
+  }
+  .nav-item.active::before {
+    content: "";
+    position: absolute;
+    left: -14px; top: 8px; bottom: 8px;
+    width: 3px;
+    background: var(--primary);
+    border-radius: 0 3px 3px 0;
+  }
+  .nav-spacer { flex: 1; }
+
+  .sidebar-card {
+    margin-top: 16px;
+    padding: 12px;
+    border-radius: 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+  }
+  .sidebar-card .label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    color: var(--label);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .sidebar-card .label .pulse {
+    width: 6px; height: 6px; border-radius: 999px; background: var(--success);
+    box-shadow: 0 0 0 0 var(--success);
+    animation: pulse 2s ease-out infinite;
+  }
+  .sidebar-card .devices {
+    display: flex; gap: 6px; flex-wrap: wrap;
+  }
+  .sidebar-card .device {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-soft);
+    display: grid; place-items: center;
+  }
+  .sidebar-card .device.online { background: var(--primary-soft); color: var(--primary-soft-fg); border-color: transparent; }
+  .sidebar-card .meter {
+    height: 6px; background: var(--surface); border-radius: 999px; overflow: hidden; margin-top: 8px;
+  }
+  .sidebar-card .meter > span { display: block; height: 100%; background: var(--gradient); border-radius: 999px; }
+  .sidebar-card .meter-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+
+  /* ── Topbar ─────────────────────────────────────────────────────────── */
+  .topbar {
+    grid-area: topbar;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 28px;
+    background: var(--topbar);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-bottom: 1px solid var(--topbar-border);
+    position: relative;
+    z-index: 5;
+  }
+  .topbar h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+  }
+  .topbar-tag {
+    margin-left: 10px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--primary-soft);
+    color: var(--primary-soft-fg);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .topbar-tag .pulse { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+  .topbar-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .icon-btn {
+    width: 38px; height: 38px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-soft);
+    border-radius: 10px;
+    display: grid; place-items: center;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+  .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+  .status-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px 6px 10px;
+    border-radius: 999px;
+    background: var(--success-bg);
+    color: var(--success-fg);
+    font-size: 12px; font-weight: 700;
+  }
+  .status-chip .dot {
+    width: 7px; height: 7px; border-radius: 999px; background: currentColor;
+    box-shadow: 0 0 0 0 currentColor; animation: pulse 2s infinite;
+  }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 999px;
+    background: linear-gradient(135deg, #fbbf24, #f97316);
+    color: #fff; font-weight: 800; font-size: 13px;
+    display: grid; place-items: center;
+    margin-left: 4px;
+  }
+  .hamburger { display: none; }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 currentColor; opacity: 1; }
+    70% { box-shadow: 0 0 0 8px transparent; opacity: 0.6; }
+    100% { box-shadow: 0 0 0 0 transparent; opacity: 1; }
+  }
+
+  /* ── Main ───────────────────────────────────────────────────────────── */
+  .main {
+    grid-area: main;
+    overflow-y: auto;
+    padding: 24px 28px 32px;
+  }
+  .main-inner { max-width: 1280px; margin: 0 auto; }
+
+  /* ── Footer ─────────────────────────────────────────────────────────── */
+  .footer {
+    grid-area: footer;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 24px;
+    background: var(--footer);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid var(--topbar-border);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .footer .label-key { color: var(--label); text-transform: uppercase; letter-spacing: 0.1em; font-size: 10px; font-weight: 800; }
+  .footer .value { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .footer .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--primary); box-shadow: 0 0 0 0 var(--primary); animation: pulse 2s infinite; display: inline-block; }
+  .footer .dot.off { background: var(--danger); animation: none; }
+  .footer .sep { color: var(--border-strong); }
+  .footer .right { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+  .footer .pill {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--success-bg);
+    color: var(--success-fg);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* ── Cards ──────────────────────────────────────────────────────────── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card.primary {
+    background: var(--gradient);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: var(--shadow-lg);
+  }
+  .card.primary .stat-label, .card.primary .stat-foot { color: rgba(255,255,255,0.78); }
+
+  .label-row {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: var(--label);
+    text-transform: uppercase;
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .label-row .live {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--primary-soft);
+    color: var(--primary-soft-fg);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .label-row .live .pulse { width: 6px; height: 6px; border-radius: 999px; background: currentColor; animation: pulse 1.8s infinite; }
+
+  .stat-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: var(--label);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .stat-value { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+  .stat-value .unit { font-size: 14px; font-weight: 700; color: var(--text-muted); margin-left: 4px; }
+  .card.primary .stat-value .unit { color: rgba(255,255,255,0.78); }
+  .stat-foot { color: var(--text-muted); font-size: 12px; margin-top: 4px; font-weight: 500; }
+
+  /* ── Bento grid (Dashboard) ─────────────────────────────────────────── */
+  .bento {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    grid-auto-rows: minmax(220px, auto);
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+  .bento .activity-feed { grid-row: span 2; }
+  .bento .stats-row { grid-column: span 3; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+
+  /* System Status hero card */
+  .hero-status {
+    display: flex; flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-status .title {
+    font-size: 13px; color: var(--primary); font-weight: 700; margin-bottom: 4px;
+  }
+  .hero-status .title-row { display: flex; justify-content: space-between; align-items: flex-start; }
+  .hero-status .server-on {
+    font-size: 38px; font-weight: 900; letter-spacing: -0.025em;
+    line-height: 1.05; margin: 0 0 18px;
+  }
+  .hero-status .gateway-label {
+    font-size: 11px; font-weight: 800; letter-spacing: 0.16em; color: var(--label); text-transform: uppercase;
+    display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+  }
+  .hero-status .ip-row {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .hero-status .ip {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 24px; font-weight: 700; color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .hero-status .ip-hint {
+    font-size: 11px; color: var(--text-muted); margin-top: 6px;
+  }
+  .hero-status .status-pulse {
+    width: 10px; height: 10px; border-radius: 999px; background: var(--primary);
+    box-shadow: 0 0 0 0 var(--primary); animation: pulse 2s infinite;
+  }
+  .btn-copy {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--gradient);
+    color: #fff;
+    border: 0;
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: filter 0.15s ease, transform 0.05s ease;
+    box-shadow: 0 8px 18px -10px rgba(0, 64, 161, 0.7);
+  }
+  .btn-copy:hover { filter: brightness(1.08); }
+  .btn-copy:active { transform: translateY(1px); }
+  .btn-copy.copied { background: var(--success); color: #fff; }
+
+  /* Save Location card */
+  .save-card { background: var(--surface-2); border: 1px solid var(--border); }
+  .save-card .icon-tile {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    display: grid; place-items: center;
+    color: var(--primary);
+    margin-bottom: 14px;
+  }
+  .save-card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+  .save-card p { margin: 0 0 12px; color: var(--text-muted); font-size: 13px; }
+  .save-card .path-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-soft);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .save-card .path-row .path-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .save-card .path-edit { color: var(--primary); background: transparent; border: 0; cursor: pointer; padding: 4px; border-radius: 6px; }
+  .save-card .path-edit:hover { background: var(--primary-soft); }
+
+  /* Activity feed card */
+  .activity-feed { display: flex; flex-direction: column; }
+  .activity-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; max-height: 480px; margin: 0 -8px; padding: 0 8px; }
+  .activity-item {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    gap: 12px;
+    padding: 10px 8px;
+    border-radius: 12px;
+    align-items: center;
+  }
+  .activity-item:hover { background: var(--surface-2); }
+  .activity-thumb {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    display: grid; place-items: center;
+    color: var(--text-muted);
+    overflow: hidden;
+  }
+  .activity-thumb .icon { font-size: 22px; }
+  .activity-thumb.video { background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; border-color: transparent; }
+  .activity-item .name { font-weight: 700; font-size: 13px; }
+  .activity-item .meta { font-size: 11px; color: var(--text-muted); }
+  .activity-item .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-weight: 800; letter-spacing: 0.1em;
+    color: var(--success-fg);
+    text-transform: uppercase;
+  }
+  .activity-item .badge.transferring { color: var(--primary); }
+  .activity-progress { grid-column: 2 / -1; }
+  .activity-progress .bar {
+    height: 4px; background: var(--surface-3); border-radius: 999px; overflow: hidden; margin-top: 4px;
+  }
+  .activity-progress .bar > span { display: block; height: 100%; background: var(--gradient); border-radius: 999px; transition: width 0.3s ease; }
+  .activity-progress .pct { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+  /* ── List / Table (Activity / History) ──────────────────────────────── */
+  .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .toolbar h2 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+  .toolbar .count { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
+
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 240px; max-width: 100%;
+  }
+  .search input {
+    flex: 1; background: transparent; border: 0; outline: none;
+    color: var(--text); font-family: inherit; font-size: 13px;
+  }
+  .search input::placeholder { color: var(--text-muted); }
+
+  .table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    font-size: 13px;
+  }
+  .table th {
+    text-align: left;
+    padding: 12px 16px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: var(--label);
+    text-transform: uppercase;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  .table tbody tr:last-child td { border-bottom: 0; }
+  .table tbody tr:hover td { background: var(--surface-2); }
+  .table .file-cell { display: flex; align-items: center; gap: 12px; }
+  .table .file-cell .activity-thumb { width: 36px; height: 36px; }
+  .table .file-cell .name { font-weight: 700; }
+  .table .file-cell .sub { font-size: 11px; color: var(--text-muted); font-family: ui-monospace, monospace; }
+  .table .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+    background: var(--success-bg); color: var(--success-fg);
+  }
+  .table .id-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-muted); font-size: 12px; }
+
+  .empty {
+    padding: 56px 24px;
+    text-align: center;
+    color: var(--text-muted);
+    background: var(--surface);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius);
+  }
+  .empty .icon { font-size: 36px; margin-bottom: 8px; display: block; color: var(--text-muted); }
+  .empty strong { color: var(--text); display: block; margin-bottom: 4px; }
+
+  /* ── Settings ───────────────────────────────────────────────────────── */
+  .settings-grid { display: grid; gap: 18px; grid-template-columns: 1fr; max-width: 720px; }
+  .form-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .form-row:last-child { margin-bottom: 0; }
+  .form-row label { font-weight: 700; font-size: 12px; color: var(--text-soft); letter-spacing: 0.02em; }
+  .form-row .help { font-size: 11px; color: var(--text-muted); font-weight: 500; }
+  .input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+  }
+  .input:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+  .row-flex { display: flex; gap: 8px; align-items: center; }
+  .row-flex > .input { flex: 1; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.05s ease;
+  }
+  .btn:hover { background: var(--surface-2); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary { background: var(--gradient); color: #fff; border-color: transparent; }
+  .btn.primary:hover { filter: brightness(1.05); }
+  .btn.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, var(--border-strong)); }
+  .btn.danger:hover { background: var(--danger-bg); }
+  .switch { display: inline-flex; align-items: center; gap: 12px; cursor: pointer; user-select: none; }
+  .switch input { display: none; }
+  .switch .track {
+    width: 40px; height: 22px; border-radius: 999px; background: var(--border-strong);
+    position: relative; transition: background-color 0.2s ease;
+  }
+  .switch .track::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 18px; height: 18px; border-radius: 999px; background: #fff;
+    transition: transform 0.2s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .switch input:checked + .track { background: var(--primary); }
+  .switch input:checked + .track::after { transform: translateX(18px); }
+  .seg {
+    display: inline-flex;
+    padding: 4px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    gap: 2px;
+  }
+  .seg button {
+    background: transparent; border: 0;
+    color: var(--text-muted); font-family: inherit;
+    font-weight: 700; font-size: 12px;
+    padding: 6px 14px; border-radius: 8px; cursor: pointer;
+    letter-spacing: 0.04em;
+  }
+  .seg button.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+
+  .banner {
+    padding: 12px 16px; border-radius: 12px;
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 16px; font-weight: 600; font-size: 13px;
+  }
+  .banner.error { background: var(--danger-bg); color: var(--danger); }
+  .banner.info { background: var(--primary-soft); color: var(--primary-soft-fg); }
+
+  .ips { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .ip-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--surface-2); color: var(--text);
+    cursor: pointer; border: 1px solid var(--border);
+    transition: background-color 0.15s ease;
+  }
+  .ip-chip:hover { background: var(--primary-soft); color: var(--primary-soft-fg); }
+
+  .scrim {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(15, 23, 42, 0.5);
+    z-index: 20;
+  }
+
+  /* ── Responsive ─────────────────────────────────────────────────────── */
+  @media (max-width: 1100px) {
+    .bento { grid-template-columns: 1fr 1fr; }
+    .bento .activity-feed { grid-row: span 2; }
+    .bento .stats-row { grid-column: span 2; }
+  }
+  @media (max-width: 900px) {
+    .app {
+      grid-template-columns: 1fr;
+      grid-template-areas:
+        "topbar"
+        "main"
+        "footer";
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Manrope', sans-serif; background: var(--surface); color: var(--on-surface); display: flex; min-height: 100vh; }
-    .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
-    .material-symbols-outlined.filled { font-variation-settings: 'FILL' 1; }
-
-    /* Sidebar */
-    .sidebar { width: 256px; background: var(--surface-container-low); display: flex; flex-direction: column; padding: 24px 16px; position: fixed; top: 0; left: 0; bottom: 0; z-index: 50; box-shadow: 0px 4px 20px rgba(25,28,30,0.06); }
-    .sidebar-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 40px; padding: 0 8px; }
-    .brand-icon { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg, var(--primary), var(--primary-container)); display: flex; align-items: center; justify-content: center; color: #fff; }
-    .brand-title { font-size: 18px; font-weight: 800; letter-spacing: -0.03em; color: var(--primary); }
-    .brand-sub { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--on-surface-variant); }
-
-    .nav-list { flex: 1; display: flex; flex-direction: column; gap: 4px; }
-    .nav-item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; font-size: 14px; font-weight: 500; color: var(--on-surface-variant); cursor: pointer; transition: all 0.15s ease; text-decoration: none; letter-spacing: -0.01em; }
-    .nav-item:hover { color: var(--primary); background: rgba(0,64,161,0.06); }
-    .nav-item.active { color: var(--primary); font-weight: 700; background: rgba(0,64,161,0.08); border-right: 3px solid var(--primary); }
-
-    /* Main content */
-    .main { flex: 1; margin-left: 256px; display: flex; flex-direction: column; min-height: 100vh; }
-
-    /* Top bar */
-    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 0 32px; height: 60px; position: sticky; top: 0; z-index: 40; background: rgba(247,249,251,0.85); backdrop-filter: blur(12px); }
-    .topbar-title { font-size: 17px; font-weight: 700; letter-spacing: -0.03em; }
-    .topbar-actions { display: flex; align-items: center; gap: 16px; }
-    .status-badge { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--on-surface-variant); }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px rgba(0,64,161,0.4); }
-    .status-dot.off { background: var(--error); box-shadow: 0 0 8px rgba(186,26,26,0.3); }
-
-    /* Content area */
-    .content { padding: 32px; display: grid; grid-template-columns: 1fr 320px; gap: 24px; flex: 1; }
-    .left-col { display: flex; flex-direction: column; gap: 24px; }
-    .right-col { display: flex; flex-direction: column; gap: 24px; }
-
-    /* Cards */
-    .card { border-radius: 20px; box-shadow: 0px 4px 20px rgba(25,28,30,0.06); }
-    .card-low { background: var(--surface-container-low); }
-    .card-high { background: var(--surface-container-highest); }
-    .card-surface { background: var(--surface-container); }
-
-    /* Server Status */
-    .server-card { padding: 28px; position: relative; overflow: hidden; }
-    .server-card .glow { position: absolute; top: 16px; right: 24px; width: 12px; height: 12px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 12px rgba(0,64,161,0.5); }
-    .server-card .glow.off { background: var(--error); box-shadow: 0 0 12px rgba(186,26,26,0.4); }
-    .server-label { font-size: 13px; font-weight: 700; color: var(--primary); margin-bottom: 4px; letter-spacing: -0.01em; }
-    .server-title { font-size: 36px; font-weight: 800; letter-spacing: -0.04em; margin-bottom: 24px; }
-    .ip-section { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-    .ip-label { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--on-surface-variant); margin-bottom: 8px; }
-    .ip-address { font-size: 26px; font-family: 'Manrope', monospace; font-weight: 500; letter-spacing: -0.02em; }
-    .ip-hint { font-size: 10px; color: rgba(66,70,84,0.6); }
-    .btn-gradient { background: linear-gradient(135deg, var(--primary), var(--primary-container)); color: #fff; border: none; padding: 12px 24px; border-radius: 12px; font-family: 'Manrope'; font-size: 13px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: transform 0.1s; box-shadow: 0 4px 16px rgba(0,64,161,0.2); }
-    .btn-gradient:hover { transform: scale(1.03); }
-    .btn-gradient:active { transform: scale(0.97); }
-    .server-card .decor { position: absolute; bottom: -40px; right: -40px; width: 160px; height: 160px; border-radius: 50%; background: rgba(0,64,161,0.04); filter: blur(40px); }
-
-    /* Save Location */
-    .location-card { padding: 32px; display: flex; flex-direction: column; justify-content: space-between; }
-    .location-icon { width: 48px; height: 48px; border-radius: 16px; background: #fff; display: flex; align-items: center; justify-content: center; color: var(--primary); margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-    .location-title { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 8px; }
-    .location-desc { font-size: 13px; color: var(--on-surface-variant); line-height: 1.5; }
-    .location-path { margin-top: 20px; padding: 14px 0; border-bottom: 1px solid rgba(66,70,84,0.12); display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: border-color 0.15s; }
-    .location-path:hover { border-color: var(--primary); }
-    .location-path span { font-size: 13px; font-weight: 700; }
-    .location-path .material-symbols-outlined { color: var(--on-surface-variant); font-size: 20px; }
-
-    /* Stats row */
-    .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-    .stat-card { padding: 24px; border-radius: 20px; box-shadow: 0px 4px 20px rgba(25,28,30,0.06); }
-    .stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--on-surface-variant); margin-bottom: 14px; }
-    .stat-value { font-size: 28px; font-weight: 800; letter-spacing: -0.04em; }
-    .stat-unit { font-size: 13px; font-weight: 700; color: var(--on-surface-variant); margin-left: 6px; }
-    .stat-primary { background: var(--primary); color: #fff; }
-    .stat-primary .stat-label { color: rgba(255,255,255,0.7); }
-
-    /* Activity feed */
-    .activity-card { padding: 20px; display: flex; flex-direction: column; flex: 1; }
-    .activity-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-    .activity-title { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; }
-    .live-badge { padding: 3px 8px; border-radius: 6px; background: var(--secondary-container); color: var(--on-secondary-container); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
-    .activity-list { display: flex; flex-direction: column; gap: 14px; flex: 1; overflow-y: auto; }
-    .activity-item { display: flex; gap: 10px; cursor: pointer; }
-    .activity-thumb { width: 40px; height: 40px; border-radius: 10px; background: var(--surface-container-highest); display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; }
-    .activity-thumb .material-symbols-outlined { color: var(--primary); font-size: 20px; }
-    .activity-info { flex: 1; min-width: 0; }
-    .activity-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .activity-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; }
-    .activity-time { font-size: 12px; color: var(--on-surface-variant); }
-    .activity-status { font-size: 10px; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 4px; }
-    .activity-status .material-symbols-outlined { font-size: 14px; }
-
-    /* Progress item */
-    .progress-bar-bg { width: 100%; height: 4px; border-radius: 4px; background: var(--surface-container-highest); margin-top: 8px; }
-    .progress-bar-fill { height: 4px; border-radius: 4px; background: var(--primary); transition: width 0.3s ease; }
-    .progress-meta { display: flex; justify-content: space-between; margin-top: 4px; }
-    .progress-pct { font-size: 10px; font-weight: 700; color: var(--primary); }
-    .progress-speed { font-size: 10px; font-weight: 700; color: var(--on-surface-variant); }
-
-    .btn-secondary { width: 100%; margin-top: 24px; padding: 12px; border-radius: 12px; background: var(--surface-container-high); border: none; font-family: 'Manrope'; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--on-surface-variant); cursor: pointer; transition: background 0.15s; }
-    .btn-secondary:hover { background: var(--surface-container-highest); }
-
-    /* Empty state */
-    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; opacity: 0.5; text-align: center; gap: 8px; padding: 40px 0; }
-    .empty-state .material-symbols-outlined { font-size: 40px; }
-    .empty-state p { font-size: 13px; }
-
-    /* Responsive */
-    @media (max-width: 1100px) {
-      .content { grid-template-columns: 1fr; }
-      .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .sidebar {
+      position: fixed; left: 0; top: 0; bottom: 0;
+      width: 260px; z-index: 30;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+      box-shadow: var(--shadow-lg);
     }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--outline-variant); border-radius: 4px; }
-  </style>
+    .sidebar.open { transform: translateX(0); }
+    .hamburger { display: grid; }
+    .scrim.open { display: block; }
+    .main { padding: 18px; }
+    .topbar { padding: 0 18px; }
+    .footer { padding: 0 18px; font-size: 11px; }
+    .bento { grid-template-columns: 1fr; grid-auto-rows: auto; }
+    .bento .activity-feed { grid-row: auto; }
+    .bento .stats-row { grid-column: auto; grid-template-columns: repeat(3, 1fr); }
+    .hero-status .server-on { font-size: 30px; }
+  }
+  @media (max-width: 560px) {
+    .bento .stats-row { grid-template-columns: 1fr; }
+    .stat-value { font-size: 24px; }
+    .footer .hide-sm { display: none; }
+    .topbar h1 { font-size: 16px; }
+    .topbar-tag { display: none; }
+  }
+</style>
 </head>
 <body>
+  <div class="scrim" id="scrim"></div>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo"><span class="icon">photo_camera</span></div>
+        <div class="brand-text">
+          <div class="brand-name">PhotoSender</div>
+          <div class="brand-sub">Precision Pilot</div>
+        </div>
+      </div>
+      <button class="nav-item active" data-view="dashboard"><span class="icon sm">dashboard</span>Dashboard</button>
+      <button class="nav-item" data-view="activity"><span class="icon sm">graphic_eq</span>Activity Log</button>
+      <button class="nav-item" data-view="history"><span class="icon sm">history</span>History</button>
+      <button class="nav-item" data-view="settings"><span class="icon sm">settings</span>Settings</button>
+      <div class="nav-spacer"></div>
+      <div class="sidebar-card" id="sidebar-devices">
+        <div class="label"><span class="pulse"></span>Connected Devices</div>
+        <div class="devices" id="device-list">
+          <div class="device" title="No devices"><span class="icon xs">phonelink_off</span></div>
+        </div>
+      </div>
+    </aside>
 
-<!-- Sidebar -->
-<aside class="sidebar">
-  <div class="sidebar-brand">
-    <div class="brand-icon">
-      <span class="material-symbols-outlined filled">photo_camera</span>
-    </div>
-    <div>
-      <div class="brand-title">PhotoSender</div>
-      <div class="brand-sub">Precision Pilot</div>
-    </div>
+    <header class="topbar">
+      <button class="icon-btn hamburger" id="hamburger" aria-label="Open menu"><span class="icon">menu</span></button>
+      <h1 id="page-title">Dashboard Overview</h1>
+      <span class="topbar-tag" id="page-tag" hidden><span class="pulse"></span><span id="page-tag-text">LIVE</span></span>
+      <div class="topbar-actions">
+        <span class="status-chip" id="server-chip"><span class="dot"></span>Active</span>
+        <button class="icon-btn" id="open-folder-btn" title="Open download folder"><span class="icon">folder_open</span></button>
+        <button class="icon-btn" id="clear-history-btn" title="Clear history"><span class="icon">delete_outline</span></button>
+        <button class="icon-btn" id="theme-toggle" title="Toggle theme"><span class="icon" id="theme-icon">dark_mode</span></button>
+        <div class="avatar" title="Admin Terminal">A</div>
+      </div>
+    </header>
+
+    <main class="main">
+      <div class="main-inner" id="view-root"></div>
+    </main>
+
+    <footer class="footer">
+      <span class="dot" id="server-dot"></span>
+      <span class="label-key">Local IP:</span>
+      <span class="value" id="server-ip">—</span>
+      <span class="sep">•</span>
+      <span class="label-key">Status:</span>
+      <span class="value" id="server-status-text">CONNECTED</span>
+      <div class="right">
+        <span class="label-key hide-sm">Port</span>
+        <span class="value" id="server-port">—</span>
+        <span class="pill hide-sm" id="link-pill">LINK-STATE: NOMINAL</span>
+      </div>
+    </footer>
   </div>
-
-  <nav class="nav-list">
-    <a class="nav-item active" data-page="dashboard">
-      <span class="material-symbols-outlined">dashboard</span>
-      Dashboard
-    </a>
-    <a class="nav-item" data-page="activity">
-      <span class="material-symbols-outlined">analytics</span>
-      Activity Log
-    </a>
-    <a class="nav-item" data-page="history">
-      <span class="material-symbols-outlined">history</span>
-      History
-    </a>
-    <a class="nav-item" data-page="settings">
-      <span class="material-symbols-outlined">settings</span>
-      Settings
-    </a>
-  </nav>
-
-  <div style="margin-top: auto; padding: 0 8px;">
-    <div style="padding: 16px; border-radius: 14px; background: var(--surface-container);">
-      <p style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--on-surface-variant); margin-bottom: 8px;">Server Port</p>
-      <p id="sidebar-port" style="font-size: 22px; font-weight: 700; color: var(--on-surface);">3210</p>
-    </div>
-  </div>
-</aside>
-
-<!-- Main -->
-<div class="main">
-  <!-- Top Bar -->
-  <header class="topbar">
-    <div class="topbar-title" id="page-title">Dashboard Overview</div>
-    <div class="topbar-actions">
-      <div class="status-badge">
-        <div class="status-dot" id="topbar-dot"></div>
-        <span id="topbar-status">Active</span>
-      </div>
-    </div>
-  </header>
-
-  <!-- Dashboard Page -->
-  <div class="content" id="page-dashboard">
-    <div class="left-col">
-      <!-- Top bento: server + location -->
-      <div style="display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px;">
-        <!-- Server Status -->
-        <div class="card card-low server-card">
-          <div class="glow" id="server-glow"></div>
-          <div class="server-label">System Status</div>
-          <div class="server-title" id="server-title">Server is ON</div>
-          <div class="ip-section">
-            <div>
-              <div class="ip-label">
-                <span class="material-symbols-outlined" style="font-size: 18px;">router</span>
-                Local Gateway
-              </div>
-              <div class="ip-address" id="ip-display">—</div>
-              <div class="ip-hint">Enter this address on your mobile device</div>
-            </div>
-            <button class="btn-gradient" id="btn-copy-ip">
-              <span class="material-symbols-outlined" style="font-size: 16px;">content_copy</span>
-              Copy IP
-            </button>
-          </div>
-          <div class="decor"></div>
-        </div>
-
-        <!-- Save Location -->
-        <div class="card card-high location-card">
-          <div>
-            <div class="location-icon">
-              <span class="material-symbols-outlined">folder_open</span>
-            </div>
-            <div class="location-title">Save Location</div>
-            <div class="location-desc">Incoming photos will be routed to your desktop folder.</div>
-          </div>
-          <div class="location-path" id="btn-change-folder">
-            <span id="path-display">/Photos/PhotoSender</span>
-            <span class="material-symbols-outlined">edit</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Stats Row -->
-      <div class="stats-row">
-        <div class="stat-card card-surface">
-          <div class="stat-label">Transfer Speed</div>
-          <div><span class="stat-value" id="stat-speed">0</span><span class="stat-unit">MB/s</span></div>
-        </div>
-        <div class="stat-card card-surface" style="border-bottom: 2px solid rgba(130,40,0,0.15);">
-          <div class="stat-label">Total Received</div>
-          <div><span class="stat-value" id="stat-count">0</span><span class="stat-unit">files</span></div>
-        </div>
-        <div class="stat-card stat-primary">
-          <div class="stat-label">Uptime</div>
-          <div><span class="stat-value" id="stat-uptime">00:00:00</span></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Right: Activity Feed -->
-    <div class="right-col">
-      <div class="card card-low activity-card" style="flex: 1;">
-        <div class="activity-header">
-          <div class="activity-title">Activity Feed</div>
-          <div class="live-badge">Live</div>
-        </div>
-        <div class="activity-list" id="activity-list">
-          <div class="empty-state">
-            <span class="material-symbols-outlined">hourglass_empty</span>
-            <p>Waiting for transfers...</p>
-          </div>
-        </div>
-        <button class="btn-secondary" id="btn-open-folder">Open Downloads Folder</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Activity Log Page (hidden) -->
-  <div class="content" id="page-activity" style="display: none;">
-    <div style="grid-column: 1 / -1;">
-      <div class="card card-low" style="padding: 28px; border-radius: 20px;">
-        <h3 style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 20px;">Full Transfer Log</h3>
-        <div id="full-log" style="display: flex; flex-direction: column; gap: 12px; max-height: 600px; overflow-y: auto;">
-          <div class="empty-state">
-            <span class="material-symbols-outlined">history</span>
-            <p>No transfers recorded yet</p>
-          </div>
-        </div>
-        <div style="display: flex; justify-content: center; margin-top: 14px;">
-          <button class="btn-secondary" id="btn-load-more-log" style="width: auto; margin-top: 0; display: none;">Load More</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- History Page (hidden) -->
-  <div class="content" id="page-history" style="display: none;">
-    <div style="grid-column: 1 / -1; display: flex; flex-direction: column; gap: 20px;">
-      <div style="display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 14px;">
-        <div class="card card-surface" style="padding: 18px; border-radius: 16px;">
-          <div class="stat-label">Total Files</div>
-          <div class="stat-value" id="history-total-files">0</div>
-        </div>
-        <div class="card card-surface" style="padding: 18px; border-radius: 16px;">
-          <div class="stat-label">Last Sync Date</div>
-          <div style="font-size: 24px; font-weight: 800; letter-spacing: -0.03em;" id="history-last-sync">Never</div>
-        </div>
-        <div class="card stat-primary" style="padding: 18px; border-radius: 16px;">
-          <div class="stat-label">Total Transferred</div>
-          <div style="font-size: 24px; font-weight: 800; letter-spacing: -0.03em;" id="history-total-bytes">0 B</div>
-        </div>
-      </div>
-
-      <div class="card card-low" style="padding: 24px; border-radius: 20px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
-          <h3 style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em;">Recent Activity</h3>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <button class="btn-secondary" id="btn-load-more-history" style="width: auto; margin-top: 0; display: none;">Load More</button>
-            <button class="btn-secondary" id="btn-clear-history" style="width: auto; margin-top: 0; color: var(--error);">Clear History</button>
-          </div>
-        </div>
-        <div id="history-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 500px; overflow-y: auto;">
-          <div class="empty-state">
-            <span class="material-symbols-outlined">history</span>
-            <p>No history yet</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Settings Page (hidden) -->
-  <div class="content" id="page-settings" style="display: none;">
-    <div style="grid-column: 1 / -1; max-width: 600px;">
-      <div class="card card-low" style="padding: 32px; border-radius: 20px;">
-        <h3 style="font-size: 17px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 24px;">Settings</h3>
-
-        <div style="margin-bottom: 24px;">
-          <label style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--on-surface-variant); display: block; margin-bottom: 8px;">Download Destination</label>
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <span id="settings-path" style="font-size: 14px; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">—</span>
-            <button class="btn-gradient" id="btn-settings-folder" style="padding: 10px 20px; font-size: 12px;">
-              <span class="material-symbols-outlined" style="font-size: 16px;">folder_open</span> Change
-            </button>
-          </div>
-        </div>
-
-        <div style="margin-bottom: 24px;">
-          <label style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--on-surface-variant); display: block; margin-bottom: 8px;">Server Port</label>
-          <span style="font-size: 14px; font-weight: 600;" id="settings-port">3210</span>
-        </div>
-
-        <div style="margin-bottom: 24px;">
-          <label style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--on-surface-variant); display: block; margin-bottom: 8px;">Network Addresses</label>
-          <div id="settings-ips" style="font-size: 14px; font-weight: 600;">—</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
 
 <script>
-  // Navigation
-  const pages = {
-    dashboard: "Dashboard Overview",
-    activity: "Activity Log",
-    history: "History",
-    settings: "Settings",
+  // ── State ─────────────────────────────────────────────────────────────
+  const state = {
+    view: "dashboard",
+    settings: null,
+    status: null,
+    history: { items: [], totalCount: 0 },
+    ips: [],
+    server: { running: true, port: 3210, error: null },
+    startedAt: Date.now(),
   };
-  document.querySelectorAll(".nav-item").forEach((item) => {
-    item.addEventListener("click", () => {
-      const page = item.dataset.page;
-      document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
-      item.classList.add("active");
-      Object.keys(pages).forEach((p) => {
-        const el = document.getElementById("page-" + p);
-        if (el) el.style.display = p === page ? "" : "none";
-      });
-      document.getElementById("page-title").textContent = pages[page] || "";
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+
+  // ── Helpers ───────────────────────────────────────────────────────────
+  const $ = (sel) => document.querySelector(sel);
+  const root = $("#view-root");
+  const pageTitle = $("#page-title");
+  const pageTag = $("#page-tag");
+  const pageTagText = $("#page-tag-text");
+
+  function fmtBytes(bytes) {
+    if (!bytes || bytes <= 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let i = 0; let n = bytes;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+  }
+  function fmtSpeed(bps) {
+    if (!bps || bps <= 0) return { v: "0", u: "B/s" };
+    const units = ["B/s", "KB/s", "MB/s", "GB/s"];
+    let i = 0; let n = bps;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return { v: n.toFixed(n >= 100 ? 0 : 1), u: units[i] };
+  }
+  function fmtTime(ts) {
+    if (!ts) return "—";
+    const diff = (Date.now() - ts) / 1000;
+    if (diff < 60) return "just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)} min${Math.floor(diff/60)===1?"":"s"} ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} hour${Math.floor(diff/3600)===1?"":"s"} ago`;
+    return new Date(ts).toLocaleDateString();
+  }
+  function fmtFullTime(ts) { return ts ? new Date(ts).toLocaleString() : ""; }
+  function fmtUptime(ms) {
+    const t = Math.max(0, Math.floor(ms / 1000));
+    const h = String(Math.floor(t / 3600)).padStart(2, "0");
+    const m = String(Math.floor((t % 3600) / 60)).padStart(2, "0");
+    const s = String(t % 60).padStart(2, "0");
+    return `${h}:${m}:${s}`;
+  }
+  function escHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  function entryName(e) { return e?.originalName || e?.fileName || "Untitled"; }
+  function entryTime(e) { return e?.timestamp || e?.time || 0; }
+  function isVideo(name) { return /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(name || ""); }
+  function fileIcon(name) {
+    if (isVideo(name)) return "videocam";
+    if (/\.(heic|heif|jpe?g|png|gif|webp|tif?f|raw|nef|cr2|arw|dng)$/i.test(name || "")) return "image";
+    if (/\.(wav|mp3|m4a|flac|aac|ogg)$/i.test(name || "")) return "graphic_eq";
+    return "draft";
+  }
+  function primaryIP() {
+    if (!state.ips || state.ips.length === 0) return "—";
+    // Prefer 192.168.* or 10.* over others
+    const sorted = [...state.ips].sort((a, b) => {
+      const score = (ip) => /^192\.168\./.test(ip) ? 0 : /^10\./.test(ip) ? 1 : /^172\./.test(ip) ? 2 : 3;
+      return score(a) - score(b);
     });
+    return sorted[0];
+  }
+
+  // ── Theme ─────────────────────────────────────────────────────────────
+  function resolveTheme(pref) {
+    if (pref === "dark" || pref === "light") return pref;
+    return mq.matches ? "dark" : "light";
+  }
+  function applyTheme() {
+    const pref = state.settings?.theme || "system";
+    const resolved = resolveTheme(pref);
+    document.documentElement.setAttribute("data-theme", resolved);
+    $("#theme-icon").textContent = resolved === "dark" ? "light_mode" : "dark_mode";
+  }
+  mq.addEventListener("change", () => {
+    if ((state.settings?.theme || "system") === "system") applyTheme();
   });
 
-  // State
-  const HISTORY_PAGE_SIZE = 100;
-  let recentItems = [];
-  let historyItems = [];
-  let historyStats = {
-    totalReceived: 0,
-    totalBytes: 0,
-    lastTransferAt: 0,
-  };
-  let historyOffset = 0;
-  let historyTotalCount = 0;
-  let historyHasMore = false;
-  let historyLoading = false;
-  let lastKnownHistoryCount = -1;
-
-  // Initialize
-  async function init() {
-    const ips = await window.api.getLocalIPs();
-    const ip = ips[0] || "127.0.0.1";
-    document.getElementById("ip-display").textContent = ip;
-
-    const dlPath = await window.api.getDownloadPath();
-    document.getElementById("path-display").textContent = shortenPath(dlPath);
-    document.getElementById("settings-path").textContent = dlPath;
-
-    const port = await window.api.getPort();
-    document.getElementById("sidebar-port").textContent = port;
-    document.getElementById("settings-port").textContent = port;
-
-    document.getElementById("settings-ips").textContent = ips.join(", ") || "No network";
-
-    // Copy IP
-    document.getElementById("btn-copy-ip").addEventListener("click", () => {
-      const port = document.getElementById("sidebar-port").textContent;
-      navigator.clipboard.writeText(ip);
-      const btn = document.getElementById("btn-copy-ip");
-      btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px">check</span> Copied!';
-      setTimeout(() => {
-        btn.innerHTML = '<span class="material-symbols-outlined" style="font-size:16px">content_copy</span> Copy IP';
-      }, 1500);
-    });
-
-    // Open folder
-    document.getElementById("btn-open-folder").addEventListener("click", () => {
-      window.api.openFolder();
-    });
-
-    // Change folder
-    document.getElementById("btn-change-folder").addEventListener("click", changeFolder);
-    document.getElementById("btn-settings-folder").addEventListener("click", changeFolder);
-
-    // Listen for new files
-    window.api.onFileReceived((data) => {
-      recentItems.unshift(data);
-      if (recentItems.length > 100) recentItems.pop();
-      historyItems.unshift(data);
-      historyOffset += 1;
-      historyTotalCount += 1;
-      historyHasMore = historyOffset < historyTotalCount;
-      historyStats.totalReceived += 1;
-      historyStats.totalBytes += Number(data.size || 0);
-      historyStats.lastTransferAt = Date.now();
-      renderActivity();
-      renderFullLog();
-      renderHistory();
-    });
-
-    document.getElementById("btn-load-more-history").addEventListener("click", () => {
-      loadMoreHistory();
-    });
-
-    document.getElementById("btn-load-more-log").addEventListener("click", () => {
-      loadMoreHistory();
-    });
-
-    document.getElementById("btn-clear-history").addEventListener("click", async () => {
-      const result = await window.api.clearHistory();
-      if (!result || result.success !== true) {
-        await refreshHistory({ reset: true });
-        return;
-      }
-
-      recentItems = [];
-      historyItems = [];
-      historyStats = { totalReceived: 0, totalBytes: 0, lastTransferAt: 0 };
-      historyOffset = 0;
-      historyTotalCount = 0;
-      historyHasMore = false;
-      lastKnownHistoryCount = 0;
-      renderActivity();
-      renderFullLog();
-      renderHistory();
-    });
-
-    // Poll status
-    await refreshHistory({ reset: true });
-    renderHistory();
-    pollStatus();
-    setInterval(pollStatus, 2000);
+  // ── Data ──────────────────────────────────────────────────────────────
+  async function refreshStatus() {
+    try { state.status = await window.api.getStatus(); } catch { /* ignore */ }
+  }
+  async function refreshHistory() {
+    try { state.history = await window.api.getHistory({ limit: 100, offset: 0 }); } catch { /* ignore */ }
+  }
+  async function refreshIPs() {
+    try { state.ips = await window.api.getLocalIPs(); } catch { state.ips = []; }
+    renderFooter();
+  }
+  async function refreshSettings() {
+    try { state.settings = await window.api.getSettings(); } catch { /* ignore */ }
+    applyTheme();
+    renderFooter();
   }
 
-  async function refreshHistory({ reset = false } = {}) {
-    if (historyLoading) return;
-    historyLoading = true;
-    updateHistoryLoadButtons();
-
-    const requestOffset = reset ? 0 : historyOffset;
-    try {
-      const h = await window.api.getHistory({ limit: HISTORY_PAGE_SIZE, offset: requestOffset });
-      const items = Array.isArray(h.items) ? h.items : [];
-
-      if (reset) {
-        historyItems = items;
-      } else {
-        historyItems = historyItems.concat(items);
-      }
-
-      historyOffset = reset ? items.length : historyOffset + items.length;
-      historyTotalCount = Number(h.historyCount || h.totalCount || historyItems.length);
-      historyHasMore = Boolean(h.hasMore) || historyOffset < historyTotalCount;
-      lastKnownHistoryCount = historyTotalCount;
-
-      historyStats = {
-        totalReceived: Number(h.totalReceived || 0),
-        totalBytes: Number(h.totalBytes || 0),
-        lastTransferAt: Number(h.lastTransferAt || 0),
-      };
-      renderFullLog();
-      renderHistory();
-    } catch {
-      // Ignore history refresh failures; status polling will still update core stats.
-    } finally {
-      historyLoading = false;
-      updateHistoryLoadButtons();
+  // ── Topbar / Footer ──────────────────────────────────────────────────
+  function setPageHeader(title, tag) {
+    pageTitle.textContent = title;
+    if (tag) { pageTagText.textContent = tag; pageTag.hidden = false; }
+    else { pageTag.hidden = true; }
+  }
+  function renderFooter() {
+    const port = state.server.port || state.settings?.port || 3210;
+    $("#server-port").textContent = port;
+    $("#server-ip").textContent = primaryIP();
+    const dot = $("#server-dot");
+    const statusText = $("#server-status-text");
+    const linkPill = $("#link-pill");
+    const chip = $("#server-chip");
+    if (state.server.running) {
+      dot.classList.remove("off");
+      statusText.textContent = "CONNECTED";
+      linkPill.textContent = "LINK-STATE: NOMINAL";
+      linkPill.style.background = "var(--success-bg)";
+      linkPill.style.color = "var(--success-fg)";
+      chip.style.background = "var(--success-bg)";
+      chip.style.color = "var(--success-fg)";
+      chip.firstChild.nextSibling ? null : null;
+      chip.innerHTML = '<span class="dot"></span>Active';
+    } else {
+      dot.classList.add("off");
+      statusText.textContent = "OFFLINE";
+      linkPill.textContent = state.server.error ? "LINK-STATE: ERROR" : "LINK-STATE: DOWN";
+      linkPill.style.background = "var(--danger-bg)";
+      linkPill.style.color = "var(--danger)";
+      chip.style.background = "var(--danger-bg)";
+      chip.style.color = "var(--danger)";
+      chip.innerHTML = '<span class="dot"></span>Offline';
     }
   }
-
-  async function loadMoreHistory() {
-    if (!historyHasMore || historyLoading) return;
-    await refreshHistory({ reset: false });
-  }
-
-  function updateHistoryLoadButtons() {
-    const btnHistory = document.getElementById("btn-load-more-history");
-    const btnLog = document.getElementById("btn-load-more-log");
-    const show = historyLoading || historyHasMore;
-    const label = historyLoading ? "Loading..." : "Load More";
-
-    [btnHistory, btnLog].forEach((btn) => {
-      if (!btn) return;
-      btn.style.display = show ? "inline-flex" : "none";
-      btn.disabled = historyLoading || !historyHasMore;
-      btn.textContent = label;
-    });
-  }
-
-  async function changeFolder() {
-    const newPath = await window.api.chooseFolder();
-    document.getElementById("path-display").textContent = shortenPath(newPath);
-    document.getElementById("settings-path").textContent = newPath;
-  }
-
-  async function pollStatus() {
-    try {
-      const s = await window.api.getStatus();
-      document.getElementById("stat-count").textContent = s.totalReceived || 0;
-
-      const speed = Number(s.currentSpeedBytesPerSec || 0) > 0
-        ? Number(s.currentSpeedBytesPerSec || 0)
-        : Number(s.averageSpeedBytesPerSec || 0);
-      document.getElementById("stat-speed").textContent = (speed / 1048576).toFixed(1);
-
-      const uptimeMs = s.uptimeMs || 0;
-      const h = String(Math.floor(uptimeMs / 3600000)).padStart(2, "0");
-      const m = String(Math.floor((uptimeMs % 3600000) / 60000)).padStart(2, "0");
-      const sec = String(Math.floor((uptimeMs % 60000) / 1000)).padStart(2, "0");
-      document.getElementById("stat-uptime").textContent = `${h}:${m}:${sec}`;
-
-      recentItems = Array.isArray(s.recentActivity) ? s.recentActivity : [];
-      historyStats.totalReceived = Number(s.totalReceived || 0);
-      historyStats.totalBytes = Number(s.totalBytes || 0);
-      historyStats.lastTransferAt = Number(s.lastTransferAt || historyStats.lastTransferAt || 0);
-
-      const historyCount = Number(s.historyCount || 0);
-      if (historyCount !== lastKnownHistoryCount) {
-        await refreshHistory({ reset: true });
-      }
-
-      renderActivity();
-      renderHistory();
-    } catch (e) {
-      /* ignore */
+  function renderDevices() {
+    const items = state.history.items || [];
+    const seen = new Set();
+    for (const it of items.slice(0, 30)) {
+      if (it.deviceName) seen.add(it.deviceName);
+      else if (it.bucketName) seen.add(it.bucketName);
     }
-  }
-
-  function renderActivity() {
-    const list = document.getElementById("activity-list");
-    if (recentItems.length === 0) {
-      list.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">hourglass_empty</span><p>Waiting for transfers...</p></div>';
+    const list = $("#device-list");
+    if (!list) return;
+    if (seen.size === 0) {
+      list.innerHTML = `<div class="device" title="No devices yet"><span class="icon xs">phonelink_off</span></div>`;
       return;
     }
-    list.innerHTML = recentItems
-      .slice(0, 20)
-      .map((item) => {
-        const ago = timeAgo(item.time);
-        return `
-        <div class="activity-item">
-          <div class="activity-thumb">
-            <span class="material-symbols-outlined filled" style="color: var(--primary)">check_circle</span>
+    const ICONS = ["smartphone", "tablet_android", "laptop_mac", "computer", "watch"];
+    list.innerHTML = [...seen].slice(0, 6).map((name, i) =>
+      `<div class="device online" title="${escHtml(name)}"><span class="icon xs">${ICONS[i % ICONS.length]}</span></div>`
+    ).join("");
+  }
+
+  // ── Dashboard ─────────────────────────────────────────────────────────
+  function renderDashboard() {
+    setPageHeader("Dashboard Overview", null);
+    const s = state.status || { totalReceived: 0, totalBytes: 0, recentActivity: [], uptimeMs: 0, currentSpeedBytesPerSec: 0 };
+    const recent = (s.recentActivity || []).slice(0, 8);
+    const ip = primaryIP();
+    const port = state.server.port || state.settings?.port || 3210;
+    const speed = fmtSpeed(s.currentSpeedBytesPerSec);
+    const dlPath = state.settings?.downloadPath || "";
+
+    root.innerHTML = `
+      <div class="bento">
+        <!-- System Status hero -->
+        <section class="card hero-status">
+          <div>
+            <div class="title-row">
+              <span class="title">System Status</span>
+              <span class="status-pulse"></span>
+            </div>
+            <h2 class="server-on">Server is ${state.server.running ? "ON" : "OFF"}</h2>
+            <div class="gateway-label"><span class="icon xs">router</span>Local Gateway</div>
+            <div class="ip-row">
+              <div class="ip">${escHtml(ip)}${ip !== "—" ? `<span style="color:var(--text-muted);font-size:18px;">:${port}</span>` : ""}</div>
+              <button class="btn-copy" id="copy-ip-btn"><span class="icon xs">content_copy</span><span>Copy IP</span></button>
+            </div>
+            <div class="ip-hint">Enter this address on your mobile device</div>
           </div>
-          <div class="activity-info">
-            <div class="activity-name">${escapeHtml(item.fileName)}</div>
-            <div class="activity-meta">
-              <span class="activity-time">${ago}</span>
-              <span class="activity-status">
-                <span class="material-symbols-outlined filled" style="font-size:14px">check_circle</span>
-                SAVED
-              </span>
+        </section>
+
+        <!-- Save Location -->
+        <section class="card save-card">
+          <div class="icon-tile"><span class="icon">folder_open</span></div>
+          <h3>Save Location</h3>
+          <p>Incoming photos will be routed to your desktop folder.</p>
+          <div class="path-row">
+            <span class="path-text" title="${escHtml(dlPath)}">${escHtml(dlPath || "Not configured")}</span>
+            <button class="path-edit" id="edit-path-btn" title="Change folder"><span class="icon sm">edit</span></button>
+          </div>
+        </section>
+
+        <!-- Activity Feed -->
+        <section class="card activity-feed">
+          <div class="label-row">
+            <span>Activity Feed</span>
+            <span class="live"><span class="pulse"></span>Live</span>
+          </div>
+          <div class="activity-list" id="activity-list">
+            ${recent.length === 0 ? `
+              <div style="color:var(--text-muted);font-size:13px;padding:20px 8px;text-align:center;">No transfers yet.</div>
+            ` : recent.map(activityItem).join("")}
+          </div>
+        </section>
+
+        <!-- Stats row -->
+        <div class="stats-row">
+          <div class="card">
+            <div class="stat-label">Transfer Speed</div>
+            <div class="stat-value">${speed.v}<span class="unit">${speed.u}</span></div>
+          </div>
+          <div class="card">
+            <div class="stat-label">Total Received</div>
+            <div class="stat-value">${(s.totalReceived || 0).toLocaleString()}<span class="unit">files</span></div>
+          </div>
+          <div class="card primary">
+            <div class="stat-label">Uptime</div>
+            <div class="stat-value mono" id="uptime-display">${fmtUptime(s.uptimeMs)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    $("#copy-ip-btn")?.addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      const text = `http://${ip}:${port}`;
+      try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+      btn.classList.add("copied");
+      btn.querySelector("span:last-child").textContent = "Copied!";
+      setTimeout(() => {
+        btn.classList.remove("copied");
+        btn.querySelector("span:last-child").textContent = "Copy IP";
+      }, 1400);
+    });
+    $("#edit-path-btn")?.addEventListener("click", async () => {
+      await window.api.chooseFolder();
+      await refreshSettings();
+      renderDashboard();
+    });
+  }
+
+  function activityItem(entry) {
+    const name = entryName(entry);
+    const icon = fileIcon(name);
+    const videoCls = isVideo(name) ? " video" : "";
+    const ts = entryTime(entry);
+    return `
+      <div class="activity-item" title="${escHtml(fmtFullTime(ts))}">
+        <div class="activity-thumb${videoCls}"><span class="icon">${icon}</span></div>
+        <div style="min-width:0;">
+          <div class="name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</div>
+          <div class="meta">${escHtml(fmtTime(ts))}${entry.size ? ` • ${escHtml(fmtBytes(entry.size))}` : ""}</div>
+        </div>
+        <div class="badge"><span class="icon xs">check_circle</span>Saved</div>
+      </div>
+    `;
+  }
+
+  // ── Activity Log view (similar to dashboard activity but full) ───────
+  function renderActivityLog() {
+    setPageHeader("Activity Log", "Live Sync");
+    const items = state.history.items || [];
+    root.innerHTML = `
+      <div class="bento" style="grid-template-columns: 1fr; grid-auto-rows: auto;">
+        <section class="card activity-feed" style="grid-column: 1 / -1;">
+          <div class="label-row">
+            <span>Recent Transfers</span>
+            <span class="live"><span class="pulse"></span>Live</span>
+          </div>
+          <div class="activity-list" style="max-height: none;">
+            ${items.length === 0 ? `
+              <div class="empty"><span class="icon">inbox</span><strong>No transfers yet</strong>When your phone sends files they will appear here.</div>
+            ` : items.map(activityItem).join("")}
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  // ── Session History (table) ──────────────────────────────────────────
+  function renderHistory() {
+    setPageHeader("History", null);
+    const items = state.history.items || [];
+    const total = state.history.totalCount || items.length;
+    root.innerHTML = `
+      <div class="toolbar">
+        <div>
+          <h2>Session History</h2>
+          <div class="count">${total.toLocaleString()} total transfer${total === 1 ? "" : "s"}</div>
+        </div>
+        <div class="row-flex">
+          <div class="search">
+            <span class="icon sm" style="color:var(--text-muted);">search</span>
+            <input id="history-search" type="text" placeholder="Filter logs..." />
+          </div>
+          <button class="btn danger" id="clear-history-table"><span class="icon sm">delete</span>Clear</button>
+        </div>
+      </div>
+      ${items.length === 0 ? `
+        <div class="empty"><span class="icon">history</span><strong>No history</strong>Past transfers will appear here.</div>
+      ` : `
+        <div style="border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-sm);">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Entry ID</th>
+                <th>Filename</th>
+                <th>Size</th>
+                <th>Timestamp</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              ${items.map(historyRow).join("")}
+            </tbody>
+          </table>
+        </div>
+      `}
+    `;
+    $("#clear-history-table")?.addEventListener("click", clearHistoryConfirm);
+    $("#history-search")?.addEventListener("input", (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      const filtered = !q ? items : items.filter((it) =>
+        (entryName(it) + " " + (it.bucketName || "") + " " + (it.deviceName || "")).toLowerCase().includes(q)
+      );
+      const tbody = $("#history-tbody");
+      if (tbody) tbody.innerHTML = filtered.map(historyRow).join("") || `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:32px;">No matches.</td></tr>`;
+    });
+  }
+
+  function historyRow(entry, idx) {
+    const name = entryName(entry);
+    const ts = entryTime(entry);
+    const id = entry.id || `PS-${String(idx + 1).padStart(4, "0")}-X`;
+    const icon = fileIcon(name);
+    const videoCls = isVideo(name) ? " video" : "";
+    return `
+      <tr>
+        <td><span class="id-mono">${escHtml(id)}</span></td>
+        <td>
+          <div class="file-cell">
+            <div class="activity-thumb${videoCls}"><span class="icon sm">${icon}</span></div>
+            <div style="min-width:0;">
+              <div class="name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px;">${escHtml(name)}</div>
+              <div class="sub">${escHtml(entry.bucketName || "")}</div>
             </div>
           </div>
-        </div>`;
-      })
-      .join("");
+        </td>
+        <td>${escHtml(fmtBytes(entry.size))}</td>
+        <td><span class="mono" style="font-size:12px;color:var(--text-soft);">${escHtml(fmtFullTime(ts))}</span></td>
+        <td><span class="badge"><span class="icon xs">check_circle</span>Completed</span></td>
+      </tr>
+    `;
   }
 
-  function renderFullLog() {
-    const el = document.getElementById("full-log");
-    if (historyItems.length === 0) {
-      el.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">history</span><p>No transfers recorded yet</p></div>';
-      return;
-    }
-    el.innerHTML = historyItems
-      .map((item) => {
-        const t = new Date(item.time);
-        const ts = t.toLocaleString();
-        return `
-        <div style="display:flex; align-items:center; gap:14px; padding:10px 0;">
-          <span class="material-symbols-outlined filled" style="color:var(--primary); font-size:20px">check_circle</span>
-          <div style="flex:1; min-width:0;">
-            <div style="font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(item.fileName)}</div>
-            <div style="font-size:11px; color:var(--on-surface-variant);">${escapeHtml(item.bucketName)} &bull; ${formatBytes(item.size)}</div>
+  async function clearHistoryConfirm() {
+    if (!confirm("Clear all history? Files on disk are not affected.")) return;
+    await window.api.clearHistory();
+    await refreshHistory();
+    await refreshStatus();
+    if (state.view === "history") renderHistory();
+    else if (state.view === "activity") renderActivityLog();
+    else renderDashboard();
+  }
+
+  // ── Settings ──────────────────────────────────────────────────────────
+  function renderSettings() {
+    setPageHeader("Settings", null);
+    const s = state.settings || {};
+    root.innerHTML = `
+      ${state.server.error ? `<div class="banner error"><span class="icon">error</span>Server failed to start: ${escHtml(state.server.error)}</div>` : ""}
+      <div class="settings-grid">
+        <div class="card">
+          <div class="label-row"><span>Appearance</span></div>
+          <div class="form-row">
+            <label>Theme</label>
+            <div class="seg" role="tablist">
+              <button data-theme="system" class="${(s.theme || 'system') === 'system' ? 'active' : ''}">System</button>
+              <button data-theme="light" class="${s.theme === 'light' ? 'active' : ''}">Light</button>
+              <button data-theme="dark" class="${s.theme === 'dark' ? 'active' : ''}">Dark</button>
+            </div>
           </div>
-          <div style="font-size:11px; color:var(--on-surface-variant); white-space:nowrap;">${ts}</div>
-        </div>`;
-      })
-      .join("");
-  }
+        </div>
 
-  function renderHistory() {
-    const totalFiles = Number(historyStats.totalReceived || 0);
-    const totalBytes = Number(historyStats.totalBytes || 0);
-    const lastSync = historyStats.lastTransferAt ? new Date(historyStats.lastTransferAt) : null;
-
-    document.getElementById("history-total-files").textContent = String(totalFiles);
-    document.getElementById("history-total-bytes").textContent = formatBytes(totalBytes);
-    document.getElementById("history-last-sync").textContent = lastSync
-      ? lastSync.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
-      : "Never";
-
-    const list = document.getElementById("history-list");
-    if (historyItems.length === 0) {
-      list.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined">history</span><p>No history yet</p></div>';
-      updateHistoryLoadButtons();
-      return;
-    }
-
-    list.innerHTML = historyItems
-      .map((item) => {
-        const t = new Date(item.time);
-        return `
-        <div style="display:flex; align-items:center; gap:12px; padding:10px 0;">
-          <span class="material-symbols-outlined filled" style="color:var(--primary); font-size:18px;">check_circle</span>
-          <div style="flex:1; min-width:0;">
-            <div style="font-size:13px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${escapeHtml(item.fileName)}</div>
-            <div style="font-size:11px; color:var(--on-surface-variant);">${escapeHtml(item.bucketName)} &bull; ${formatBytes(item.size)}</div>
+        <div class="card">
+          <div class="label-row"><span>Server</span></div>
+          <div class="form-row">
+            <label>Download folder</label>
+            <div class="row-flex">
+              <input class="input" id="dl-path" value="${escHtml(s.downloadPath || '')}" readonly />
+              <button class="btn" id="choose-folder"><span class="icon sm">folder_open</span>Browse…</button>
+            </div>
           </div>
-          <div style="font-size:11px; color:var(--on-surface-variant); white-space:nowrap;">${t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-        </div>`;
-      })
-      .join("");
+          <div class="form-row">
+            <label>Port <span class="help">(1024–65535, restarts server on change)</span></label>
+            <div class="row-flex">
+              <input class="input" id="port-input" type="number" min="1024" max="65535" value="${escHtml(s.port || 3210)}" style="max-width:180px;" />
+              <button class="btn primary" id="apply-port">Apply</button>
+            </div>
+          </div>
+          <div class="form-row" style="margin-bottom:0;">
+            <label>Available addresses</label>
+            <div class="ips" id="settings-ips"></div>
+          </div>
+        </div>
 
-    updateHistoryLoadButtons();
+        <div class="card">
+          <div class="label-row"><span>Behavior</span></div>
+          <label class="switch" style="display:flex;justify-content:space-between;padding:8px 0;">
+            <span style="font-weight:600;">Auto-open folder on transfer</span>
+            <input type="checkbox" id="opt-auto-open" ${s.autoOpenFolder ? "checked" : ""} /><span class="track"></span>
+          </label>
+          <label class="switch" style="display:flex;justify-content:space-between;padding:8px 0;">
+            <span style="font-weight:600;">Launch at startup</span>
+            <input type="checkbox" id="opt-launch" ${s.launchAtStartup ? "checked" : ""} /><span class="track"></span>
+          </label>
+        </div>
+      </div>
+    `;
+
+    const port = state.server.port || s.port || 3210;
+    $("#settings-ips").innerHTML = (state.ips || []).map((ip) =>
+      `<span class="ip-chip" data-ip="${escHtml(ip)}">${escHtml(ip)}:${port} <span class="icon xs">content_copy</span></span>`
+    ).join("") || `<span style="color:var(--text-muted);font-size:12px;">No network interfaces detected.</span>`;
+    $("#settings-ips").querySelectorAll(".ip-chip").forEach((el) => {
+      el.addEventListener("click", () => {
+        navigator.clipboard?.writeText(`http://${el.dataset.ip}:${port}`);
+        const bg = el.style.background; el.style.background = "var(--success-bg)";
+        setTimeout(() => (el.style.background = bg), 600);
+      });
+    });
+
+    root.querySelectorAll(".seg [data-theme]").forEach((b) => {
+      b.addEventListener("click", async () => {
+        await window.api.updateSettings({ theme: b.dataset.theme });
+        await refreshSettings();
+        renderSettings();
+      });
+    });
+    $("#choose-folder")?.addEventListener("click", async () => {
+      await window.api.chooseFolder();
+      await refreshSettings();
+      renderSettings();
+    });
+    $("#apply-port")?.addEventListener("click", async () => {
+      const p = Number($("#port-input").value);
+      if (!Number.isFinite(p) || p < 1024 || p > 65535) {
+        alert("Port must be between 1024 and 65535.");
+        return;
+      }
+      const res = await window.api.updateSettings({ port: p });
+      await refreshSettings();
+      if (!res?.success && res?.error) alert("Failed to bind to that port: " + res.error);
+      renderSettings();
+    });
+    $("#opt-auto-open")?.addEventListener("change", async (e) => {
+      await window.api.updateSettings({ autoOpenFolder: e.target.checked });
+      await refreshSettings();
+    });
+    $("#opt-launch")?.addEventListener("change", async (e) => {
+      await window.api.updateSettings({ launchAtStartup: e.target.checked });
+      await refreshSettings();
+    });
   }
 
-  function timeAgo(ts) {
-    const diff = Date.now() - ts;
-    if (diff < 5000) return "Just now";
-    if (diff < 60000) return Math.floor(diff / 1000) + "s ago";
-    if (diff < 3600000) return Math.floor(diff / 60000) + " min ago";
-    return Math.floor(diff / 3600000) + "h ago";
+  // ── Router ────────────────────────────────────────────────────────────
+  function navigate(view) {
+    state.view = view;
+    document.querySelectorAll(".nav-item").forEach((el) => {
+      el.classList.toggle("active", el.dataset.view === view);
+    });
+    if (window.innerWidth <= 900) closeSidebar();
+    if (view === "dashboard") renderDashboard();
+    else if (view === "activity") renderActivityLog();
+    else if (view === "history") renderHistory();
+    else if (view === "settings") renderSettings();
   }
 
-  function formatBytes(b) {
-    if (b >= 1073741824) return (b / 1073741824).toFixed(1) + " GB";
-    if (b >= 1048576) return (b / 1048576).toFixed(1) + " MB";
-    if (b >= 1024) return (b / 1024).toFixed(1) + " KB";
-    return b + " B";
-  }
+  // ── Sidebar / topbar bindings ────────────────────────────────────────
+  function openSidebar() { $("#sidebar").classList.add("open"); $("#scrim").classList.add("open"); }
+  function closeSidebar() { $("#sidebar").classList.remove("open"); $("#scrim").classList.remove("open"); }
+  $("#hamburger").addEventListener("click", openSidebar);
+  $("#scrim").addEventListener("click", closeSidebar);
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    el.addEventListener("click", () => navigate(el.dataset.view));
+  });
+  $("#theme-toggle").addEventListener("click", async () => {
+    const cur = state.settings?.theme || "system";
+    const order = { system: "light", light: "dark", dark: "system" };
+    await window.api.updateSettings({ theme: order[cur] });
+    await refreshSettings();
+    if (state.view === "settings") renderSettings();
+  });
+  $("#open-folder-btn").addEventListener("click", () => window.api.openFolder());
+  $("#clear-history-btn").addEventListener("click", clearHistoryConfirm);
 
-  function shortenPath(p) {
-    if (!p) return "—";
-    const parts = p.replace(/\\/g, "/").split("/");
-    if (parts.length > 3) return ".../" + parts.slice(-2).join("/");
-    return p;
-  }
+  // ── Live events ───────────────────────────────────────────────────────
+  window.api.onFileReceived((entry) => {
+    state.history.items = [entry, ...(state.history.items || [])].slice(0, 200);
+    state.history.totalCount = (state.history.totalCount || 0) + 1;
+    if (state.status) {
+      state.status.totalReceived = (state.status.totalReceived || 0) + 1;
+      state.status.totalBytes = (state.status.totalBytes || 0) + (entry.size || 0);
+      state.status.recentActivity = [entry, ...(state.status.recentActivity || [])].slice(0, 50);
+    }
+    renderDevices();
+    if (state.view === "dashboard") renderDashboard();
+    else if (state.view === "activity") renderActivityLog();
+    else if (state.view === "history") renderHistory();
+  });
+  window.api.onServerState((s) => {
+    state.server = { ...state.server, ...s };
+    renderFooter();
+    if (state.view === "dashboard") renderDashboard();
+    else if (state.view === "settings") renderSettings();
+  });
 
-  function escapeHtml(str) {
-    const div = document.createElement("div");
-    div.textContent = str || "";
-    return div.innerHTML;
-  }
+  // ── Tick uptime / lightweight refresh ────────────────────────────────
+  setInterval(() => {
+    if (state.view === "dashboard" && state.status) {
+      const el = document.getElementById("uptime-display");
+      if (el) {
+        state.status.uptimeMs = (state.status.uptimeMs || 0) + 1000;
+        el.textContent = fmtUptime(state.status.uptimeMs);
+      }
+    }
+  }, 1000);
+  setInterval(async () => {
+    await refreshStatus();
+    if (state.view === "dashboard") renderDashboard();
+  }, 10000);
 
-  init();
+  // ── Boot ──────────────────────────────────────────────────────────────
+  (async () => {
+    await refreshSettings();
+    state.server.port = state.settings?.port || 3210;
+    await Promise.all([refreshStatus(), refreshHistory(), refreshIPs()]);
+    renderDevices();
+    renderFooter();
+    navigate("dashboard");
+  })();
 </script>
 </body>
 </html>

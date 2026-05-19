@@ -1,10 +1,15 @@
 package com.appharbor.photosender
 
+import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -88,16 +93,26 @@ data class BottomNavItem(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Start with auto (light); the Compose layer will re-apply based on the resolved theme.
         enableEdgeToEdge()
         setContent {
-            PhotoSenderApp()
+            PhotoSenderApp(
+                onThemeResolved = { isDark ->
+                    val style = if (isDark) {
+                        SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                    } else {
+                        SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+                    }
+                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                }
+            )
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PhotoSenderApp() {
+fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
     val mainViewModel: MainViewModel = hiltViewModel()
     val themeMode by mainViewModel.themeMode.collectAsStateWithLifecycle()
     val dynamicColorEnabled by mainViewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
@@ -107,6 +122,8 @@ fun PhotoSenderApp() {
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
+
+    androidx.compose.runtime.LaunchedEffect(darkTheme) { onThemeResolved(darkTheme) }
 
     PhotoSenderTheme(
         darkTheme = darkTheme,
@@ -165,6 +182,7 @@ fun PhotoSenderApp() {
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
+                windowInsets = TopAppBarDefaults.windowInsets,
             )
         },
         bottomBar = {
@@ -199,8 +217,10 @@ fun PhotoSenderApp() {
             composable(Screen.Connect.route) {
                 ConnectScreen()
             }
-            composable(Screen.Gallery.route) {
+            composable(Screen.Gallery.route) { backStackEntry ->
+                val galleryViewModel: com.appharbor.photosender.ui.gallery.GalleryViewModel = hiltViewModel(backStackEntry)
                 GalleryScreen(
+                    viewModel = galleryViewModel,
                     onFolderClick = { bucketName ->
                         navController.navigate(Screen.FolderDetail.createRoute(bucketName))
                     },
@@ -220,8 +240,13 @@ fun PhotoSenderApp() {
                 arguments = listOf(navArgument("bucketName") { type = NavType.StringType })
             ) { backStackEntry ->
                 val bucketName = backStackEntry.arguments?.getString("bucketName") ?: ""
+                val galleryEntry = remember(backStackEntry) {
+                    navController.getBackStackEntry(Screen.Gallery.route)
+                }
+                val galleryViewModel: com.appharbor.photosender.ui.gallery.GalleryViewModel = hiltViewModel(galleryEntry)
                 FolderDetailScreen(
                     bucketName = bucketName,
+                    viewModel = galleryViewModel,
                     onBack = { navController.popBackStack() },
                     onTransferClick = {
                         navController.navigate(Screen.Transfer.route) {
@@ -258,6 +283,7 @@ private fun StitchBottomNav(
         modifier = Modifier
             .fillMaxWidth()
             .background(Color.Transparent)
+            .windowInsetsPadding(WindowInsets.navigationBars)
             .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Surface(
