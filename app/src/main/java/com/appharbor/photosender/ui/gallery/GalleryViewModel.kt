@@ -103,7 +103,7 @@ class GalleryViewModel @Inject constructor(
         viewModelScope.launch {
             val selectedItems = mediaRepository.getMediaItemsByIds(_selectedIds.value)
             if (selectedItems.isNotEmpty()) {
-                uploadManager.startTransfer(selectedItems)
+                uploadManager.start(selectedItems)
             }
         }
     }

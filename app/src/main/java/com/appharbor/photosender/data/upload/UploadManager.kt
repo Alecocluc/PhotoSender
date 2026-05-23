@@ -11,13 +11,18 @@ import com.appharbor.photosender.data.db.UploadStatus
 import com.appharbor.photosender.data.model.MediaItem
 import com.appharbor.photosender.data.network.ConnectionManager
 import com.appharbor.photosender.data.preferences.AppPreferences
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +31,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import java.util.concurrent.TimeUnit
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -37,6 +43,8 @@ import java.io.IOException
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val SERVER_PORT = 3210
 
 data class FileTransferProgress(
     val recordId: Long,
@@ -80,116 +88,122 @@ class UploadManager @Inject constructor(
     private val _transferState = MutableStateFlow(TransferState())
     val transferState: StateFlow<TransferState> = _transferState.asStateFlow()
 
-    private var transferJob: Job? = null
     private var speedTracker = SpeedTracker()
 
-    fun startTransfer(items: List<MediaItem>) {
-        if (_transferState.value.isTransferring) return
+    /**
+     * Entry point from the UI. Queues the selected items and hands the actual uploading off to
+     * [UploadWorker], a foreground service that survives the screen turning off / the app being
+     * backgrounded and shows a progress notification.
+     */
+    fun start(items: List<MediaItem>) {
+        if (items.isEmpty()) return
 
-        // Flip state immediately so the UI reflects "preparing" while we build the
-        // queue. With large selections (tens of thousands of files) the DB work below
-        // takes a moment, and without this the Transfer screen would look idle.
-        _transferState.value = TransferState(isTransferring = true, totalFiles = items.size)
+        // Flip state immediately so the UI reflects "preparing" the moment the user taps, before
+        // the (now batched) DB work and worker hand-off complete. If a transfer is already running,
+        // leave its live progress alone — the worker owns the state — and just append the new work.
+        if (!_transferState.value.isTransferring) {
+            _transferState.value = TransferState(isTransferring = true, totalFiles = items.size)
+        }
 
-        transferJob = scope.launch {
-            // Reset any stuck UPLOADING records to PENDING
-            uploadRecordDao.resetUploadingToPending()
-
-            // Dedup with set-based lookups instead of one query per item:
-            //  - skip items already COMPLETED
-            //  - skip items already queued (PENDING/UPLOADING) so retries don't duplicate rows
-            val completedIds = uploadRecordDao.getCompletedMediaStoreIds().toHashSet()
-            val alreadyQueuedIds = uploadRecordDao.getPendingAndUploading()
-                .mapTo(HashSet()) { it.mediaStoreId }
-
-            val serverIp = connectionManager.connectedIp.value
-            val newRecords = items.asSequence()
-                .filter { it.id !in completedIds && it.id !in alreadyQueuedIds }
-                .map { item ->
-                    UploadRecord(
-                        mediaStoreId = item.id,
-                        contentUri = item.uri.toString(),
-                        fileName = item.displayName,
-                        bucketName = item.bucketName,
-                        fileSize = item.size,
-                        serverIp = serverIp,
-                    )
-                }
-                .toList()
-
-            // Single batched insert — Room wraps a collection insert in one transaction.
-            uploadRecordDao.insertAll(newRecords)
-
-            // Re-read the full queue (just-inserted + any pre-existing pending) with real ids.
-            val allToUpload = uploadRecordDao.getPendingAndUploading()
-
-            if (allToUpload.isEmpty()) {
-                _transferState.update { it.copy(isTransferring = false) }
-                return@launch
-            }
-
-            val totalBytes = allToUpload.sumOf { it.fileSize }
-            _transferState.update {
-                TransferState(
-                    isTransferring = true,
-                    totalFiles = allToUpload.size,
-                    totalBytes = totalBytes,
-                )
-            }
-            speedTracker = SpeedTracker()
-            val semaphore = Semaphore(parallelSlots())
-
-            val uploadJobs = allToUpload.map { record ->
-                launch {
-                    semaphore.withPermit {
-                        uploadFile(record)
-                    }
-                }
-            }
-            uploadJobs.forEach { it.join() }
-
-            _transferState.update { it.copy(isTransferring = false) }
+        scope.launch {
+            enqueueRecords(items)
+            scheduleWork(ExistingWorkPolicy.APPEND_OR_REPLACE)
         }
     }
 
-    fun resumeTransfers() {
+    /** Re-arm the worker on app launch if a transfer was interrupted (process death, reboot). */
+    fun resumeIfPending() {
         scope.launch {
-            val pending = uploadRecordDao.getPendingAndUploading()
-            if (pending.isNotEmpty()) {
-                uploadRecordDao.resetUploadingToPending()
-                val totalBytes = pending.sumOf { it.fileSize }
-                _transferState.update {
-                    TransferState(
-                        isTransferring = true,
-                        totalFiles = pending.size,
-                        totalBytes = totalBytes,
-                    )
-                }
-                speedTracker = SpeedTracker()
-                val semaphore = Semaphore(parallelSlots())
-
-                val jobs = pending.map { record ->
-                    launch {
-                        semaphore.withPermit {
-                            uploadFile(record)
-                        }
-                    }
-                }
-                jobs.forEach { it.join() }
-                _transferState.update { it.copy(isTransferring = false) }
+            if (uploadRecordDao.getPendingAndUploading().isNotEmpty()) {
+                scheduleWork(ExistingWorkPolicy.KEEP)
             }
         }
     }
 
     fun cancelTransfer() {
-        transferJob?.cancelChildren()
-        transferJob?.cancel()
+        WorkManager.getInstance(context).cancelUniqueWork(UploadWorker.WORK_NAME)
         _transferState.update {
             it.copy(isTransferring = false, activeTransfers = emptyList())
         }
         scope.launch {
             uploadRecordDao.resetUploadingToPending()
         }
+    }
+
+    /**
+     * Persist the selection as PENDING upload records. Uses set-based dedup + a single batched
+     * insert so even a 20k+ selection is one transaction rather than tens of thousands.
+     */
+    private suspend fun enqueueRecords(items: List<MediaItem>) {
+        uploadRecordDao.resetUploadingToPending()
+
+        val completedIds = uploadRecordDao.getCompletedMediaStoreIds().toHashSet()
+        val alreadyQueuedIds = uploadRecordDao.getPendingAndUploading()
+            .mapTo(HashSet()) { it.mediaStoreId }
+
+        val serverIp = connectionManager.connectedIp.value
+        val newRecords = items.asSequence()
+            .filter { it.id !in completedIds && it.id !in alreadyQueuedIds }
+            .map { item ->
+                UploadRecord(
+                    mediaStoreId = item.id,
+                    contentUri = item.uri.toString(),
+                    fileName = item.displayName,
+                    bucketName = item.bucketName,
+                    fileSize = item.size,
+                    serverIp = serverIp,
+                )
+            }
+            .toList()
+
+        uploadRecordDao.insertAll(newRecords)
+    }
+
+    private fun scheduleWork(policy: ExistingWorkPolicy) {
+        // LAN transfer to a local server, so require WiFi (unmetered); WorkManager pauses the
+        // job when it drops and resumes when it returns.
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.UNMETERED)
+            .build()
+        val request = OneTimeWorkRequestBuilder<UploadWorker>()
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.LINEAR, 10, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(UploadWorker.WORK_NAME, policy, request)
+    }
+
+    /**
+     * Drains the pending queue. Called by [UploadWorker] from within its foreground coroutine, so
+     * cancelling the work cancels these uploads (each in-flight file resets to PENDING).
+     */
+    suspend fun runQueue() {
+        uploadRecordDao.resetUploadingToPending()
+        val batch = uploadRecordDao.getPendingAndUploading()
+
+        if (batch.isEmpty()) {
+            _transferState.update { it.copy(isTransferring = false, activeTransfers = emptyList()) }
+            return
+        }
+
+        speedTracker = SpeedTracker()
+        _transferState.value = TransferState(
+            isTransferring = true,
+            totalFiles = batch.size,
+            totalBytes = batch.sumOf { it.fileSize },
+        )
+
+        val semaphore = Semaphore(parallelSlots())
+        coroutineScope {
+            batch.map { record ->
+                launch {
+                    semaphore.withPermit {
+                        uploadFile(record)
+                    }
+                }
+            }.forEach { it.join() }
+        }
+
+        _transferState.update { it.copy(isTransferring = false, activeTransfers = emptyList()) }
     }
 
     private suspend fun uploadFile(record: UploadRecord) {
@@ -220,7 +234,7 @@ class UploadManager @Inject constructor(
             // Build multipart request. Stream the file straight from the content URI
             // instead of reading it fully into memory — a 48 GB selection with several
             // parallel slots would otherwise hold multiple whole videos in RAM and OOM.
-            val baseUrl = connectionManager.getBaseUrl()
+            val baseUrl = baseUrlFor(record)
             val sourceTimestampMs = resolveSourceTimestampMillis(uri)
             val progressBody = ContentUriRequestBody(
                 contentResolver = contentResolver,
@@ -297,6 +311,12 @@ class UploadManager @Inject constructor(
             removeActiveTransfer(record.id)
         }
     }
+
+    // Prefer the IP captured when the record was queued so a transfer can resume after process
+    // death (when the live connection state is gone); fall back to the current connection.
+    private fun baseUrlFor(record: UploadRecord): String =
+        record.serverIp.takeIf { it.isNotBlank() }?.let { "http://$it:$SERVER_PORT" }
+            ?: connectionManager.getBaseUrl()
 
     private fun resolveContentLength(uri: Uri, fallback: Long): Long {
         val length = runCatching {
