@@ -13,11 +13,17 @@ interface UploadRecordDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(record: UploadRecord): Long
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(records: List<UploadRecord>): List<Long>
+
     @Update
     suspend fun update(record: UploadRecord)
 
     @Query("SELECT * FROM upload_records WHERE mediaStoreId = :mediaStoreId AND status = 'COMPLETED' LIMIT 1")
     suspend fun getCompletedByMediaStoreId(mediaStoreId: Long): UploadRecord?
+
+    @Query("SELECT mediaStoreId FROM upload_records WHERE status = 'COMPLETED'")
+    suspend fun getCompletedMediaStoreIds(): List<Long>
 
     @Query("SELECT * FROM upload_records WHERE status IN ('PENDING', 'UPLOADING') ORDER BY id ASC")
     suspend fun getPendingAndUploading(): List<UploadRecord>

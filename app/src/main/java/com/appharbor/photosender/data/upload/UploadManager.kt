@@ -2,6 +2,7 @@ package com.appharbor.photosender.data.upload
 
 import android.content.ContentResolver
 import android.content.Context
+import android.content.res.AssetFileDescriptor
 import android.net.Uri
 import android.provider.MediaStore
 import com.appharbor.photosender.data.db.UploadRecord
@@ -85,31 +86,42 @@ class UploadManager @Inject constructor(
     fun startTransfer(items: List<MediaItem>) {
         if (_transferState.value.isTransferring) return
 
+        // Flip state immediately so the UI reflects "preparing" while we build the
+        // queue. With large selections (tens of thousands of files) the DB work below
+        // takes a moment, and without this the Transfer screen would look idle.
+        _transferState.value = TransferState(isTransferring = true, totalFiles = items.size)
+
         transferJob = scope.launch {
             // Reset any stuck UPLOADING records to PENDING
             uploadRecordDao.resetUploadingToPending()
 
-            // Create records for new items, skip already completed (dedup)
-            val records = mutableListOf<UploadRecord>()
-            for (item in items) {
-                val existing = uploadRecordDao.getCompletedByMediaStoreId(item.id)
-                if (existing != null) continue // Already uploaded — skip
+            // Dedup with set-based lookups instead of one query per item:
+            //  - skip items already COMPLETED
+            //  - skip items already queued (PENDING/UPLOADING) so retries don't duplicate rows
+            val completedIds = uploadRecordDao.getCompletedMediaStoreIds().toHashSet()
+            val alreadyQueuedIds = uploadRecordDao.getPendingAndUploading()
+                .mapTo(HashSet()) { it.mediaStoreId }
 
-                val record = UploadRecord(
-                    mediaStoreId = item.id,
-                    contentUri = item.uri.toString(),
-                    fileName = item.displayName,
-                    bucketName = item.bucketName,
-                    fileSize = item.size,
-                    serverIp = connectionManager.connectedIp.value,
-                )
-                val id = uploadRecordDao.insert(record)
-                records.add(record.copy(id = id))
-            }
+            val serverIp = connectionManager.connectedIp.value
+            val newRecords = items.asSequence()
+                .filter { it.id !in completedIds && it.id !in alreadyQueuedIds }
+                .map { item ->
+                    UploadRecord(
+                        mediaStoreId = item.id,
+                        contentUri = item.uri.toString(),
+                        fileName = item.displayName,
+                        bucketName = item.bucketName,
+                        fileSize = item.size,
+                        serverIp = serverIp,
+                    )
+                }
+                .toList()
 
-            // Also resume any previously pending items
-            val pending = uploadRecordDao.getPendingAndUploading()
-            val allToUpload = (records + pending).distinctBy { it.id }
+            // Single batched insert — Room wraps a collection insert in one transaction.
+            uploadRecordDao.insertAll(newRecords)
+
+            // Re-read the full queue (just-inserted + any pre-existing pending) with real ids.
+            val allToUpload = uploadRecordDao.getPendingAndUploading()
 
             if (allToUpload.isEmpty()) {
                 _transferState.update { it.copy(isTransferring = false) }
@@ -205,16 +217,16 @@ class UploadManager @Inject constructor(
                 return
             }
 
-            // Build multipart request
+            // Build multipart request. Stream the file straight from the content URI
+            // instead of reading it fully into memory — a 48 GB selection with several
+            // parallel slots would otherwise hold multiple whole videos in RAM and OOM.
             val baseUrl = connectionManager.getBaseUrl()
-            val inputStream = contentResolver.openInputStream(uri)
-                ?: throw Exception("Cannot open file")
-
-            val fileBytes = inputStream.use { it.readBytes() }
             val sourceTimestampMs = resolveSourceTimestampMillis(uri)
-            val progressBody = ProgressRequestBody(
+            val progressBody = ContentUriRequestBody(
+                contentResolver = contentResolver,
+                uri = uri,
                 contentType = (record.fileName.toMediaTypeOrNull() ?: "application/octet-stream").toMediaType(),
-                content = fileBytes,
+                declaredLength = resolveContentLength(uri, record.fileSize),
                 onProgress = { bytesWritten ->
                     val delta = updateActiveTransfer(
                         id = record.id,
@@ -284,6 +296,13 @@ class UploadManager @Inject constructor(
         } finally {
             removeActiveTransfer(record.id)
         }
+    }
+
+    private fun resolveContentLength(uri: Uri, fallback: Long): Long {
+        val length = runCatching {
+            contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+        }.getOrNull()
+        return if (length != null && length != AssetFileDescriptor.UNKNOWN_LENGTH) length else fallback
     }
 
     private fun computeMd5(uri: Uri): String {
@@ -382,20 +401,25 @@ class UploadManager @Inject constructor(
     }
 }
 
-private class ProgressRequestBody(
+private class ContentUriRequestBody(
+    private val contentResolver: ContentResolver,
+    private val uri: Uri,
     private val contentType: okhttp3.MediaType,
-    private val content: ByteArray,
+    private val declaredLength: Long,
     private val onProgress: (Long) -> Unit,
 ) : RequestBody() {
     override fun contentType() = contentType
-    override fun contentLength() = content.size.toLong()
+    override fun contentLength() = declaredLength
 
     override fun writeTo(sink: BufferedSink) {
-        val source = content.inputStream().source()
-        var totalWritten = 0L
-        source.use { src ->
+        // Re-open per writeTo so OkHttp can retry the body if needed. Streams in
+        // fixed-size chunks, keeping memory flat regardless of file size.
+        val input = contentResolver.openInputStream(uri)
+            ?: throw IOException("Cannot open $uri")
+        input.source().use { source ->
+            var totalWritten = 0L
             var read: Long
-            while (src.read(sink.buffer, 8192).also { read = it } != -1L) {
+            while (source.read(sink.buffer, 8192).also { read = it } != -1L) {
                 sink.flush()
                 totalWritten += read
                 onProgress(totalWritten)
