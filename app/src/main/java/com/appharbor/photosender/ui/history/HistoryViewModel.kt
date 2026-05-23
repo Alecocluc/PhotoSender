@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.appharbor.photosender.data.db.UploadRecord
 import com.appharbor.photosender.data.db.UploadRecordDao
+import com.appharbor.photosender.data.upload.UploadManager
+import com.appharbor.photosender.data.upload.VerifyState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,10 +16,16 @@ import javax.inject.Inject
 @HiltViewModel
 class HistoryViewModel @Inject constructor(
     private val uploadRecordDao: UploadRecordDao,
+    private val uploadManager: UploadManager,
 ) : ViewModel() {
 
     val completedCount: StateFlow<Int> = uploadRecordDao.getCompletedCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val failedCount: StateFlow<Int> = uploadRecordDao.getFailedCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    val verifyState: StateFlow<VerifyState> = uploadManager.verifyState
 
     val totalTransferredBytes: StateFlow<Long> = uploadRecordDao.getTotalTransferredBytes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -33,6 +41,12 @@ class HistoryViewModel @Inject constructor(
             uploadRecordDao.clearAll()
         }
     }
+
+    /** Re-queue every hard-failed record and kick the worker. */
+    fun retryFailed() = uploadManager.retryFailed()
+
+    /** Reconcile completed records against the server; re-queue anything actually missing. */
+    fun verifyBackup() = uploadManager.verifyAgainstServer()
 
     fun formatBytes(bytes: Long): String {
         return when {

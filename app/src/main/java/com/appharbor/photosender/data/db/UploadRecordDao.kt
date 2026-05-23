@@ -28,6 +28,16 @@ interface UploadRecordDao {
     @Query("SELECT * FROM upload_records WHERE status IN ('PENDING', 'UPLOADING') ORDER BY id ASC")
     suspend fun getPendingAndUploading(): List<UploadRecord>
 
+    @Query("SELECT * FROM upload_records WHERE status = 'FAILED' ORDER BY id ASC")
+    suspend fun getFailed(): List<UploadRecord>
+
+    @Query("SELECT COUNT(*) FROM upload_records WHERE status = 'FAILED'")
+    fun getFailedCount(): Flow<Int>
+
+    /** Snapshot of completed records (with their stored md5) for a server-side reconcile pass. */
+    @Query("SELECT * FROM upload_records WHERE status = 'COMPLETED'")
+    suspend fun getCompletedSnapshot(): List<UploadRecord>
+
     @Query("SELECT * FROM upload_records WHERE status = 'COMPLETED' ORDER BY uploadedAt DESC")
     fun getAllCompleted(): Flow<List<UploadRecord>>
 
@@ -51,4 +61,8 @@ interface UploadRecordDao {
 
     @Query("UPDATE upload_records SET status = 'PENDING' WHERE status = 'UPLOADING'")
     suspend fun resetUploadingToPending()
+
+    /** Re-arm hard failures so they get another attempt on the next queue drain. */
+    @Query("UPDATE upload_records SET status = 'PENDING' WHERE status = 'FAILED'")
+    suspend fun resetFailedToPending(): Int
 }

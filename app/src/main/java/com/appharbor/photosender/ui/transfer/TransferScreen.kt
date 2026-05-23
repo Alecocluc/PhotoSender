@@ -234,6 +234,13 @@ fun TransferScreen(
                                 color = MaterialTheme.colorScheme.error,
                             )
                         }
+                        if (state.skippedFiles > 0) {
+                            Text(
+                                "${state.skippedFiles} already on PC (skipped)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         Text(
                             "${viewModel.formatBytes(state.transferredBytes)} / ${viewModel.formatBytes(state.totalBytes)}",
                             style = MaterialTheme.typography.bodySmall,

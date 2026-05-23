@@ -20,10 +20,12 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,6 +49,8 @@ fun HistoryScreen(
     viewModel: HistoryViewModel = hiltViewModel()
 ) {
     val completedCount by viewModel.completedCount.collectAsStateWithLifecycle()
+    val failedCount by viewModel.failedCount.collectAsStateWithLifecycle()
+    val verifyState by viewModel.verifyState.collectAsStateWithLifecycle()
     val totalTransferredBytes by viewModel.totalTransferredBytes.collectAsStateWithLifecycle()
     val lastSync by viewModel.lastSyncTimestamp.collectAsStateWithLifecycle()
     val recentHistory by viewModel.recentHistory.collectAsStateWithLifecycle()
@@ -186,6 +190,74 @@ fun HistoryScreen(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                     )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Backup integrity — verify everything is really on the desktop, retry any failures.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .padding(16.dp),
+            ) {
+                Text(
+                    text = "Backup integrity",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                val statusLine = when {
+                    verifyState.isVerifying ->
+                        "Verifying ${verifyState.checked}/${verifyState.total}…"
+                    verifyState.summary != null -> verifyState.summary!!
+                    failedCount > 0 -> "$failedCount file(s) failed to send."
+                    else -> "Check every sent file is present on the desktop."
+                }
+                Text(
+                    text = statusLine,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (failedCount > 0 && !verifyState.isVerifying && verifyState.summary == null) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        onClick = { viewModel.verifyBackup() },
+                        enabled = !verifyState.isVerifying && completedCount > 0,
+                        shape = RoundedCornerShape(20.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Verified,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Verify backup", style = MaterialTheme.typography.labelMedium)
+                    }
+                    if (failedCount > 0) {
+                        OutlinedButton(
+                            onClick = { viewModel.retryFailed() },
+                            shape = RoundedCornerShape(20.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "Retry $failedCount",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
                 }
             }
 

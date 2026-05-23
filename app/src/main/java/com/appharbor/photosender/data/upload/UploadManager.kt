@@ -47,6 +47,16 @@ import javax.inject.Singleton
 
 private const val SERVER_PORT = 3210
 
+// One resend allowed on an MD5 mismatch (422) before the file is treated as a hard failure.
+private const val MAX_UPLOAD_ATTEMPTS = 2
+
+/** Outcome of a single POST /upload attempt. */
+private sealed interface UploadAttempt {
+    object Success : UploadAttempt
+    object RetryHashMismatch : UploadAttempt
+    data class Failed(val message: String) : UploadAttempt
+}
+
 data class FileTransferProgress(
     val recordId: Long,
     val fileName: String,
@@ -61,6 +71,9 @@ data class TransferState(
     val totalFiles: Int = 0,
     val completedFiles: Int = 0,
     val failedFiles: Int = 0,
+    // Subset of completedFiles whose bytes were already on the PC, so nothing was sent (content
+    // dedup). Surfaced so a count lower than the selection never looks like data loss.
+    val skippedFiles: Int = 0,
     val totalBytes: Long = 0,
     val transferredBytes: Long = 0,
     val currentSpeedBytesPerSec: Long = 0,
@@ -75,6 +88,16 @@ data class TransferState(
         } else 0
 }
 
+/** Progress of a reconcile pass that checks every completed record is really on the server. */
+data class VerifyState(
+    val isVerifying: Boolean = false,
+    val checked: Int = 0,
+    val total: Int = 0,
+    val missing: Int = 0,
+    /** Human-readable summary once a pass finishes; null while idle or running. */
+    val summary: String? = null,
+)
+
 @Singleton
 class UploadManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -88,6 +111,9 @@ class UploadManager @Inject constructor(
 
     private val _transferState = MutableStateFlow(TransferState())
     val transferState: StateFlow<TransferState> = _transferState.asStateFlow()
+
+    private val _verifyState = MutableStateFlow(VerifyState())
+    val verifyState: StateFlow<VerifyState> = _verifyState.asStateFlow()
 
     private var speedTracker = SpeedTracker()
 
@@ -121,6 +147,81 @@ class UploadManager @Inject constructor(
         }
     }
 
+    /** Explicitly re-queue every hard-failed record and kick the worker. */
+    fun retryFailed() {
+        scope.launch {
+            val revived = uploadRecordDao.resetFailedToPending()
+            if (revived > 0 && uploadRecordDao.getPendingAndUploading().isNotEmpty()) {
+                if (!_transferState.value.isTransferring) {
+                    _transferState.value = TransferState(isTransferring = true)
+                }
+                scheduleWork(ExistingWorkPolicy.APPEND_OR_REPLACE)
+            }
+        }
+    }
+
+    /**
+     * Reconcile: ask the server (via the dedup [/exists] check) whether the content of every
+     * record we believe is COMPLETED is actually present. Anything missing is reset to PENDING and
+     * re-queued, so the pass doubles as a recovery tool. Requires an active connection.
+     */
+    fun verifyAgainstServer() {
+        if (_verifyState.value.isVerifying) return
+        scope.launch {
+            val baseUrl = connectionManager.getBaseUrl()
+            if (connectionManager.connectedIp.value.isBlank()) {
+                _verifyState.value = VerifyState(summary = "Connect to the desktop first to verify.")
+                return@launch
+            }
+
+            val completed = uploadRecordDao.getCompletedSnapshot()
+            _verifyState.value = VerifyState(isVerifying = true, total = completed.size)
+
+            val checked = java.util.concurrent.atomic.AtomicInteger(0)
+            val missingRecords = java.util.concurrent.ConcurrentHashMap.newKeySet<UploadRecord>()
+            val semaphore = Semaphore(parallelSlots())
+            coroutineScope {
+                completed.map { record ->
+                    launch {
+                        semaphore.withPermit {
+                            // No stored hash (e.g. legacy record) → recompute so we can still check.
+                            val md5 = record.md5Hash.ifBlank {
+                                runCatching { computeMd5(Uri.parse(record.contentUri)) }.getOrDefault("")
+                            }
+                            if (md5.isNotBlank() && !serverHasFile(baseUrl, md5)) {
+                                missingRecords.add(record)
+                            }
+                            val done = checked.incrementAndGet()
+                            _verifyState.update {
+                                it.copy(checked = done, missing = missingRecords.size)
+                            }
+                        }
+                    }
+                }.forEach { it.join() }
+            }
+
+            // Re-queue anything the server turned out not to have, then re-arm the worker.
+            for (record in missingRecords) {
+                uploadRecordDao.update(record.copy(status = UploadStatus.PENDING, progress = 0))
+            }
+            val missingCount = missingRecords.size
+            if (missingCount > 0) {
+                scheduleWork(ExistingWorkPolicy.APPEND_OR_REPLACE)
+            }
+            _verifyState.value = VerifyState(
+                isVerifying = false,
+                checked = completed.size,
+                total = completed.size,
+                missing = missingCount,
+                summary = if (missingCount == 0) {
+                    "All ${completed.size} files confirmed on the desktop."
+                } else {
+                    "$missingCount of ${completed.size} were missing — re-queued for upload."
+                },
+            )
+        }
+    }
+
     fun cancelTransfer() {
         WorkManager.getInstance(context).cancelUniqueWork(UploadWorker.WORK_NAME)
         _transferState.update {
@@ -137,6 +238,10 @@ class UploadManager @Inject constructor(
      */
     private suspend fun enqueueRecords(items: List<MediaItem>) {
         uploadRecordDao.resetUploadingToPending()
+        // Re-arm prior hard failures so any new transfer also retries them. This both gives
+        // failed files another chance and prevents orphaned FAILED rows when a failed item is
+        // re-selected (it's revived in place rather than inserted as a duplicate row).
+        uploadRecordDao.resetFailedToPending()
 
         val completedIds = uploadRecordDao.getCompletedMediaStoreIds().toHashSet()
         val alreadyQueuedIds = uploadRecordDao.getPendingAndUploading()
@@ -208,112 +313,140 @@ class UploadManager @Inject constructor(
     }
 
     private suspend fun uploadFile(record: UploadRecord) {
-        // Update status to UPLOADING
-        uploadRecordDao.update(record.copy(status = UploadStatus.UPLOADING))
-        updateActiveTransfer(record.id, record.fileName, record.contentUri, record.fileSize, 0, UploadStatus.UPLOADING)
+        // Resolve the destination first. Prefer the IP captured when the record was queued so a
+        // transfer can resume after process death; fall back to the live connection and persist
+        // that IP. If nothing is reachable, keep the file PENDING (retryable) rather than burning
+        // a hard failure — this is what previously stranded files queued while disconnected.
+        val serverIp = record.serverIp.takeIf { it.isNotBlank() } ?: connectionManager.connectedIp.value
+        if (serverIp.isBlank()) {
+            uploadRecordDao.update(record.copy(status = UploadStatus.PENDING))
+            return
+        }
+        val baseUrl = "http://$serverIp:$SERVER_PORT"
+
+        // Mark UPLOADING and persist the resolved IP so a later resume reaches the same server.
+        val working = record.copy(status = UploadStatus.UPLOADING, serverIp = serverIp)
+        uploadRecordDao.update(working)
+        updateActiveTransfer(working.id, working.fileName, working.contentUri, working.fileSize, 0, UploadStatus.UPLOADING)
 
         try {
-            val uri = Uri.parse(record.contentUri)
+            val uri = Uri.parse(working.contentUri)
 
             // Compute MD5
-            val md5 = computeMd5(uri)
-
-            val baseUrl = baseUrlFor(record)
+            var md5 = computeMd5(uri)
 
             // Dedup: skip the upload entirely if the content already exists — locally (same media
             // re-selected) or on the server (covers a client reinstall / cleared local DB).
-            val locallyDone = uploadRecordDao.getCompletedByMediaStoreId(record.mediaStoreId)
+            val locallyDone = uploadRecordDao.getCompletedByMediaStoreId(working.mediaStoreId)
                 ?.md5Hash == md5
             if (locallyDone || serverHasFile(baseUrl, md5)) {
-                completeWithoutUpload(record, md5)
+                completeWithoutUpload(working, md5)
                 return
             }
 
-            // Build multipart request. Stream the file straight from the content URI
-            // instead of reading it fully into memory — a 48 GB selection with several
-            // parallel slots would otherwise hold multiple whole videos in RAM and OOM.
             val sourceTimestampMs = resolveSourceTimestampMillis(uri)
-            val progressBody = ContentUriRequestBody(
-                contentResolver = contentResolver,
-                uri = uri,
-                contentType = (record.fileName.toMediaTypeOrNull() ?: "application/octet-stream").toMediaType(),
-                declaredLength = resolveContentLength(uri, record.fileSize),
-                onProgress = { bytesWritten ->
-                    val delta = updateActiveTransfer(
-                        id = record.id,
-                        name = record.fileName,
-                        contentUri = record.contentUri,
-                        size = record.fileSize,
-                        transferred = bytesWritten,
-                        status = UploadStatus.UPLOADING,
-                    )
-                    speedTracker.recordBytes(delta)
-                    _transferState.update { st -> st.copy(currentSpeedBytesPerSec = speedTracker.getSpeed()) }
-                }
-            )
 
-            val requestBody = MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                // Put metadata before the file part so multer has bucketName during destination resolution.
-                .addFormDataPart("bucketName", record.bucketName)
-                .addFormDataPart("fileName", record.fileName)
-                .addFormDataPart("fileSize", record.fileSize.toString())
-                .addFormDataPart("md5Hash", md5)
-                .addFormDataPart("mimeType", guessMimeType(record.fileName))
-                .addFormDataPart("sourceTimestampMs", sourceTimestampMs.toString())
-                .addFormDataPart("file", record.fileName, progressBody)
-                .build()
+            var attempt = 0
+            while (true) {
+                attempt++
 
-            val request = Request.Builder()
-                .url("$baseUrl/upload")
-                .post(requestBody)
-                .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    uploadRecordDao.update(
-                        record.copy(
-                            status = UploadStatus.COMPLETED,
-                            md5Hash = md5,
-                            progress = 100,
-                            uploadedAt = System.currentTimeMillis()
+                // Build multipart request. Stream the file straight from the content URI
+                // instead of reading it fully into memory — a 48 GB selection with several
+                // parallel slots would otherwise hold multiple whole videos in RAM and OOM.
+                val progressBody = ContentUriRequestBody(
+                    contentResolver = contentResolver,
+                    uri = uri,
+                    contentType = (working.fileName.toMediaTypeOrNull() ?: "application/octet-stream").toMediaType(),
+                    declaredLength = resolveContentLength(uri, working.fileSize),
+                    onProgress = { bytesWritten ->
+                        val delta = updateActiveTransfer(
+                            id = working.id,
+                            name = working.fileName,
+                            contentUri = working.contentUri,
+                            size = working.fileSize,
+                            transferred = bytesWritten,
+                            status = UploadStatus.UPLOADING,
                         )
-                    )
-                    _transferState.update { st ->
-                        val activeTransferred = st.activeTransfers.find { it.recordId == record.id }?.bytesTransferred ?: 0L
-                        val finalDelta = (record.fileSize - activeTransferred).coerceAtLeast(0)
-                        st.copy(
-                            completedFiles = st.completedFiles + 1,
-                            transferredBytes = (st.transferredBytes + finalDelta).coerceAtMost(st.totalBytes),
-                        )
+                        speedTracker.recordBytes(delta)
+                        _transferState.update { st -> st.copy(currentSpeedBytesPerSec = speedTracker.getSpeed()) }
                     }
-                } else {
-                    val body = response.body?.string()?.take(180) ?: ""
-                    throw Exception("Server returned ${response.code}${if (body.isNotBlank()) ": $body" else ""}")
+                )
+
+                val requestBody = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    // Put metadata before the file part so multer has bucketName during destination resolution.
+                    .addFormDataPart("bucketName", working.bucketName)
+                    .addFormDataPart("fileName", working.fileName)
+                    .addFormDataPart("fileSize", working.fileSize.toString())
+                    .addFormDataPart("md5Hash", md5)
+                    .addFormDataPart("mimeType", guessMimeType(working.fileName))
+                    .addFormDataPart("sourceTimestampMs", sourceTimestampMs.toString())
+                    .addFormDataPart("file", working.fileName, progressBody)
+                    .build()
+
+                val request = Request.Builder()
+                    .url("$baseUrl/upload")
+                    .post(requestBody)
+                    .build()
+
+                val attemptResult = okHttpClient.newCall(request).execute().use { response ->
+                    when {
+                        response.isSuccessful -> UploadAttempt.Success
+                        // A 422 is an MD5 mismatch — usually the file changed under us mid-read.
+                        // Recompute the hash and resend once before giving up.
+                        response.code == 422 && attempt < MAX_UPLOAD_ATTEMPTS -> UploadAttempt.RetryHashMismatch
+                        else -> {
+                            val body = response.body?.string()?.take(180) ?: ""
+                            UploadAttempt.Failed(
+                                "Server returned ${response.code}${if (body.isNotBlank()) ": $body" else ""}"
+                            )
+                        }
+                    }
+                }
+
+                when (attemptResult) {
+                    UploadAttempt.Success -> {
+                        uploadRecordDao.update(
+                            working.copy(
+                                status = UploadStatus.COMPLETED,
+                                md5Hash = md5,
+                                progress = 100,
+                                uploadedAt = System.currentTimeMillis()
+                            )
+                        )
+                        _transferState.update { st ->
+                            val activeTransferred = st.activeTransfers.find { it.recordId == working.id }?.bytesTransferred ?: 0L
+                            val finalDelta = (working.fileSize - activeTransferred).coerceAtLeast(0)
+                            st.copy(
+                                completedFiles = st.completedFiles + 1,
+                                transferredBytes = (st.transferredBytes + finalDelta).coerceAtMost(st.totalBytes),
+                            )
+                        }
+                        return
+                    }
+                    UploadAttempt.RetryHashMismatch -> {
+                        md5 = computeMd5(uri)
+                        // loop and resend with the fresh hash
+                    }
+                    is UploadAttempt.Failed -> throw Exception(attemptResult.message)
                 }
             }
         } catch (e: CancellationException) {
-            uploadRecordDao.update(record.copy(status = UploadStatus.PENDING))
+            uploadRecordDao.update(working.copy(status = UploadStatus.PENDING))
             throw e
         } catch (e: IOException) {
             // Network/read timeouts can happen after the server already persisted the file.
             // Keep this retryable instead of marking it as a hard failure.
-            uploadRecordDao.update(record.copy(status = UploadStatus.PENDING))
+            uploadRecordDao.update(working.copy(status = UploadStatus.PENDING))
         } catch (e: Exception) {
-            uploadRecordDao.update(record.copy(status = UploadStatus.FAILED))
+            uploadRecordDao.update(working.copy(status = UploadStatus.FAILED))
             _transferState.update { st ->
                 st.copy(failedFiles = st.failedFiles + 1)
             }
         } finally {
-            removeActiveTransfer(record.id)
+            removeActiveTransfer(working.id)
         }
     }
-
-    // Prefer the IP captured when the record was queued so a transfer can resume after process
-    // death (when the live connection state is gone); fall back to the current connection.
-    private fun baseUrlFor(record: UploadRecord): String =
-        record.serverIp.takeIf { it.isNotBlank() }?.let { "http://$it:$SERVER_PORT" }
-            ?: connectionManager.getBaseUrl()
 
     // Ask the server whether it already stores this content. Failures default to false so we
     // never skip an upload on a flaky check.
@@ -338,6 +471,9 @@ class UploadManager @Inject constructor(
         _transferState.update { st ->
             st.copy(
                 completedFiles = st.completedFiles + 1,
+                // Bytes weren't sent (content already on the PC) — count it as skipped so the UI
+                // can explain why the transferred count is below the selection.
+                skippedFiles = st.skippedFiles + 1,
                 transferredBytes = (st.transferredBytes + record.fileSize).coerceAtMost(st.totalBytes),
             )
         }
