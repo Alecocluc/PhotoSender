@@ -49,6 +49,7 @@ private const val SERVER_PORT = 3210
 
 // One resend allowed on an MD5 mismatch (422) before the file is treated as a hard failure.
 private const val MAX_UPLOAD_ATTEMPTS = 2
+private const val MAX_SKIPPED_BATCH = 100
 
 /** Outcome of a single POST /upload attempt. */
 private sealed interface UploadAttempt {

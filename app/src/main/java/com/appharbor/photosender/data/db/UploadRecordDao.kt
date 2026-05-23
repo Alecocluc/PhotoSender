@@ -22,6 +22,10 @@ interface UploadRecordDao {
     @Query("SELECT * FROM upload_records WHERE mediaStoreId = :mediaStoreId AND status = 'COMPLETED' LIMIT 1")
     suspend fun getCompletedByMediaStoreId(mediaStoreId: Long): UploadRecord?
 
+    /** Find the original copy of a content hash (lowest uploadedAt, excluding the calling record's mediaStoreId). */
+    @Query("SELECT * FROM upload_records WHERE md5Hash = :md5 AND status = 'COMPLETED' AND mediaStoreId != :excludeMediaStoreId ORDER BY uploadedAt ASC LIMIT 1")
+    suspend fun getOriginalByMd5(md5: String, excludeMediaStoreId: Long): UploadRecord?
+
     @Query("SELECT mediaStoreId FROM upload_records WHERE status = 'COMPLETED'")
     suspend fun getCompletedMediaStoreIds(): List<Long>
 
