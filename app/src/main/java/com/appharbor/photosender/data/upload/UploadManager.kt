@@ -67,6 +67,17 @@ data class FileTransferProgress(
     val status: UploadStatus,
 )
 
+data class DedupSkip(
+    val skippedRecordId: Long,
+    val skippedFileName: String,
+    val skippedBucketName: String,
+    val matchedFileName: String?,
+    val matchedBucketName: String?,
+    val fileSize: Long,
+    val md5Hash: String,
+    val matchedOnPhone: Boolean,
+)
+
 data class TransferState(
     val isTransferring: Boolean = false,
     val totalFiles: Int = 0,
@@ -79,6 +90,7 @@ data class TransferState(
     val transferredBytes: Long = 0,
     val currentSpeedBytesPerSec: Long = 0,
     val activeTransfers: List<FileTransferProgress> = emptyList(),
+    val skippedDuplicates: List<DedupSkip> = emptyList(),
 ) {
     val progressPercent: Float
         get() = if (totalBytes > 0) transferredBytes.toFloat() / totalBytes else 0f
@@ -88,6 +100,13 @@ data class TransferState(
             (totalBytes - transferredBytes) / currentSpeedBytesPerSec
         } else 0
 }
+
+private data class ServerFileMatch(
+    val exists: Boolean = false,
+    val fileName: String? = null,
+    val bucketName: String? = null,
+    val size: Long = 0,
+)
 
 /** Progress of a reconcile pass that checks every completed record is really on the server. */
 data class VerifyState(
@@ -338,10 +357,12 @@ class UploadManager @Inject constructor(
 
             // Dedup: skip the upload entirely if the content already exists — locally (same media
             // re-selected) or on the server (covers a client reinstall / cleared local DB).
-            val locallyDone = uploadRecordDao.getCompletedByMediaStoreId(working.mediaStoreId)
-                ?.md5Hash == md5
-            if (locallyDone || serverHasFile(baseUrl, md5)) {
-                completeWithoutUpload(working, md5)
+            val exactCompleted = uploadRecordDao.getCompletedByMediaStoreId(working.mediaStoreId)
+                ?.takeIf { it.md5Hash == md5 }
+            val localMatch = exactCompleted ?: uploadRecordDao.getOriginalByMd5(md5, working.mediaStoreId)
+            val serverMatch = serverFileMatch(baseUrl, md5)
+            if (exactCompleted != null || serverMatch.exists) {
+                completeWithoutUpload(working, md5, localMatch, serverMatch)
                 return
             }
 
@@ -451,16 +472,31 @@ class UploadManager @Inject constructor(
 
     // Ask the server whether it already stores this content. Failures default to false so we
     // never skip an upload on a flaky check.
-    private fun serverHasFile(baseUrl: String, md5: String): Boolean = runCatching {
+    private fun serverHasFile(baseUrl: String, md5: String): Boolean =
+        serverFileMatch(baseUrl, md5).exists
+
+    private fun serverFileMatch(baseUrl: String, md5: String): ServerFileMatch = runCatching {
         val request = Request.Builder().url("$baseUrl/exists?md5=$md5").build()
         okHttpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return@runCatching false
-            JSONObject(response.body?.string().orEmpty()).optBoolean("exists", false)
+            if (!response.isSuccessful) return@runCatching ServerFileMatch()
+            val json = JSONObject(response.body?.string().orEmpty())
+            val match = json.optJSONObject("match")
+            ServerFileMatch(
+                exists = json.optBoolean("exists", false),
+                fileName = match?.optString("fileName")?.takeIf { it.isNotBlank() },
+                bucketName = match?.optString("bucketName")?.takeIf { it.isNotBlank() },
+                size = match?.optLong("size", 0L) ?: 0L,
+            )
         }
-    }.getOrDefault(false)
+    }.getOrDefault(ServerFileMatch())
 
     // Mark a record done without transferring bytes (used by both local and server dedup).
-    private suspend fun completeWithoutUpload(record: UploadRecord, md5: String) {
+    private suspend fun completeWithoutUpload(
+        record: UploadRecord,
+        md5: String,
+        localMatch: UploadRecord?,
+        serverMatch: ServerFileMatch,
+    ) {
         uploadRecordDao.update(
             record.copy(
                 status = UploadStatus.COMPLETED,
@@ -469,6 +505,16 @@ class UploadManager @Inject constructor(
                 uploadedAt = System.currentTimeMillis(),
             )
         )
+        val skip = DedupSkip(
+            skippedRecordId = record.id,
+            skippedFileName = record.fileName,
+            skippedBucketName = record.bucketName,
+            matchedFileName = localMatch?.fileName ?: serverMatch.fileName,
+            matchedBucketName = localMatch?.bucketName ?: serverMatch.bucketName,
+            fileSize = record.fileSize,
+            md5Hash = md5,
+            matchedOnPhone = localMatch != null,
+        )
         _transferState.update { st ->
             st.copy(
                 completedFiles = st.completedFiles + 1,
@@ -476,6 +522,7 @@ class UploadManager @Inject constructor(
                 // can explain why the transferred count is below the selection.
                 skippedFiles = st.skippedFiles + 1,
                 transferredBytes = (st.transferredBytes + record.fileSize).coerceAtMost(st.totalBytes),
+                skippedDuplicates = (listOf(skip) + st.skippedDuplicates).take(MAX_SKIPPED_BATCH),
             )
         }
         removeActiveTransfer(record.id)

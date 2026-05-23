@@ -12,7 +12,7 @@ const startTime = Date.now();
 const MAX_HISTORY_ENTRIES = 5000;
 const DEFAULT_HISTORY_PAGE_SIZE = 100;
 const MAX_HISTORY_PAGE_SIZE = 500;
-/** @type {{ fileName: string, bucketName: string, size: number, time: number, status: string }[]} */
+/** @type {{ fileName: string, bucketName: string, size: number, time: number, status: string, md5?: string }[]} */
 const activityLog = [];
 /** @type {{ size: number, time: number }[]} */
 const recentByteEvents = [];
@@ -154,6 +154,13 @@ function buildHistoryPage(offset, limit) {
   };
 }
 
+function findKnownMd5Entry(md5) {
+  for (let i = activityLog.length - 1; i >= 0; i--) {
+    if (activityLog[i].md5 === md5) return activityLog[i];
+  }
+  return null;
+}
+
 function createServer(downloadPath, options = {}) {
   historyStatePath = options.historyStatePath || null;
   const onFileReceived = typeof options.onFileReceived === "function" ? options.onFileReceived : null;
@@ -235,7 +242,19 @@ function createServer(downloadPath, options = {}) {
     if (!md5) {
       return res.status(400).json({ error: "md5 query param required" });
     }
-    res.json({ exists: knownMd5s.has(md5) });
+    const exists = knownMd5s.has(md5);
+    const match = exists ? findKnownMd5Entry(md5) : null;
+    res.json({
+      exists,
+      match: match
+        ? {
+            fileName: match.fileName,
+            bucketName: match.bucketName,
+            size: match.size,
+            time: match.time,
+          }
+        : null,
+    });
   });
 
   // Activity log stream (SSE)
