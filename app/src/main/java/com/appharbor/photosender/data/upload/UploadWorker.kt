@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.wifi.WifiManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.work.HiltWorker
@@ -39,6 +40,11 @@ class UploadWorker @AssistedInject constructor(
     override suspend fun doWork(): Result {
         setForeground(createForegroundInfo(uploadManager.transferState.value))
 
+        // Keep the WiFi radio at full performance for the whole transfer. The foreground service
+        // already keeps CPU priority, but with the screen off the radio can drop into power-save
+        // and throttle throughput; this pins it so screen-off speed matches screen-on.
+        val wifiLock = acquireWifiLock()
+
         return try {
             coroutineScope {
                 // Mirror transfer state into the notification (throttled) while the queue drains.
@@ -62,8 +68,18 @@ class UploadWorker @AssistedInject constructor(
         } catch (e: Exception) {
             // Transient failure (e.g. server briefly unreachable) — let WorkManager retry.
             Result.retry()
+        } finally {
+            if (wifiLock?.isHeld == true) wifiLock.release()
         }
     }
+
+    @Suppress("DEPRECATION")
+    private fun acquireWifiLock(): WifiManager.WifiLock? =
+        (appContext.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager)
+            // FULL_HIGH_PERF is deprecated but remains the throughput-oriented lock (no power
+            // save); LOW_LATENCY targets latency, not bulk transfer.
+            ?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "PhotoSender:transfer")
+            ?.apply { acquire() }
 
     override suspend fun getForegroundInfo(): ForegroundInfo =
         createForegroundInfo(uploadManager.transferState.value)

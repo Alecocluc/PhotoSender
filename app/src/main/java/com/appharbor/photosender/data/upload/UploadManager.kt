@@ -39,6 +39,7 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okio.BufferedSink
 import okio.source
+import org.json.JSONObject
 import java.io.IOException
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -217,24 +218,20 @@ class UploadManager @Inject constructor(
             // Compute MD5
             val md5 = computeMd5(uri)
 
-            // Check for dedup with hash
-            val existingWithHash = uploadRecordDao.getCompletedByMediaStoreId(record.mediaStoreId)
-            if (existingWithHash != null && existingWithHash.md5Hash == md5) {
-                uploadRecordDao.update(record.copy(status = UploadStatus.COMPLETED, md5Hash = md5, uploadedAt = System.currentTimeMillis()))
-                _transferState.update { st ->
-                    st.copy(
-                        completedFiles = st.completedFiles + 1,
-                        transferredBytes = (st.transferredBytes + record.fileSize).coerceAtMost(st.totalBytes),
-                    )
-                }
-                removeActiveTransfer(record.id)
+            val baseUrl = baseUrlFor(record)
+
+            // Dedup: skip the upload entirely if the content already exists — locally (same media
+            // re-selected) or on the server (covers a client reinstall / cleared local DB).
+            val locallyDone = uploadRecordDao.getCompletedByMediaStoreId(record.mediaStoreId)
+                ?.md5Hash == md5
+            if (locallyDone || serverHasFile(baseUrl, md5)) {
+                completeWithoutUpload(record, md5)
                 return
             }
 
             // Build multipart request. Stream the file straight from the content URI
             // instead of reading it fully into memory — a 48 GB selection with several
             // parallel slots would otherwise hold multiple whole videos in RAM and OOM.
-            val baseUrl = baseUrlFor(record)
             val sourceTimestampMs = resolveSourceTimestampMillis(uri)
             val progressBody = ContentUriRequestBody(
                 contentResolver = contentResolver,
@@ -317,6 +314,35 @@ class UploadManager @Inject constructor(
     private fun baseUrlFor(record: UploadRecord): String =
         record.serverIp.takeIf { it.isNotBlank() }?.let { "http://$it:$SERVER_PORT" }
             ?: connectionManager.getBaseUrl()
+
+    // Ask the server whether it already stores this content. Failures default to false so we
+    // never skip an upload on a flaky check.
+    private fun serverHasFile(baseUrl: String, md5: String): Boolean = runCatching {
+        val request = Request.Builder().url("$baseUrl/exists?md5=$md5").build()
+        okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@runCatching false
+            JSONObject(response.body?.string().orEmpty()).optBoolean("exists", false)
+        }
+    }.getOrDefault(false)
+
+    // Mark a record done without transferring bytes (used by both local and server dedup).
+    private suspend fun completeWithoutUpload(record: UploadRecord, md5: String) {
+        uploadRecordDao.update(
+            record.copy(
+                status = UploadStatus.COMPLETED,
+                md5Hash = md5,
+                progress = 100,
+                uploadedAt = System.currentTimeMillis(),
+            )
+        )
+        _transferState.update { st ->
+            st.copy(
+                completedFiles = st.completedFiles + 1,
+                transferredBytes = (st.transferredBytes + record.fileSize).coerceAtMost(st.totalBytes),
+            )
+        }
+        removeActiveTransfer(record.id)
+    }
 
     private fun resolveContentLength(uri: Uri, fallback: Long): Long {
         val length = runCatching {
