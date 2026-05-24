@@ -361,7 +361,7 @@ class UploadManager @Inject constructor(
                 ?.takeIf { it.md5Hash == md5 }
             val localMatch = exactCompleted ?: uploadRecordDao.getOriginalByMd5(md5, working.mediaStoreId)
             val serverMatch = serverFileMatch(baseUrl, md5)
-            if (exactCompleted != null || serverMatch.exists) {
+            if (serverMatch.exists) {
                 completeWithoutUpload(working, md5, localMatch, serverMatch)
                 return
             }

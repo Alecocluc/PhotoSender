@@ -16,8 +16,10 @@ const MAX_HISTORY_PAGE_SIZE = 500;
 const activityLog = [];
 /** @type {{ size: number, time: number }[]} */
 const recentByteEvents = [];
-/** Content hashes of every file the server has stored — used for cross-session dedup. */
+/** Legacy hash-only index, kept so old history files still dedupe when no file metadata exists. */
 const knownMd5s = new Set();
+/** @type {Map<string, { fileName: string, bucketName: string, size: number, time: number, status: string, md5: string }[]>} */
+const knownFilesByMd5 = new Map();
 let historyStatePath = null;
 
 /** Hash a file by streaming it, so we never hold a whole (multi-GB) file in memory. */
@@ -29,6 +31,57 @@ function hashFileStreaming(filePath) {
     stream.on("data", (chunk) => hash.update(chunk));
     stream.on("end", () => resolve(hash.digest("hex")));
   });
+}
+
+function listFilesRecursive(dir) {
+  const results = [];
+  const stack = [dir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (entry.isFile() && !entry.name.endsWith(".part")) {
+        results.push(fullPath);
+      }
+    }
+  }
+  return results;
+}
+
+async function rebuildIndexFromDisk(downloadPath) {
+  knownMd5s.clear();
+  knownFilesByMd5.clear();
+
+  const files = listFilesRecursive(downloadPath);
+  let indexed = 0;
+  let bytes = 0;
+  for (const filePath of files) {
+    const stat = fs.statSync(filePath);
+    const md5 = await hashFileStreaming(filePath);
+    const relative = path.relative(downloadPath, path.dirname(filePath));
+    const bucketName = relative && relative !== "." ? relative.replace(/\\/g, "/") : "Unsorted";
+    addKnownFile({
+      fileName: path.basename(filePath),
+      bucketName,
+      size: stat.size,
+      time: stat.mtimeMs || Date.now(),
+      status: "saved",
+      md5,
+    });
+    indexed++;
+    bytes += stat.size;
+  }
+
+  saveHistoryState();
+  return { indexed, bytes };
 }
 
 /** Resolve a non-colliding final name in destDir (appends " (n)" like before). */
@@ -56,45 +109,90 @@ function normalizeMd5(value) {
   return String(value || "").toLowerCase().replace(/[^a-f0-9]/g, "");
 }
 
+function normalizeHistoryEntry(item) {
+  const md5 = normalizeMd5(item?.md5);
+  return {
+    fileName: String(item?.fileName || ""),
+    bucketName: String(item?.bucketName || "Unsorted"),
+    size: Number(item?.size || 0),
+    time: Number(item?.time || Date.now()),
+    status: String(item?.status || "saved"),
+    md5,
+  };
+}
+
+function addKnownFile(entry) {
+  if (!entry?.md5 || !entry.fileName) return;
+  knownMd5s.add(entry.md5);
+  const existing = knownFilesByMd5.get(entry.md5) || [];
+  const alreadyIndexed = existing.some(
+    (item) => item.fileName === entry.fileName && item.bucketName === entry.bucketName
+  );
+  if (!alreadyIndexed) {
+    existing.push(entry);
+    knownFilesByMd5.set(entry.md5, existing);
+  }
+}
+
+function allKnownFileEntries() {
+  return [...knownFilesByMd5.values()].flat();
+}
+
+function filePathForEntry(downloadPath, entry) {
+  return path.join(downloadPath, sanitizePath(entry.bucketName || "Unsorted"), path.basename(entry.fileName || ""));
+}
+
+function isEntryOnDisk(downloadPath, entry) {
+  try {
+    const filePath = filePathForEntry(downloadPath, entry);
+    if (!fs.existsSync(filePath)) return false;
+    const stat = fs.statSync(filePath);
+    return stat.isFile() && (!entry.size || stat.size === entry.size);
+  } catch {
+    return false;
+  }
+}
+
 function loadHistoryState() {
+  totalReceived = 0;
+  totalBytes = 0;
+  activityLog.length = 0;
+  knownMd5s.clear();
+  knownFilesByMd5.clear();
   if (!historyStatePath || !fs.existsSync(historyStatePath)) return;
   try {
     const raw = fs.readFileSync(historyStatePath, "utf8");
     const parsed = JSON.parse(raw);
     totalReceived = Number(parsed.totalReceived || 0);
     totalBytes = Number(parsed.totalBytes || 0);
-    activityLog.length = 0;
     const items = Array.isArray(parsed.activityLog)
       ? parsed.activityLog.slice(-MAX_HISTORY_ENTRIES)
       : [];
     for (const item of items) {
-      const md5 = normalizeMd5(item.md5);
-      activityLog.push({
-        fileName: String(item.fileName || ""),
-        bucketName: String(item.bucketName || "Unsorted"),
-        size: Number(item.size || 0),
-        time: Number(item.time || Date.now()),
-        status: String(item.status || "saved"),
-        md5,
-      });
+      activityLog.push(normalizeHistoryEntry(item));
     }
 
-    // Dedup index is persisted separately from the (capped) activity log so it survives
-    // beyond MAX_HISTORY_ENTRIES; backfill from any entries that carried a hash.
-    knownMd5s.clear();
+    // Dedup metadata is persisted separately from the capped activity log so it survives
+    // beyond MAX_HISTORY_ENTRIES. Older history files may only have completedMd5s; those
+    // remain hash-only and cannot be checked against disk until new metadata is imported.
+    const persistedFiles = Array.isArray(parsed.completedFiles) ? parsed.completedFiles : [];
+    for (const item of persistedFiles) {
+      addKnownFile(normalizeHistoryEntry(item));
+    }
     const persistedHashes = Array.isArray(parsed.completedMd5s) ? parsed.completedMd5s : [];
     for (const h of persistedHashes) {
       const md5 = normalizeMd5(h);
       if (md5) knownMd5s.add(md5);
     }
     for (const item of activityLog) {
-      if (item.md5) knownMd5s.add(item.md5);
+      addKnownFile(item);
     }
   } catch {
     totalReceived = 0;
     totalBytes = 0;
     activityLog.length = 0;
     knownMd5s.clear();
+    knownFilesByMd5.clear();
   }
 }
 
@@ -107,7 +205,14 @@ function saveHistoryState() {
     fs.writeFileSync(
       tmp,
       JSON.stringify(
-        { totalReceived, totalBytes, activityLog, completedMd5s: [...knownMd5s] },
+        {
+          version: 2,
+          totalReceived,
+          totalBytes,
+          activityLog,
+          completedFiles: allKnownFileEntries(),
+          completedMd5s: [...knownMd5s],
+        },
         null,
         2
       ),
@@ -154,17 +259,28 @@ function buildHistoryPage(offset, limit) {
   };
 }
 
-function findKnownMd5Entry(md5) {
-  for (let i = activityLog.length - 1; i >= 0; i--) {
-    if (activityLog[i].md5 === md5) return activityLog[i];
+function findKnownMd5Entry(downloadPath, md5) {
+  const indexed = knownFilesByMd5.get(md5) || [];
+  for (let i = indexed.length - 1; i >= 0; i--) {
+    if (isEntryOnDisk(downloadPath, indexed[i])) return indexed[i];
   }
-  return null;
+  if (indexed.length > 0) {
+    knownFilesByMd5.delete(md5);
+    knownMd5s.delete(md5);
+    saveHistoryState();
+    return null;
+  }
+
+  // Legacy fallback: old history-state files stored only hashes for entries outside the
+  // capped activity log. They can still dedupe, but cannot prove the file is still on disk.
+  return knownMd5s.has(md5) ? { md5, legacyOnly: true } : null;
 }
 
 function createServer(downloadPath, options = {}) {
   historyStatePath = options.historyStatePath || null;
   const onFileReceived = typeof options.onFileReceived === "function" ? options.onFileReceived : null;
   loadHistoryState();
+  saveHistoryState();
 
   const app = express();
 
@@ -232,8 +348,18 @@ function createServer(downloadPath, options = {}) {
     activityLog.length = 0;
     recentByteEvents.length = 0;
     knownMd5s.clear();
+    knownFilesByMd5.clear();
     saveHistoryState();
     res.json({ success: true });
+  });
+
+  app.post("/history/rebuild-index", async (_req, res) => {
+    try {
+      const result = await rebuildIndexFromDisk(downloadPath);
+      res.json({ success: true, ...result });
+    } catch (err) {
+      res.status(500).json({ success: false, error: String((err && err.message) || err) });
+    }
   });
 
   // Dedup pre-check: lets the client skip re-uploading a file the server already has.
@@ -242,11 +368,11 @@ function createServer(downloadPath, options = {}) {
     if (!md5) {
       return res.status(400).json({ error: "md5 query param required" });
     }
-    const exists = knownMd5s.has(md5);
-    const match = exists ? findKnownMd5Entry(md5) : null;
+    const match = findKnownMd5Entry(downloadPath, md5);
+    const exists = !!match;
     res.json({
       exists,
-      match: match
+      match: match && !match.legacyOnly
         ? {
             fileName: match.fileName,
             bucketName: match.bucketName,
@@ -340,7 +466,7 @@ function createServer(downloadPath, options = {}) {
       }
 
       const md5 = normalizeMd5(md5Hash);
-      if (md5) knownMd5s.add(md5);
+      const savedBucket = sanitizePath(bucketName || "Unsorted");
 
       totalReceived++;
       totalBytes += fileSize;
@@ -348,12 +474,13 @@ function createServer(downloadPath, options = {}) {
 
       const entry = {
         fileName: finalName,
-        bucketName: bucketName || "Unsorted",
+        bucketName: savedBucket,
         size: fileSize,
         time: Date.now(),
         status: "saved",
         md5,
       };
+      addKnownFile(entry);
       activityLog.push(entry);
       while (activityLog.length > MAX_HISTORY_ENTRIES) {
         activityLog.shift();

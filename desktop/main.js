@@ -189,6 +189,81 @@ ipcMain.handle("clear-history", async () => {
   }
 });
 
+ipcMain.handle("export-history", async () => {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "Export PhotoSender history",
+    defaultPath: path.join(app.getPath("documents"), `PhotoSender-history-${stamp}.json`),
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  if (result.canceled || !result.filePath) return { success: false, canceled: true };
+
+  try {
+    const fallbackState = {
+      version: 2,
+      totalReceived: 0,
+      totalBytes: 0,
+      activityLog: [],
+      completedFiles: [],
+      completedMd5s: [],
+    };
+    const raw = fs.existsSync(historyStatePath)
+      ? fs.readFileSync(historyStatePath, "utf8")
+      : JSON.stringify(fallbackState, null, 2);
+    JSON.parse(raw);
+    fs.writeFileSync(result.filePath, raw, "utf8");
+    return { success: true, filePath: result.filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("import-history", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Import PhotoSender history",
+    properties: ["openFile"],
+    filters: [{ name: "JSON", extensions: ["json"] }],
+  });
+  if (result.canceled || !result.filePaths[0]) return { success: false, canceled: true };
+
+  try {
+    const raw = fs.readFileSync(result.filePaths[0], "utf8");
+    const parsed = JSON.parse(raw);
+    const looksLikeHistory =
+      parsed &&
+      typeof parsed === "object" &&
+      (
+        Array.isArray(parsed.activityLog) ||
+        Array.isArray(parsed.completedFiles) ||
+        Array.isArray(parsed.completedMd5s)
+      );
+    if (!looksLikeHistory) {
+      return { success: false, error: "That file does not look like a PhotoSender history export." };
+    }
+
+    fs.mkdirSync(path.dirname(historyStatePath), { recursive: true });
+    fs.writeFileSync(historyStatePath, JSON.stringify(parsed, null, 2), "utf8");
+    await startServer();
+    return { success: true, filePath: result.filePaths[0] };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("rebuild-history-index", async () => {
+  try {
+    const res = await fetch(`http://127.0.0.1:${settings.port}/history/rebuild-index`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (!res.ok) return { success: false };
+    return await res.json();
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle("get-local-ips", () => getLocalIPs());
 
 ipcMain.handle("get-settings", () => ({ ...settings }));

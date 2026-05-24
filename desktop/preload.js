@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld("api", {
 
   // Mutations
   clearHistory: () => ipcRenderer.invoke("clear-history"),
+  exportHistory: () => ipcRenderer.invoke("export-history"),
+  importHistory: () => ipcRenderer.invoke("import-history"),
+  rebuildHistoryIndex: () => ipcRenderer.invoke("rebuild-history-index"),
   chooseFolder: () => ipcRenderer.invoke("choose-folder"),
   openFolder: (p) => ipcRenderer.invoke("open-folder", p),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),

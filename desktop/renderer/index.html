@@ -1088,6 +1088,8 @@
             <span class="icon sm" style="color:var(--text-muted);">search</span>
             <input id="history-search" type="text" placeholder="Filter logs..." />
           </div>
+          <button class="btn" id="export-history-table"><span class="icon sm">download</span>Export</button>
+          <button class="btn" id="import-history-table"><span class="icon sm">upload_file</span>Import</button>
           <button class="btn danger" id="clear-history-table"><span class="icon sm">delete</span>Clear</button>
         </div>
       </div>
@@ -1112,6 +1114,8 @@
         </div>
       `}
     `;
+    $("#export-history-table")?.addEventListener("click", exportHistory);
+    $("#import-history-table")?.addEventListener("click", importHistory);
     $("#clear-history-table")?.addEventListener("click", clearHistoryConfirm);
     $("#history-search")?.addEventListener("input", (e) => {
       const q = e.target.value.trim().toLowerCase();
@@ -1149,13 +1153,51 @@
   }
 
   async function clearHistoryConfirm() {
-    if (!confirm("Clear all history? Files on disk are not affected.")) return;
+    if (!confirm("Clear all desktop history? Files on disk are not affected, but this PC will forget old hashes until you import history again.")) return;
     await window.api.clearHistory();
     await refreshHistory();
     await refreshStatus();
     if (state.view === "history") renderHistory();
     else if (state.view === "activity") renderActivityLog();
     else renderDashboard();
+  }
+
+  async function exportHistory() {
+    const res = await window.api.exportHistory();
+    if (res?.success) {
+      alert("History exported.");
+    } else if (!res?.canceled) {
+      alert("Could not export history" + (res?.error ? `: ${res.error}` : "."));
+    }
+  }
+
+  async function importHistory() {
+    if (!confirm("Import history on this PC? This replaces the desktop transfer history/index, but does not move or delete files.")) return;
+    const res = await window.api.importHistory();
+    if (!res?.success) {
+      if (!res?.canceled) alert("Could not import history" + (res?.error ? `: ${res.error}` : "."));
+      return;
+    }
+    await Promise.all([refreshHistory(), refreshStatus(), refreshSettings()]);
+    if (state.view === "history") renderHistory();
+    else if (state.view === "activity") renderActivityLog();
+    else if (state.view === "settings") renderSettings();
+    else renderDashboard();
+    alert("History imported.");
+  }
+
+  async function rebuildHistoryIndex() {
+    if (!confirm("Rebuild the desktop dedup index from the download folder? This hashes every file there and can take a while.")) return;
+    const res = await window.api.rebuildHistoryIndex();
+    if (!res?.success) {
+      alert("Could not rebuild index" + (res?.error ? `: ${res.error}` : "."));
+      return;
+    }
+    await Promise.all([refreshHistory(), refreshStatus()]);
+    if (state.view === "settings") renderSettings();
+    else if (state.view === "history") renderHistory();
+    else renderDashboard();
+    alert(`Indexed ${Number(res.indexed || 0).toLocaleString()} files.`);
   }
 
   // ── Settings ──────────────────────────────────────────────────────────
@@ -1210,6 +1252,18 @@
             <input type="checkbox" id="opt-launch" ${s.launchAtStartup ? "checked" : ""} /><span class="track"></span>
           </label>
         </div>
+
+        <div class="card">
+          <div class="label-row"><span>History Backup</span></div>
+          <div class="form-row">
+            <label>Desktop dedup index <span class="help">Use this when moving the backup to another PC.</span></label>
+            <div class="row-flex">
+              <button class="btn" id="export-history-settings"><span class="icon sm">download</span>Export</button>
+              <button class="btn" id="import-history-settings"><span class="icon sm">upload_file</span>Import</button>
+              <button class="btn" id="rebuild-index-settings"><span class="icon sm">sync</span>Rebuild</button>
+            </div>
+          </div>
+        </div>
       </div>
     `;
 
@@ -1256,6 +1310,9 @@
       await window.api.updateSettings({ launchAtStartup: e.target.checked });
       await refreshSettings();
     });
+    $("#export-history-settings")?.addEventListener("click", exportHistory);
+    $("#import-history-settings")?.addEventListener("click", importHistory);
+    $("#rebuild-index-settings")?.addEventListener("click", rebuildHistoryIndex);
   }
 
   // ── Router ────────────────────────────────────────────────────────────
