@@ -39,6 +39,8 @@ document.querySelector("#open-folder-btn").addEventListener("click", () => windo
 window.api.onFileReceived((entry) => {
   state.history.items = [entry, ...(state.history.items || [])].slice(0, 200);
   state.history.totalCount = (state.history.totalCount || 0) + 1;
+  state.history.nextOffset = Math.min((state.history.nextOffset || 0) + 1, state.history.totalCount);
+  state.history.hasMore = state.history.items.length < state.history.totalCount;
   if (state.status) {
     state.status.totalReceived = (state.status.totalReceived || 0) + 1;
     state.status.totalBytes = (state.status.totalBytes || 0) + (entry.size || 0);

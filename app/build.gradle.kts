@@ -91,6 +91,9 @@ dependencies {
     // Google Fonts
     implementation(libs.ui.text.google.fonts)
 
+    // QR / barcode scanner (uses Google Play Services — no CAMERA permission needed in app)
+    implementation(libs.play.services.code.scanner)
+
     // Test
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

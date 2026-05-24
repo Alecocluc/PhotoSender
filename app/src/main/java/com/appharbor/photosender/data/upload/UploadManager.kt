@@ -47,8 +47,6 @@ import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private const val SERVER_PORT = 3210
-
 // One resend allowed on an MD5 mismatch (422) before the file is treated as a hard failure.
 private const val MAX_UPLOAD_ATTEMPTS = 2
 private const val MAX_SKIPPED_BATCH = 100
@@ -232,7 +230,7 @@ class UploadManager @Inject constructor(
         if (_verifyState.value.isVerifying) return
         scope.launch {
             val baseUrl = connectionManager.getBaseUrl()
-            if (connectionManager.connectedIp.value.isBlank()) {
+            if (baseUrl.isBlank()) {
                 _verifyState.value = VerifyState(summary = "Connect to the desktop first to verify.")
                 return@launch
             }
@@ -359,8 +357,8 @@ class UploadManager @Inject constructor(
     // local records (the deletion stays retryable). An empty list is a no-op success.
     private fun deleteServerFiles(entries: List<SyncDeleteEntry>): SyncDeleteResult {
         if (entries.isEmpty()) return SyncDeleteResult(ok = true)
-        if (connectionManager.connectedIp.value.isBlank()) return SyncDeleteResult(ok = false)
         val baseUrl = connectionManager.getBaseUrl()
+        if (baseUrl.isBlank()) return SyncDeleteResult(ok = false)
         return runCatching {
             val payload = JSONObject().apply {
                 put("files", JSONArray().apply {
@@ -420,7 +418,7 @@ class UploadManager @Inject constructor(
         val alreadyQueuedIds = uploadRecordDao.getPendingAndUploading()
             .mapTo(HashSet()) { it.mediaStoreId }
 
-        val serverIp = connectionManager.connectedIp.value
+        val serverIp = connectionManager.getConnectedEndpoint()
         val newRecords = items.asSequence()
             .filter { it.id !in completedIds && it.id !in alreadyQueuedIds }
             .map { item ->
@@ -438,11 +436,15 @@ class UploadManager @Inject constructor(
         uploadRecordDao.insertAll(newRecords)
     }
 
-    private fun scheduleWork(policy: ExistingWorkPolicy) {
-        // LAN transfer to a local server, so require WiFi (unmetered); WorkManager pauses the
-        // job when it drops and resumes when it returns.
+    private suspend fun scheduleWork(policy: ExistingWorkPolicy) {
+        // LAN transfer to a local server defaults to Wi-Fi; users can relax this in Settings.
+        val networkType = if (appPreferences.wifiOnlyTransfer.first()) {
+            NetworkType.UNMETERED
+        } else {
+            NetworkType.CONNECTED
+        }
         val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.UNMETERED)
+            .setRequiredNetworkType(networkType)
             .build()
         val request = OneTimeWorkRequestBuilder<UploadWorker>()
             .setConstraints(constraints)
@@ -505,12 +507,15 @@ class UploadManager @Inject constructor(
         // transfer can resume after process death; fall back to the live connection and persist
         // that IP. If nothing is reachable, keep the file PENDING (retryable) rather than burning
         // a hard failure — this is what previously stranded files queued while disconnected.
-        val serverIp = record.serverIp.takeIf { it.isNotBlank() } ?: connectionManager.connectedIp.value
+        val serverIp = record.serverIp.takeIf { it.isNotBlank() } ?: connectionManager.getConnectedEndpoint()
         if (serverIp.isBlank()) {
             uploadRecordDao.update(record.copy(status = UploadStatus.PENDING))
             return
         }
-        val baseUrl = "http://$serverIp:$SERVER_PORT"
+        val baseUrl = connectionManager.baseUrlForTarget(serverIp) ?: run {
+            uploadRecordDao.update(record.copy(status = UploadStatus.PENDING))
+            return
+        }
 
         // Mark UPLOADING and persist the resolved IP so a later resume reaches the same server.
         val working = record.copy(status = UploadStatus.UPLOADING, serverIp = serverIp)

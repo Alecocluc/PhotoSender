@@ -31,23 +31,34 @@ class ConnectionManager @Inject constructor(
     private val _connectedIp = MutableStateFlow("")
     val connectedIp: StateFlow<String> = _connectedIp.asStateFlow()
 
+    private val _connectedEndpoint = MutableStateFlow("")
+    val connectedEndpoint: StateFlow<String> = _connectedEndpoint.asStateFlow()
+
     private val _connectionError = MutableStateFlow<String?>(null)
     val connectionError: StateFlow<String?> = _connectionError.asStateFlow()
 
     private var heartbeatJob: Job? = null
 
-    fun connect(ip: String) {
+    fun connect(targetInput: String) {
+        val target = parseConnectionTarget(targetInput)
+        if (target == null) {
+            _connectionError.value = "Enter a valid desktop address"
+            _connectionState.value = ConnectionState.DISCONNECTED
+            return
+        }
         _connectionState.value = ConnectionState.CONNECTING
         _connectionError.value = null
-        _connectedIp.value = ip
+        _connectedIp.value = target.host
+        _connectedEndpoint.value = target.endpoint
         scope.launch {
-            val success = performHealthCheck(ip)
+            val success = performHealthCheck(target)
             if (success) {
                 _connectionState.value = ConnectionState.CONNECTED
-                startHeartbeat(ip)
+                startHeartbeat(target)
             } else {
                 _connectionState.value = ConnectionState.DISCONNECTED
                 _connectedIp.value = ""
+                _connectedEndpoint.value = ""
             }
         }
     }
@@ -57,18 +68,20 @@ class ConnectionManager @Inject constructor(
         heartbeatJob = null
         _connectionState.value = ConnectionState.DISCONNECTED
         _connectedIp.value = ""
+        _connectedEndpoint.value = ""
         _serverName.value = ""
     }
 
-    private fun startHeartbeat(ip: String) {
+    private fun startHeartbeat(target: ConnectionTarget) {
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
             while (true) {
                 delay(5000)
-                val ok = performHealthCheck(ip)
+                val ok = performHealthCheck(target)
                 if (!ok) {
                     _connectionState.value = ConnectionState.DISCONNECTED
                     _connectedIp.value = ""
+                    _connectedEndpoint.value = ""
                     _serverName.value = ""
                     break
                 }
@@ -76,10 +89,10 @@ class ConnectionManager @Inject constructor(
         }
     }
 
-    private fun performHealthCheck(ip: String): Boolean {
+    private fun performHealthCheck(target: ConnectionTarget): Boolean {
         return try {
             val request = Request.Builder()
-                .url("http://$ip:3210/health")
+                .url("${target.baseUrl}/health")
                 .get()
                 .build()
             val response = okHttpClient.newCall(request).execute()
@@ -101,5 +114,9 @@ class ConnectionManager @Inject constructor(
         }
     }
 
-    fun getBaseUrl(): String = "http://${_connectedIp.value}:3210"
+    fun getBaseUrl(): String = baseUrlForConnectionTarget(_connectedEndpoint.value) ?: ""
+
+    fun getConnectedEndpoint(): String = _connectedEndpoint.value
+
+    fun baseUrlForTarget(target: String): String? = baseUrlForConnectionTarget(target)
 }

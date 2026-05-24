@@ -6,7 +6,7 @@ import {
   rebuildHistoryIndex, cleanDuplicates,
   updateRebuildButton, startRebuildPolling,
 } from '../actions.js';
-import { applyTheme, renderFooter } from '../shell.js';
+import { applyTheme, renderFooter, showToast } from '../shell.js';
 
 function renderSettings() {
   document.querySelector("#page-title").textContent = "Settings";
@@ -20,10 +20,10 @@ function renderSettings() {
         <div class="label-row"><span>Appearance</span></div>
         <div class="form-row">
           <label>Theme</label>
-          <div class="seg" role="tablist">
-            <button data-theme="system" class="${(s.theme || "system") === "system" ? "active" : ""}">System</button>
-            <button data-theme="light" class="${s.theme === "light" ? "active" : ""}">Light</button>
-            <button data-theme="dark" class="${s.theme === "dark" ? "active" : ""}">Dark</button>
+          <div class="seg" role="tablist" aria-label="Theme">
+            ${themeTab("system", "System", s.theme || "system")}
+            ${themeTab("light", "Light", s.theme || "system")}
+            ${themeTab("dark", "Dark", s.theme || "system")}
           </div>
         </div>
       </div>
@@ -85,7 +85,7 @@ function renderSettings() {
   const port = state.server.port || s.port || 3210;
   const settingsIps = document.querySelector("#settings-ips");
   settingsIps.innerHTML = (state.ips || []).map((ip) =>
-    `<span class="ip-chip" data-ip="${escHtml(ip)}">${escHtml(ip)}:${port} <span class="icon xs">content_copy</span></span>`
+    `<button class="ip-chip" type="button" data-ip="${escHtml(ip)}" aria-label="Copy http://${escHtml(ip)}:${port}">${escHtml(ip)}:${port} <span class="icon xs" aria-hidden="true">content_copy</span></button>`
   ).join("") || `<span style="color:var(--text-muted);font-size:12px;">No network interfaces detected.</span>`;
   settingsIps.querySelectorAll(".ip-chip").forEach((el) => {
     el.addEventListener("click", () => {
@@ -114,14 +114,14 @@ function renderSettings() {
   document.querySelector("#apply-port")?.addEventListener("click", async () => {
     const p = Number(document.querySelector("#port-input").value);
     if (!Number.isFinite(p) || p < 1024 || p > 65535) {
-      alert("Port must be between 1024 and 65535.");
+      showToast("Port must be between 1024 and 65535.", "error");
       return;
     }
     const res = await window.api.updateSettings({ port: p });
     await refreshSettings();
     applyTheme();
     renderFooter();
-    if (!res?.success && res?.error) alert("Failed to bind to that port: " + res.error);
+    if (!res?.success && res?.error) showToast("Failed to bind to that port: " + res.error, "error");
     rerender();
   });
 
@@ -142,6 +142,11 @@ function renderSettings() {
 
   updateRebuildButton();
   if (state.rebuild.running) startRebuildPolling();
+}
+
+function themeTab(value, label, current) {
+  const active = current === value;
+  return `<button role="tab" aria-selected="${active}" data-theme="${value}" class="${active ? "active" : ""}">${label}</button>`;
 }
 
 register("settings", renderSettings);

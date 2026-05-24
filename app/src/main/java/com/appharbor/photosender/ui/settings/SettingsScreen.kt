@@ -7,9 +7,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.Brightness6
 import androidx.compose.material.icons.outlined.LightMode
@@ -25,6 +29,7 @@ import com.appharbor.photosender.ui.components.ScreenHeader
 import com.appharbor.photosender.ui.components.SectionCard
 import com.appharbor.photosender.ui.components.SegmentedToggle
 import com.appharbor.photosender.ui.components.ToggleRow
+import com.appharbor.photosender.ui.gallery.UploadMode
 import com.appharbor.photosender.ui.theme.Spacing
 
 @Composable
@@ -35,6 +40,11 @@ fun SettingsScreen(
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
     val highSpeedTransferEnabled by viewModel.highSpeedTransferEnabled.collectAsStateWithLifecycle()
     val autoArchiveEnabled by viewModel.autoArchiveEnabled.collectAsStateWithLifecycle()
+    val confirmDestructiveSync by viewModel.confirmDestructiveSync.collectAsStateWithLifecycle()
+    val wifiOnlyTransfer by viewModel.wifiOnlyTransfer.collectAsStateWithLifecycle()
+    val keepScreenAwake by viewModel.keepScreenAwake.collectAsStateWithLifecycle()
+    val defaultUploadModeName by viewModel.defaultUploadMode.collectAsStateWithLifecycle()
+    val defaultUploadMode = UploadMode.entries.firstOrNull { it.name == defaultUploadModeName } ?: UploadMode.ADD
 
     LazyColumn(
         modifier = Modifier
@@ -87,12 +97,56 @@ fun SettingsScreen(
 
         item {
             SectionCard(title = "Transfer") {
+                Text(
+                    text = "Default action",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                SegmentedToggle(
+                    options = listOf(
+                        UploadMode.ADD to "Add new",
+                        UploadMode.SYNC to "Sync library",
+                    ),
+                    selected = defaultUploadMode,
+                    onSelect = viewModel::onDefaultUploadModeSelected,
+                    fillWidth = true,
+                    leadingIcons = mapOf(
+                        UploadMode.ADD to Icons.Filled.Storage,
+                        UploadMode.SYNC to Icons.Filled.Sync,
+                    ),
+                )
+                Spacer(Modifier.height(Spacing.md))
                 ToggleRow(
                     icon = Icons.Filled.Speed,
                     title = "High-Speed Transfer",
-                    subtitle = "Aggressive parallel uploads on stable Wi-Fi",
+                    subtitle = "Up to 6 parallel uploads. Turn off on unstable routers.",
                     checked = highSpeedTransferEnabled,
                     onCheckedChange = viewModel::onHighSpeedTransferChanged,
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                ToggleRow(
+                    icon = Icons.Filled.DeleteSweep,
+                    title = "Confirm desktop deletes",
+                    subtitle = "Ask before Sync removes files from the PC",
+                    checked = confirmDestructiveSync,
+                    onCheckedChange = viewModel::onConfirmDestructiveSyncChanged,
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                ToggleRow(
+                    icon = Icons.Filled.Wifi,
+                    title = "Wi-Fi only",
+                    subtitle = "Pause queued transfers on metered networks",
+                    checked = wifiOnlyTransfer,
+                    onCheckedChange = viewModel::onWifiOnlyTransferChanged,
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                ToggleRow(
+                    icon = Icons.Filled.BatteryChargingFull,
+                    title = "Keep screen awake",
+                    subtitle = "Prevent dimming while Activity is open during a transfer",
+                    checked = keepScreenAwake,
+                    onCheckedChange = viewModel::onKeepScreenAwakeChanged,
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 ToggleRow(

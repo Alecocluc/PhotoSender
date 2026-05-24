@@ -2,7 +2,6 @@ package com.appharbor.photosender.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -20,6 +19,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.appharbor.photosender.ui.theme.LocalExtendedColors
@@ -61,7 +62,11 @@ fun <T> SegmentedToggle(
                             if (isSelected) Modifier.background(extColors.buttonGradient)
                             else Modifier
                         )
-                        .clickable { onSelect(value) }
+                        .selectable(
+                            selected = isSelected,
+                            role = Role.Tab,
+                            onClick = { onSelect(value) },
+                        )
                         .padding(vertical = Spacing.md),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -101,7 +106,11 @@ fun <T> SegmentedToggle(
                                 MaterialTheme.shapes.extraLarge,
                             )
                         )
-                        .clickable { onSelect(value) }
+                        .selectable(
+                            selected = isSelected,
+                            role = Role.Tab,
+                            onClick = { onSelect(value) },
+                        )
                         .padding(horizontal = Spacing.md, vertical = Spacing.sm),
                     contentAlignment = Alignment.Center,
                 ) {

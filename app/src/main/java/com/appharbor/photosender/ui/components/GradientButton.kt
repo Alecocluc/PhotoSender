@@ -1,24 +1,21 @@
 package com.appharbor.photosender.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ripple
 import com.appharbor.photosender.ui.theme.LocalExtendedColors
 
 @Composable
@@ -30,21 +27,22 @@ fun GradientButton(
     content: @Composable RowScope.() -> Unit,
 ) {
     val extColors = LocalExtendedColors.current
-    val interactionSource = remember { MutableInteractionSource() }
-    Box(
+    Button(
+        onClick = onClick,
+        enabled = enabled,
         modifier = modifier
             .fillMaxWidth()
             .height(height)
-            .clip(MaterialTheme.shapes.small)
-            .background(extColors.buttonGradient)
-            .alpha(if (enabled) 1f else 0.4f)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = ripple(color = Color.White.copy(alpha = 0.25f)),
-                enabled = enabled,
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
+            .background(extColors.buttonGradient, MaterialTheme.shapes.small)
+            .alpha(if (enabled) 1f else 0.4f),
+        shape = MaterialTheme.shapes.small,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent,
+            contentColor = Color.White,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = Color.White,
+        ),
+        contentPadding = PaddingValues(horizontal = 16.dp),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,

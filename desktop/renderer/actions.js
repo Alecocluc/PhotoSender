@@ -1,7 +1,7 @@
 import { state, refreshHistory, refreshStatus, refreshSettings } from './state.js';
 import { fmtBytes } from './utils.js';
 import { rerender } from './router.js';
-import { applyTheme, renderFooter } from './shell.js';
+import { applyTheme, renderFooter, showConfirm, showToast } from './shell.js';
 
 let rebuildPoller = null;
 
@@ -38,48 +38,65 @@ export function startRebuildPolling() {
       state.rebuild.running = false;
       await Promise.all([refreshHistory(), refreshStatus()]);
       rerender();
-      if (p.error) alert("Rebuild failed: " + p.error);
-      else alert(`Indexed ${Number(p.indexed || 0).toLocaleString()} files.`);
+      if (p.error) showToast("Rebuild failed: " + p.error, "error");
+      else showToast(`Indexed ${Number(p.indexed || 0).toLocaleString()} files.`);
     }
   }, 500);
 }
 
 export async function clearHistoryConfirm() {
-  if (!confirm("Clear all desktop history? Files on disk are not affected, but this PC will forget old hashes until you import history again.")) return;
+  const ok = await showConfirm({
+    title: "Clear desktop history?",
+    message: "Files on disk are not affected, but this PC will forget old hashes until you import history again.",
+    confirmText: "Clear history",
+    danger: true,
+  });
+  if (!ok) return;
   await window.api.clearHistory();
   await Promise.all([refreshHistory(), refreshStatus()]);
   rerender();
+  showToast("Desktop history cleared.");
 }
 
 export async function exportHistory() {
   const res = await window.api.exportHistory();
   if (res?.success) {
-    alert("History exported.");
+    showToast("History exported.");
   } else if (!res?.canceled) {
-    alert("Could not export history" + (res?.error ? `: ${res.error}` : "."));
+    showToast("Could not export history" + (res?.error ? `: ${res.error}` : "."), "error");
   }
 }
 
 export async function importHistory() {
-  if (!confirm("Import history on this PC? This replaces the desktop transfer history/index, but does not move or delete files.")) return;
+  const ok = await showConfirm({
+    title: "Import history?",
+    message: "This replaces the desktop transfer history and dedup index, but does not move or delete files.",
+    confirmText: "Import",
+  });
+  if (!ok) return;
   const res = await window.api.importHistory();
   if (!res?.success) {
-    if (!res?.canceled) alert("Could not import history" + (res?.error ? `: ${res.error}` : "."));
+    if (!res?.canceled) showToast("Could not import history" + (res?.error ? `: ${res.error}` : "."), "error");
     return;
   }
   await Promise.all([refreshHistory(), refreshStatus(), refreshSettings()]);
   applyTheme();
   renderFooter();
   rerender();
-  alert("History imported.");
+  showToast("History imported.");
 }
 
 export async function rebuildHistoryIndex() {
   if (state.rebuild.running) return;
-  if (!confirm("Rebuild the desktop dedup index from the download folder? This hashes every file there and can take a while. You can keep using the app while it runs.")) return;
+  const ok = await showConfirm({
+    title: "Rebuild dedup index?",
+    message: "This hashes every file in the download folder. You can keep using the app while it runs.",
+    confirmText: "Rebuild",
+  });
+  if (!ok) return;
   const res = await window.api.rebuildHistoryIndex();
   if (!res?.success) {
-    alert("Could not rebuild index" + (res?.error ? `: ${res.error}` : "."));
+    showToast("Could not rebuild index" + (res?.error ? `: ${res.error}` : "."), "error");
     return;
   }
   state.rebuild = { running: true, indexed: 0, total: 0 };
@@ -89,29 +106,31 @@ export async function rebuildHistoryIndex() {
 
 export async function cleanDuplicates() {
   if (state.rebuild.running) {
-    alert("Wait for the rebuild to finish before cleaning duplicates.");
+    showToast("Wait for the rebuild to finish before cleaning duplicates.", "error");
     return;
   }
   const probe = await window.api.removeDuplicates({ dryRun: true });
   if (!probe?.success) {
-    alert("Could not scan for duplicates" + (probe?.error ? `: ${probe.error}` : "."));
+    showToast("Could not scan for duplicates" + (probe?.error ? `: ${probe.error}` : "."), "error");
     return;
   }
   if (!probe.removed) {
-    alert("No duplicate files found.\n\nTip: run Rebuild first so the index matches the current folder.");
+    showToast("No duplicate files found. Run Rebuild first if the folder changed.");
     return;
   }
-  const ok = confirm(
-    `Found ${Number(probe.removed).toLocaleString()} duplicate file(s) using ${fmtBytes(probe.bytesFreed)}.\n\n` +
-    "Delete the extra copies, keeping one of each? This cannot be undone."
-  );
+  const ok = await showConfirm({
+    title: "Delete duplicate files?",
+    message: `Found ${Number(probe.removed).toLocaleString()} duplicate file(s) using ${fmtBytes(probe.bytesFreed)}. Extra copies will be deleted and this cannot be undone.`,
+    confirmText: "Delete duplicates",
+    danger: true,
+  });
   if (!ok) return;
   const res = await window.api.removeDuplicates({ dryRun: false });
   if (!res?.success) {
-    alert("Could not remove duplicates" + (res?.error ? `: ${res.error}` : "."));
+    showToast("Could not remove duplicates" + (res?.error ? `: ${res.error}` : "."), "error");
     return;
   }
   await Promise.all([refreshHistory(), refreshStatus()]);
   rerender();
-  alert(`Removed ${Number(res.removed || 0).toLocaleString()} duplicate file(s), freed ${fmtBytes(res.bytesFreed || 0)}.`);
+  showToast(`Removed ${Number(res.removed || 0).toLocaleString()} duplicate file(s), freed ${fmtBytes(res.bytesFreed || 0)}.`);
 }

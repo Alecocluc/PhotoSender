@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.appharbor.photosender.data.model.ConnectionState
 import com.appharbor.photosender.data.network.ConnectionManager
+import com.appharbor.photosender.data.network.parseConnectionTarget
 import com.appharbor.photosender.data.preferences.AppPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +31,9 @@ class ConnectViewModel @Inject constructor(
     private val _ipError = MutableStateFlow<String?>(null)
     val ipError: StateFlow<String?> = _ipError.asStateFlow()
 
+    val recentDesktopTargets: StateFlow<List<String>> = appPreferences.recentDesktopTargets
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     init {
         viewModelScope.launch {
             appPreferences.lastIpAddress.collect { savedIp ->
@@ -45,29 +49,42 @@ class ConnectViewModel @Inject constructor(
         _ipError.value = null
     }
 
-    fun onConnect() {
-        val ip = _ipAddress.value.trim()
-        if (!isValidIp(ip)) {
-            _ipError.value = "Enter a valid IP address (e.g. 192.168.1.42)"
+    fun onRecentTargetSelected(target: String) {
+        _ipAddress.value = target
+        onConnect()
+    }
+
+    fun onQrScanError(message: String?) {
+        _ipError.value = message ?: "QR scan failed. Enter the desktop address manually."
+    }
+
+    fun onScannedPayload(payload: String?) {
+        if (payload == null) return
+        val parsed = parseConnectionTarget(payload)
+        if (parsed == null) {
+            _ipError.value = "That QR code is not a PhotoSender desktop address."
             return
         }
+        _ipAddress.value = parsed.endpoint
+        onConnect()
+    }
+
+    fun onConnect() {
+        val target = parseConnectionTarget(_ipAddress.value)
+        if (target == null) {
+            _ipError.value = "Enter a valid desktop address, for example 192.168.1.42:3210"
+            return
+        }
+        val endpoint = target.endpoint
         _ipError.value = null
         viewModelScope.launch {
-            appPreferences.saveLastIpAddress(ip)
+            appPreferences.rememberDesktopTarget(endpoint)
         }
-        connectionManager.connect(ip)
+        connectionManager.connect(endpoint)
     }
 
     fun onDisconnect() {
         connectionManager.disconnect()
     }
 
-    private fun isValidIp(ip: String): Boolean {
-        val parts = ip.split(".")
-        if (parts.size != 4) return false
-        return parts.all { part ->
-            val num = part.toIntOrNull() ?: return false
-            num in 0..255
-        }
-    }
 }

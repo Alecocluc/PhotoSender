@@ -62,3 +62,70 @@ export function renderDevices() {
     `<div class="device online" title="${escHtml(name)}"><span class="icon xs">${ICONS[i % ICONS.length]}</span></div>`
   ).join("");
 }
+
+function ensureToastRoot() {
+  let root = document.querySelector("#toast-root");
+  if (!root) {
+    root = document.createElement("div");
+    root.id = "toast-root";
+    root.className = "toast-root";
+    document.body.appendChild(root);
+  }
+  return root;
+}
+
+export function showToast(message, variant = "info") {
+  const root = ensureToastRoot();
+  const item = document.createElement("div");
+  item.className = `toast ${variant}`;
+  item.innerHTML = `<span class="icon sm">${variant === "error" ? "error" : "check_circle"}</span><span>${escHtml(message)}</span>`;
+  root.appendChild(item);
+  requestAnimationFrame(() => item.classList.add("show"));
+  setTimeout(() => {
+    item.classList.remove("show");
+    setTimeout(() => item.remove(), 220);
+  }, 3200);
+}
+
+export function showConfirm({
+  title,
+  message,
+  confirmText = "Confirm",
+  cancelText = "Cancel",
+  danger = false,
+}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-icon ${danger ? "danger" : ""}">
+          <span class="icon">${danger ? "warning" : "info"}</span>
+        </div>
+        <div class="modal-body">
+          <h2 id="modal-title">${escHtml(title)}</h2>
+          <p>${escHtml(message)}</p>
+          <div class="modal-actions">
+            <button class="btn" data-action="cancel">${escHtml(cancelText)}</button>
+            <button class="btn ${danger ? "danger" : "primary"}" data-action="confirm">${escHtml(confirmText)}</button>
+          </div>
+        </div>
+      </div>
+    `;
+    const close = (value) => {
+      overlay.classList.remove("show");
+      setTimeout(() => overlay.remove(), 160);
+      resolve(value);
+    };
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close(false);
+    });
+    overlay.querySelector("[data-action='cancel']").addEventListener("click", () => close(false));
+    overlay.querySelector("[data-action='confirm']").addEventListener("click", () => close(true));
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => {
+      overlay.classList.add("show");
+      overlay.querySelector("[data-action='confirm']").focus();
+    });
+  });
+}

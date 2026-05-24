@@ -2,7 +2,8 @@ package com.appharbor.photosender.ui.gallery
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,7 +28,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,12 +39,17 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,28 +57,60 @@ import coil.compose.AsyncImage
 import com.appharbor.photosender.ui.theme.LocalExtendedColors
 import com.appharbor.photosender.ui.theme.Spacing
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FolderDetailScreen(
     bucketName: String,
     onBack: () -> Unit,
     onTransferClick: () -> Unit,
+    onBeforeTransfer: () -> Unit = {},
     viewModel: GalleryViewModel = hiltViewModel(),
 ) {
     val items by viewModel.currentFolderItems.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    var previewItem by remember { mutableStateOf<com.appharbor.photosender.data.model.MediaItem?>(null) }
 
     LaunchedEffect(bucketName) {
         viewModel.loadFolderItems(bucketName)
     }
 
+    previewItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { previewItem = null },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { previewItem = null }) {
+                    Text("Close")
+                }
+            },
+            title = {
+                Text(
+                    text = item.displayName,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            text = {
+                AsyncImage(
+                    model = item.uri,
+                    contentDescription = item.displayName,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(320.dp)
+                        .clip(MaterialTheme.shapes.medium),
+                )
+            },
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
+            columns = GridCells.Adaptive(minSize = 108.dp),
             contentPadding = PaddingValues(horizontal = Spacing.xs, vertical = Spacing.xs),
             horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
             verticalArrangement = Arrangement.spacedBy(Spacing.xs),
         ) {
-            item(span = { GridItemSpan(3) }) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
@@ -84,12 +125,22 @@ fun FolderDetailScreen(
                             text = bucketName,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = "${items.size} items",
+                            text = if (selectedIds.isEmpty()) "${items.size} items" else "${selectedIds.size} selected",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                    if (selectedIds.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.deselectAll() }) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Clear selection",
+                            )
+                        }
                     }
                     IconButton(
                         onClick = {
@@ -115,7 +166,14 @@ fun FolderDetailScreen(
                         .fillMaxWidth()
                         .aspectRatio(1f)
                         .clip(MaterialTheme.shapes.extraSmall)
-                        .clickable { viewModel.toggleSelection(item.id) }
+                        .combinedClickable(
+                            role = Role.Button,
+                            onClick = {
+                                if (selectedIds.isNotEmpty()) viewModel.toggleSelection(item.id)
+                                else previewItem = item
+                            },
+                            onLongClick = { viewModel.toggleSelection(item.id) },
+                        )
                         .then(
                             if (isSelected) Modifier.border(
                                 2.dp,
@@ -158,40 +216,40 @@ fun FolderDetailScreen(
                 }
             }
 
-            item(span = { GridItemSpan(3) }) { Spacer(Modifier.height(80.dp)) }
+            item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(Spacing.xxl)) }
         }
 
         if (selectedIds.isNotEmpty()) {
             val extColors = LocalExtendedColors.current
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(end = Spacing.lg, bottom = Spacing.lg)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(extColors.buttonGradient)
-                    .clickable {
-                        viewModel.startTransfer()
-                        onTransferClick()
-                    }
-                    .padding(horizontal = Spacing.xl, vertical = Spacing.md),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    onBeforeTransfer()
+                    viewModel.startTransfer()
+                    onTransferClick()
+                },
+                icon = {
                     Icon(
                         Icons.Filled.CheckCircle,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
                         tint = Color.White,
                     )
-                    Spacer(Modifier.width(Spacing.sm))
+                },
+                text = {
                     Text(
                         "Transfer ${selectedIds.size}",
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White,
                         style = MaterialTheme.typography.labelLarge,
                     )
-                }
-            }
+                },
+                containerColor = Color.Transparent,
+                contentColor = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = Spacing.lg, bottom = Spacing.lg)
+                    .background(extColors.buttonGradient, MaterialTheme.shapes.extraLarge),
+            )
         }
     }
 }

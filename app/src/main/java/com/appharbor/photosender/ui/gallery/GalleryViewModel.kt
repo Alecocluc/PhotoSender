@@ -6,12 +6,15 @@ import com.appharbor.photosender.data.media.MediaRepository
 import com.appharbor.photosender.data.model.MediaFilter
 import com.appharbor.photosender.data.model.MediaFolder
 import com.appharbor.photosender.data.model.MediaItem
+import com.appharbor.photosender.data.preferences.AppPreferences
 import com.appharbor.photosender.data.upload.SyncPlan
 import com.appharbor.photosender.data.upload.UploadManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -20,6 +23,7 @@ import javax.inject.Inject
 class GalleryViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     private val uploadManager: UploadManager,
+    appPreferences: AppPreferences,
 ) : ViewModel() {
 
     private val _folders = MutableStateFlow<List<MediaFolder>>(emptyList())
@@ -54,6 +58,17 @@ class GalleryViewModel @Inject constructor(
 
     /** Result/summary of the most recent sync's desktop-deletion step (for a snackbar). */
     val syncState = uploadManager.syncState
+
+    val confirmDestructiveSync: StateFlow<Boolean> = appPreferences.confirmDestructiveSync
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    init {
+        viewModelScope.launch {
+            appPreferences.defaultUploadMode.collect { mode ->
+                _uploadMode.value = UploadMode.entries.firstOrNull { it.name == mode } ?: UploadMode.ADD
+            }
+        }
+    }
 
     fun loadFolders() {
         viewModelScope.launch {

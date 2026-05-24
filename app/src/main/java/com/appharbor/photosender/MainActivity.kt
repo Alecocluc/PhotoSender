@@ -14,8 +14,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -109,10 +110,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        maybeRequestNotificationPermission()
         enableEdgeToEdge()
         setContent {
             PhotoSenderApp(
+                onBeforeTransfer = ::maybeRequestNotificationPermission,
                 onThemeResolved = { isDark ->
                     val style = if (isDark) {
                         SystemBarStyle.dark(AndroidColor.TRANSPARENT)
@@ -139,7 +140,10 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
+fun PhotoSenderApp(
+    onBeforeTransfer: () -> Unit = {},
+    onThemeResolved: (Boolean) -> Unit = {},
+) {
     val mainViewModel: MainViewModel = hiltViewModel()
     val themeMode by mainViewModel.themeMode.collectAsStateWithLifecycle()
     val dynamicColorEnabled by mainViewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
@@ -174,13 +178,6 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val scope = rememberCoroutineScope()
         var showConnectSheet by remember { mutableStateOf(false) }
-
-        // Auto-open Connect sheet on first app open when not connected.
-        LaunchedEffect(Unit) {
-            if (connectionState == ConnectionState.DISCONNECTED) {
-                showConnectSheet = true
-            }
-        }
 
         if (showConnectSheet) {
             ModalBottomSheet(
@@ -244,11 +241,32 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
                     windowInsets = TopAppBarDefaults.windowInsets,
                 )
             },
+            bottomBar = {
+                AnimatedVisibility(
+                    visible = showBottomBar,
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                ) {
+                    StitchBottomNav(
+                        items = bottomNavItems,
+                        currentDestination = currentDestination,
+                        onItemSelected = { route ->
+                            navController.navigate(route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
+                }
+            },
         ) { innerPadding ->
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = innerPadding.calculateTopPadding()),
+                    .padding(innerPadding),
             ) {
             NavHost(
                 navController = navController,
@@ -271,7 +289,10 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
                                 launchSingleTop = true
                                 restoreState = true
                             }
-                        }
+                        },
+                        onConnectClick = { showConnectSheet = true },
+                        onBeforeTransfer = onBeforeTransfer,
+                        connectionState = connectionState,
                     )
                 }
                 composable(
@@ -288,6 +309,7 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
                         bucketName = bucketName,
                         viewModel = galleryViewModel,
                         onBack = { navController.popBackStack() },
+                        onBeforeTransfer = onBeforeTransfer,
                         onTransferClick = {
                             navController.navigate(Screen.Activity.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
@@ -305,26 +327,6 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
                 composable(Screen.Settings.route) {
                     SettingsScreen()
                 }
-            }
-            AnimatedVisibility(
-                visible = showBottomBar,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter),
-            ) {
-                StitchBottomNav(
-                    items = bottomNavItems,
-                    currentDestination = currentDestination,
-                    onItemSelected = { route ->
-                        navController.navigate(route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                )
             }
             } // Box
         }
@@ -379,7 +381,11 @@ private fun StitchBottomNav(
                             .weight(1f)
                             .clip(RoundedCornerShape(18.dp))
                             .background(bg)
-                            .clickable { onItemSelected(item.route) }
+                            .selectable(
+                                selected = selected,
+                                role = Role.Tab,
+                                onClick = { onItemSelected(item.route) },
+                            )
                             .padding(vertical = Spacing.sm)
                             .then(gradientMod),
                         horizontalAlignment = Alignment.CenterHorizontally,

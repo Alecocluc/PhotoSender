@@ -2,6 +2,7 @@ package com.appharbor.photosender.ui.activity
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -61,6 +64,7 @@ import com.appharbor.photosender.ui.components.SegmentedToggle
 import com.appharbor.photosender.ui.components.StatCard
 import com.appharbor.photosender.ui.components.StatusBadge
 import com.appharbor.photosender.ui.history.HistoryViewModel
+import com.appharbor.photosender.ui.settings.SettingsViewModel
 import com.appharbor.photosender.ui.theme.LocalExtendedColors
 import com.appharbor.photosender.ui.theme.Spacing
 import com.appharbor.photosender.ui.transfer.TransferViewModel
@@ -75,8 +79,17 @@ private enum class ActivityTab { LIVE, HISTORY }
 fun ActivityScreen(
     transferViewModel: TransferViewModel = hiltViewModel(),
     historyViewModel: HistoryViewModel = hiltViewModel(),
+    settingsViewModel: SettingsViewModel = hiltViewModel(),
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(ActivityTab.LIVE) }
+    val transferState by transferViewModel.transferState.collectAsStateWithLifecycle()
+    val keepScreenAwake by settingsViewModel.keepScreenAwake.collectAsStateWithLifecycle()
+    val view = LocalView.current
+
+    DisposableEffect(keepScreenAwake, transferState.isTransferring) {
+        view.keepScreenOn = keepScreenAwake && transferState.isTransferring
+        onDispose { view.keepScreenOn = false }
+    }
 
     Column(
         modifier = Modifier
@@ -106,6 +119,7 @@ fun ActivityScreen(
 
 // ── Live segment ─────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun LiveSegment(viewModel: TransferViewModel) {
     val state by viewModel.transferState.collectAsStateWithLifecycle()
@@ -119,24 +133,28 @@ private fun LiveSegment(viewModel: TransferViewModel) {
 
         // Global progress header — pinned at the top
         if (state.totalFiles > 0) {
-            item {
-                LiveProgressHeader(
-                    progressPercent = animatedProgress,
-                    completedFiles = state.completedFiles,
-                    totalFiles = state.totalFiles,
-                    speedBytesPerSec = state.currentSpeedBytesPerSec,
-                    etaSeconds = state.estimatedSecondsRemaining,
-                    transferredBytes = state.transferredBytes,
-                    totalBytes = state.totalBytes,
-                    failedFiles = state.failedFiles,
-                    skippedFiles = state.skippedFiles,
-                    isTransferring = state.isTransferring,
-                    onCancel = viewModel::cancelTransfer,
-                    formatBytes = viewModel::formatBytes,
-                    formatSpeed = viewModel::formatSpeed,
-                    formatTime = viewModel::formatTime,
-                )
-                Spacer(Modifier.height(Spacing.lg))
+            stickyHeader {
+                Column(
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surface),
+                ) {
+                    LiveProgressHeader(
+                        progressPercent = animatedProgress,
+                        completedFiles = state.completedFiles,
+                        totalFiles = state.totalFiles,
+                        speedBytesPerSec = state.currentSpeedBytesPerSec,
+                        etaSeconds = state.estimatedSecondsRemaining,
+                        transferredBytes = state.transferredBytes,
+                        totalBytes = state.totalBytes,
+                        failedFiles = state.failedFiles,
+                        skippedFiles = state.skippedFiles,
+                        isTransferring = state.isTransferring,
+                        onCancel = viewModel::cancelTransfer,
+                        formatBytes = viewModel::formatBytes,
+                        formatSpeed = viewModel::formatSpeed,
+                        formatTime = viewModel::formatTime,
+                    )
+                    Spacer(Modifier.height(Spacing.lg))
+                }
             }
         }
 
@@ -332,6 +350,28 @@ private fun LiveProgressHeader(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        if (isTransferring) {
+            Spacer(Modifier.height(Spacing.md))
+            OutlinedButton(
+                onClick = onCancel,
+                shape = MaterialTheme.shapes.extraLarge,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Icon(
+                    Icons.Filled.Cancel,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(Spacing.xs))
+                Text(
+                    "Cancel transfer",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+        }
     }
 }
 

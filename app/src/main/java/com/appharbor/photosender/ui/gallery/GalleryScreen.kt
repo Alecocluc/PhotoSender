@@ -1,7 +1,12 @@
 package com.appharbor.photosender.ui.gallery
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,12 +41,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Deselect
+import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +59,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,16 +73,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.appharbor.photosender.data.model.ConnectionState
 import com.appharbor.photosender.data.model.MediaFilter
 import com.appharbor.photosender.data.model.MediaFolder
 import com.appharbor.photosender.data.upload.SyncPlan
 import com.appharbor.photosender.ui.components.EmptyState
+import com.appharbor.photosender.ui.components.GradientButton
 import com.appharbor.photosender.ui.components.ScreenHeader
 import com.appharbor.photosender.ui.components.SegmentedToggle
 import com.appharbor.photosender.ui.theme.LocalExtendedColors
@@ -82,6 +100,9 @@ import com.appharbor.photosender.ui.theme.Spacing
 fun GalleryScreen(
     onFolderClick: (String) -> Unit,
     onTransferClick: () -> Unit,
+    onConnectClick: () -> Unit,
+    onBeforeTransfer: () -> Unit = {},
+    connectionState: ConnectionState,
     viewModel: GalleryViewModel = hiltViewModel(),
 ) {
     val folders by viewModel.folders.collectAsStateWithLifecycle()
@@ -92,10 +113,13 @@ fun GalleryScreen(
     val pendingSyncPlan by viewModel.pendingSyncPlan.collectAsStateWithLifecycle()
     val isPreparingSync by viewModel.isPreparingSync.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    val confirmDestructiveSync by viewModel.confirmDestructiveSync.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     var searchQuery by remember { mutableStateOf("") }
     var showSearch by remember { mutableStateOf(false) }
-    var hasPermission by remember { mutableStateOf(false) }
+    var hasPermission by remember { mutableStateOf(hasMediaPermission(context)) }
     val focusManager = LocalFocusManager.current
 
     val displayFolders = remember(folders, searchQuery) {
@@ -103,7 +127,6 @@ fun GalleryScreen(
         else folders.filter { it.bucketName.contains(searchQuery, ignoreCase = true) }
     }
 
-    val context = LocalContext.current
     LaunchedEffect(syncState.summary) {
         syncState.summary?.let { summary ->
             Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
@@ -111,10 +134,18 @@ fun GalleryScreen(
         }
     }
 
+    LaunchedEffect(connectionState, hasPermission) {
+        if (connectionState == ConnectionState.CONNECTED && hasPermission) {
+            viewModel.loadFolders()
+        }
+    }
+
     pendingSyncPlan?.let { plan ->
         SyncConfirmDialog(
             plan = plan,
+            confirmDestructive = confirmDestructiveSync,
             onConfirm = {
+                if (!plan.isNoOp) onBeforeTransfer()
                 val hasUploads = viewModel.confirmSync()
                 if (hasUploads) onTransferClick()
             },
@@ -129,31 +160,68 @@ fun GalleryScreen(
         if (hasPermission) viewModel.loadFolders()
     }
 
-    LaunchedEffect(Unit) {
-        val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    fun requestMediaPermission() {
+        permissionLauncher.launch(requiredMediaPermissions())
+    }
+
+    fun openAppSettings() {
+        val intent = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}")
+        )
+        context.startActivity(intent)
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val granted = hasMediaPermission(context)
+                hasPermission = granted
+                if (granted) viewModel.loadFolders()
+            }
         }
-        permissionLauncher.launch(permissions)
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
+            columns = GridCells.Adaptive(minSize = 150.dp),
             contentPadding = PaddingValues(horizontal = Spacing.screen, vertical = Spacing.sm),
             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
-            item(span = { GridItemSpan(2) }) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 Column {
                     Spacer(Modifier.height(Spacing.sm))
                     ScreenHeader(
                         title = "Gallery",
-                        subtitle = if (totalAssets > 0) "$totalAssets items · ${folders.size} folders"
-                        else "Grant permission to browse media",
+                        subtitle = when {
+                            connectionState != ConnectionState.CONNECTED -> "Pair with desktop to start"
+                            !hasPermission -> "Allow media access after pairing"
+                            totalAssets > 0 -> "$totalAssets items · ${folders.size} folders"
+                            else -> "Ready to browse media"
+                        },
                     )
                     Spacer(Modifier.height(Spacing.md))
+
+                    if (connectionState != ConnectionState.CONNECTED) {
+                        PairingSetupCard(
+                            connectionState = connectionState,
+                            onConnectClick = onConnectClick,
+                        )
+                        Spacer(Modifier.height(Spacing.md))
+                    } else if (!hasPermission) {
+                        MediaPermissionCard(
+                            onAllowClick = ::requestMediaPermission,
+                            onSettingsClick = ::openAppSettings,
+                        )
+                        Spacer(Modifier.height(Spacing.md))
+                    }
+
+                    if (connectionState != ConnectionState.CONNECTED || !hasPermission) {
+                        return@Column
+                    }
 
                     // Filter row with inline search toggle
                     Row(
@@ -315,7 +383,7 @@ fun GalleryScreen(
             }
 
             if (displayFolders.isEmpty() && searchQuery.isNotBlank()) {
-                item(span = { GridItemSpan(2) }) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
                     EmptyState(
                         icon = Icons.Filled.Search,
                         title = "No folders found",
@@ -324,8 +392,17 @@ fun GalleryScreen(
                     )
                 }
             } else {
-                if (displayFolders.isNotEmpty()) {
-                    item(span = { GridItemSpan(2) }) {
+                if (connectionState == ConnectionState.CONNECTED && hasPermission && displayFolders.isEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        EmptyState(
+                            icon = Icons.Filled.PermMedia,
+                            title = "No media found",
+                            subtitle = "Photos and videos you add to this device will appear here",
+                            modifier = Modifier.padding(vertical = Spacing.xxl),
+                        )
+                    }
+                } else if (connectionState == ConnectionState.CONNECTED && hasPermission && displayFolders.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) {
                         FolderCard(
                             folder = displayFolders.first(),
                             featured = true,
@@ -342,40 +419,135 @@ fun GalleryScreen(
                 }
             }
 
-            item(span = { GridItemSpan(2) }) { Spacer(Modifier.height(80.dp)) }
+            item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(Spacing.xxl)) }
         }
 
         // Transfer FAB — Add mode only
         if (uploadMode == UploadMode.ADD && selectedIds.isNotEmpty()) {
             val extColors = LocalExtendedColors.current
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(end = Spacing.lg, bottom = 80.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(extColors.buttonGradient)
-                    .clickable {
-                        viewModel.startTransfer()
-                        onTransferClick()
-                    }
-                    .padding(horizontal = Spacing.xl, vertical = Spacing.md),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    onBeforeTransfer()
+                    viewModel.startTransfer()
+                    onTransferClick()
+                },
+                icon = {
                     Icon(
                         Icons.Filled.CheckCircle,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
                         tint = Color.White,
                     )
-                    Spacer(Modifier.width(Spacing.sm))
+                },
+                text = {
                     Text(
                         "Transfer ${selectedIds.size}",
                         fontWeight = FontWeight.SemiBold,
                         color = Color.White,
                         style = MaterialTheme.typography.labelLarge,
                     )
-                }
+                },
+                containerColor = Color.Transparent,
+                contentColor = Color.White,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = Spacing.lg, bottom = Spacing.lg)
+                    .background(extColors.buttonGradient, MaterialTheme.shapes.extraLarge),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PairingSetupCard(
+    connectionState: ConnectionState,
+    onConnectClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(Spacing.lg),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Filled.Computer,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(MaterialTheme.shapes.small)
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f))
+                    .padding(9.dp),
+            )
+            Spacer(Modifier.width(Spacing.md))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Pair with your desktop",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "Scan the QR code shown in PhotoSender Desktop before choosing media.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(Spacing.md))
+        GradientButton(
+            onClick = onConnectClick,
+            enabled = connectionState != ConnectionState.CONNECTING,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                Icons.Filled.Wifi,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = Color.White,
+            )
+            Spacer(Modifier.width(Spacing.sm))
+            Text(
+                text = if (connectionState == ConnectionState.CONNECTING) "Connecting…" else "Connect desktop",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MediaPermissionCard(
+    onAllowClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(Spacing.lg),
+    ) {
+        Text(
+            text = "Allow media access",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(Spacing.xs))
+        Text(
+            text = "PhotoSender only reads local photos and videos you choose to send.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(Spacing.md))
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            FilledTonalButton(onClick = onAllowClick, shape = MaterialTheme.shapes.medium) {
+                Text("Allow media")
+            }
+            TextButton(onClick = onSettingsClick) {
+                Text("Open settings")
             }
         }
     }
@@ -392,7 +564,7 @@ private fun FolderCard(
             .fillMaxWidth()
             .then(if (featured) Modifier.height(200.dp) else Modifier.aspectRatio(1f))
             .clip(if (featured) MaterialTheme.shapes.large else MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
     ) {
         AsyncImage(
             model = folder.coverUri,
@@ -434,6 +606,8 @@ private fun FolderCard(
                 style = if (featured) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall,
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
+                maxLines = if (featured) 2 else 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "${folder.itemCount} items",
@@ -447,9 +621,15 @@ private fun FolderCard(
 @Composable
 private fun SyncConfirmDialog(
     plan: SyncPlan,
+    confirmDestructive: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    LaunchedEffect(plan, confirmDestructive) {
+        if (!confirmDestructive && plan.deleteCount == 0 && !plan.isNoOp) {
+            onConfirm()
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (plan.isNoOp) "Already in sync" else "Sync to desktop") },
@@ -495,4 +675,18 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
     bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
     else -> "$bytes B"
+}
+
+private fun requiredMediaPermissions(): Array<String> {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+    } else {
+        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
+}
+
+private fun hasMediaPermission(context: Context): Boolean {
+    return requiredMediaPermissions().all { permission ->
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    }
 }

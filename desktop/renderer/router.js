@@ -8,9 +8,12 @@ export function initSidebarHelper(fn) { _closeSidebar = fn; }
 
 export function navigate(view) {
   state.view = view;
-  document.querySelectorAll(".nav-item").forEach((el) =>
-    el.classList.toggle("active", el.dataset.view === view)
-  );
+  document.querySelectorAll(".nav-item").forEach((el) => {
+    const active = el.dataset.view === view;
+    el.classList.toggle("active", active);
+    if (active) el.setAttribute("aria-current", "page");
+    else el.removeAttribute("aria-current");
+  });
   if (window.innerWidth <= 900) _closeSidebar();
   _registry[view]?.();
 }

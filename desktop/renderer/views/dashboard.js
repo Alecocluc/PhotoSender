@@ -5,6 +5,7 @@ import {
   fileIcon, isVideo, primaryIP,
 } from '../utils.js';
 import { register, rerender } from '../router.js';
+import { renderQrCode } from '../qr.js';
 
 function activityItem(entry) {
   const name = entryName(entry);
@@ -32,8 +33,10 @@ function renderDashboard() {
   const recent = (s.recentActivity || []).slice(0, 8);
   const ip = loading ? "—" : primaryIP(state.ips);
   const port = state.server.port || state.settings?.port || 3210;
+  const address = ip !== "—" ? `http://${ip}:${port}` : "";
   const speed = fmtSpeed(s.currentSpeedBytesPerSec);
   const dlPath = state.settings?.downloadPath || "";
+  const railItems = recent.slice(0, 5);
 
   function skelVal(content, width = "80px") {
     return loading
@@ -42,20 +45,24 @@ function renderDashboard() {
   }
 
   document.querySelector("#view-root").innerHTML = `
-    <div class="bento">
-      <section class="card hero-status">
-        <div>
+    <div class="receiver-console">
+      <section class="card pairing-hero">
+        <div class="pairing-copy">
           <div class="title-row">
-            <span class="title">System Status</span>
-            <span class="status-pulse"></span>
+            <span class="title">Desktop Receiver</span>
+            <span class="status-pulse ${state.server.running ? "" : "off"}"></span>
           </div>
-          <h2 class="server-on">Server is ${state.server.running ? "ON" : "OFF"}</h2>
-          <div class="gateway-label"><span class="icon xs">router</span>Local Gateway</div>
-          <div class="ip-row">
-            <div class="ip">${loading ? `<span class="skeleton" style="width:160px;">&nbsp;</span>` : `${escHtml(ip)}${ip !== "—" ? `<span style="color:var(--text-muted);font-size:18px;">:${port}</span>` : ""}`}</div>
-            <button class="btn-copy" id="copy-ip-btn" ${loading ? "disabled" : ""}><span class="icon xs">content_copy</span><span>Copy IP</span></button>
+          <h2 class="server-on">${state.server.running ? "Ready to receive" : "Receiver offline"}</h2>
+          <div class="gateway-label"><span class="icon xs">qr_code_2</span>Pairing address</div>
+          <div class="address-row">
+            <div class="pair-address">${loading ? `<span class="skeleton" style="width:260px;">&nbsp;</span>` : escHtml(address || "No network interface")}</div>
+            <button class="btn-copy" id="copy-ip-btn" ${loading || !address ? "disabled" : ""} aria-label="Copy pairing address"><span class="icon xs">content_copy</span><span>Copy address</span></button>
           </div>
-          <div class="ip-hint">Enter this address on your mobile device</div>
+          <div class="ip-hint">Scan this QR from Android or enter the address manually.</div>
+        </div>
+        <div class="qr-panel" aria-label="Pairing QR code">
+          ${loading || !address ? `<div class="qr-placeholder"><span class="icon">wifi_off</span><span>Waiting for network</span></div>` : `<canvas id="pair-qr" aria-hidden="true"></canvas>`}
+          <div class="qr-caption">Android → Connect desktop → Scan QR</div>
         </div>
       </section>
 
@@ -65,7 +72,19 @@ function renderDashboard() {
         <p>Incoming photos will be routed to your desktop folder.</p>
         <div class="path-row">
           <span class="path-text" title="${escHtml(dlPath)}">${escHtml(dlPath || "Not configured")}</span>
-          <button class="path-edit" id="edit-path-btn" title="Change folder"><span class="icon sm">edit</span></button>
+          <button class="path-edit" id="edit-path-btn" title="Change folder" aria-label="Change download folder"><span class="icon sm">edit</span></button>
+        </div>
+      </section>
+
+      <section class="card transfer-rail">
+        <div class="label-row">
+          <span>Transfer Rail</span>
+          <span class="live"><span class="pulse"></span>${state.server.running ? "Armed" : "Offline"}</span>
+        </div>
+        <div class="rail-list">
+          ${railItems.length === 0
+            ? `<div class="rail-empty"><span class="icon">move_to_inbox</span><span>Waiting for the next file</span></div>`
+            : railItems.map(activityItem).join("")}
         </div>
       </section>
 
@@ -107,15 +126,19 @@ function renderDashboard() {
     </div>
   `;
 
+  if (address) {
+    const canvas = document.querySelector("#pair-qr");
+    if (canvas) renderQrCode(canvas, address);
+  }
+
   document.querySelector("#copy-ip-btn")?.addEventListener("click", async (e) => {
     const btn = e.currentTarget;
-    const text = `http://${ip}:${port}`;
-    try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+    try { await navigator.clipboard.writeText(address); } catch { /* ignore */ }
     btn.classList.add("copied");
-    btn.querySelector("span:last-child").textContent = "Copied!";
+    btn.querySelector("span:last-child").textContent = "Copied";
     setTimeout(() => {
       btn.classList.remove("copied");
-      btn.querySelector("span:last-child").textContent = "Copy IP";
+      btn.querySelector("span:last-child").textContent = "Copy address";
     }, 1400);
   });
 
