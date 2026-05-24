@@ -37,8 +37,10 @@ import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import okio.source
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.security.MessageDigest
@@ -118,6 +120,44 @@ data class VerifyState(
     val summary: String? = null,
 )
 
+/** A file the server should delete in Sync mode, identified by its content hash. */
+data class SyncDeleteEntry(
+    val md5: String,
+    val bucketName: String,
+    val fileName: String,
+)
+
+/**
+ * The diff between the phone library and what we've uploaded, for Sync mode. Computed from cheap
+ * metadata only (a MediaStore scan + the local DB) — no hashing.
+ */
+data class SyncPlan(
+    val uploadItems: List<MediaItem>,
+    val uploadBytes: Long,
+    val deleteEntries: List<SyncDeleteEntry>,
+    /** Every completed record whose media is gone from the phone — removed from the DB after sync. */
+    val deletedRecordIds: List<Long>,
+) {
+    val uploadCount: Int get() = uploadItems.size
+    val deleteCount: Int get() = deleteEntries.size
+    val isNoOp: Boolean get() = uploadItems.isEmpty() && deletedRecordIds.isEmpty()
+}
+
+/** Result of the (one-shot) desktop-deletion half of a sync; surfaced to the UI via a snackbar. */
+data class SyncState(
+    val isSyncing: Boolean = false,
+    val deleted: Int = 0,
+    /** Human-readable summary once a sync finishes; null while idle or running. */
+    val summary: String? = null,
+)
+
+private data class SyncDeleteResult(
+    val ok: Boolean,
+    val deleted: Int = 0,
+    val bytesFreed: Long = 0,
+    val notFound: Int = 0,
+)
+
 @Singleton
 class UploadManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -134,6 +174,9 @@ class UploadManager @Inject constructor(
 
     private val _verifyState = MutableStateFlow(VerifyState())
     val verifyState: StateFlow<VerifyState> = _verifyState.asStateFlow()
+
+    private val _syncState = MutableStateFlow(SyncState())
+    val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
     private var speedTracker = SpeedTracker()
 
@@ -240,6 +283,116 @@ class UploadManager @Inject constructor(
                 },
             )
         }
+    }
+
+    /**
+     * Sync mode plan: diff the current phone library against what we've uploaded. Uses only cheap
+     * metadata (the passed-in scan + the local DB) so it's instant even for a 22k library.
+     *
+     * The [aliveMd5s] guard makes deletion conservative against duplicates: if the same content
+     * still exists somewhere on the phone, its desktop copy is kept even when one phone copy was
+     * removed. Content with a blank hash (legacy records) is never proposed for deletion.
+     */
+    suspend fun computeSyncPlan(liveItems: List<MediaItem>): SyncPlan {
+        val liveIds = liveItems.mapTo(HashSet()) { it.id }
+        val completed = uploadRecordDao.getCompletedSnapshot()
+
+        val aliveMd5s = completed.asSequence()
+            .filter { it.mediaStoreId in liveIds && it.md5Hash.isNotBlank() }
+            .mapTo(HashSet()) { it.md5Hash }
+
+        val deletedRecords = completed.filter { it.mediaStoreId !in liveIds }
+        val deleteEntries = deletedRecords.asSequence()
+            .filter { it.md5Hash.isNotBlank() && it.md5Hash !in aliveMd5s }
+            .distinctBy { it.md5Hash }
+            .map { SyncDeleteEntry(md5 = it.md5Hash, bucketName = it.bucketName, fileName = it.fileName) }
+            .toList()
+
+        // New uploads: same set-based filter enqueueRecords uses.
+        val completedIds = completed.mapTo(HashSet()) { it.mediaStoreId }
+        val alreadyQueuedIds = uploadRecordDao.getPendingAndUploading().mapTo(HashSet()) { it.mediaStoreId }
+        val uploadItems = liveItems.filter { it.id !in completedIds && it.id !in alreadyQueuedIds }
+
+        return SyncPlan(
+            uploadItems = uploadItems,
+            uploadBytes = uploadItems.sumOf { it.size },
+            deleteEntries = deleteEntries,
+            deletedRecordIds = deletedRecords.map { it.id },
+        )
+    }
+
+    /**
+     * Run a confirmed [SyncPlan]: queue the new files through the normal upload path, then ask the
+     * desktop to delete the removed ones. Local records for gone-from-phone media are dropped only
+     * after the desktop confirms, so a failed/offline delete stays retryable on the next sync.
+     */
+    fun executeSync(plan: SyncPlan) {
+        if (plan.uploadItems.isNotEmpty()) {
+            start(plan.uploadItems)
+        }
+        if (plan.deletedRecordIds.isEmpty()) return
+
+        scope.launch {
+            _syncState.value = SyncState(isSyncing = true)
+            val result = deleteServerFiles(plan.deleteEntries)
+            if (result.ok) {
+                uploadRecordDao.deleteByIds(plan.deletedRecordIds)
+                _syncState.value = SyncState(
+                    isSyncing = false,
+                    deleted = result.deleted,
+                    summary = if (result.deleted > 0) {
+                        "Removed ${result.deleted} file(s) from the desktop."
+                    } else {
+                        "Desktop already matched — nothing to remove."
+                    },
+                )
+            } else {
+                _syncState.value = SyncState(
+                    isSyncing = false,
+                    summary = "Couldn't reach the desktop to remove files — try again when connected.",
+                )
+            }
+        }
+    }
+
+    // POST the delete list to the desktop. Network failures return ok=false so we don't drop the
+    // local records (the deletion stays retryable). An empty list is a no-op success.
+    private fun deleteServerFiles(entries: List<SyncDeleteEntry>): SyncDeleteResult {
+        if (entries.isEmpty()) return SyncDeleteResult(ok = true)
+        if (connectionManager.connectedIp.value.isBlank()) return SyncDeleteResult(ok = false)
+        val baseUrl = connectionManager.getBaseUrl()
+        return runCatching {
+            val payload = JSONObject().apply {
+                put("files", JSONArray().apply {
+                    entries.forEach { entry ->
+                        put(JSONObject().apply {
+                            put("md5", entry.md5)
+                            put("bucketName", entry.bucketName)
+                            put("fileName", entry.fileName)
+                        })
+                    }
+                })
+            }.toString()
+            val request = Request.Builder()
+                .url("$baseUrl/sync/delete")
+                .post(payload.toRequestBody("application/json".toMediaType()))
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@runCatching SyncDeleteResult(ok = false)
+                val json = JSONObject(response.body?.string().orEmpty())
+                SyncDeleteResult(
+                    ok = json.optBoolean("success", false),
+                    deleted = json.optInt("deleted", 0),
+                    bytesFreed = json.optLong("bytesFreed", 0L),
+                    notFound = json.optJSONArray("notFound")?.length() ?: 0,
+                )
+            }
+        }.getOrDefault(SyncDeleteResult(ok = false))
+    }
+
+    /** Clear a finished sync summary once the UI has shown it. */
+    fun clearSyncSummary() {
+        _syncState.update { it.copy(summary = null) }
     }
 
     fun cancelTransfer() {

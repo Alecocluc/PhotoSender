@@ -57,6 +57,9 @@ interface UploadRecordDao {
     @Query("SELECT COALESCE(MAX(uploadedAt), 0) FROM upload_records WHERE status = 'COMPLETED'")
     fun getLastSyncTimestamp(): Flow<Long>
 
+    @Query("DELETE FROM upload_records WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<Long>)
+
     @Query("DELETE FROM upload_records")
     suspend fun clearAll()
 

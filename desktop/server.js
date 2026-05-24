@@ -385,6 +385,72 @@ function removeDuplicateFiles(downloadPath, { dryRun = false } = {}) {
   return { groups: groups.length, removed, bytesFreed };
 }
 
+/** Remove the index entry for a given md5/file pair, dropping the map key when its list empties. */
+function forgetKnownFile(md5, entry) {
+  const list = (knownFilesByMd5.get(md5) || []).filter(
+    (e) => !(e.fileName === entry.fileName && e.bucketName === entry.bucketName)
+  );
+  if (list.length > 0) {
+    knownFilesByMd5.set(md5, list);
+  } else {
+    knownFilesByMd5.delete(md5);
+    knownMd5s.delete(md5);
+  }
+}
+
+/**
+ * Delete files the phone reports as removed (Sync mode). Conservative by design: a file is only
+ * deleted when its md5 is in our index AND still on disk — content the server never received
+ * (no md5 match) is reported in `notFound` and left untouched. Matching is by md5 (the dedup key);
+ * the bucketName/fileName hints only disambiguate when one md5 has several indexed copies.
+ */
+function deleteSyncedFiles(downloadPath, files) {
+  let deleted = 0;
+  let bytesFreed = 0;
+  const deletedMd5s = [];
+  const notFound = [];
+
+  for (const file of files || []) {
+    const md5 = normalizeMd5(file?.md5);
+    const indexed = (md5 && knownFilesByMd5.get(md5)) || [];
+    const onDisk = indexed.filter((e) => isEntryOnDisk(downloadPath, e));
+    if (onDisk.length === 0) {
+      notFound.push(md5);
+      continue;
+    }
+
+    // Prefer the copy the phone points at; otherwise just take the first on-disk copy.
+    const hintBucket = file?.bucketName ? sanitizePath(file.bucketName) : null;
+    const hintName = file?.fileName ? path.basename(String(file.fileName)) : null;
+    const entry =
+      onDisk.find((e) => (!hintBucket || e.bucketName === hintBucket) && (!hintName || e.fileName === hintName)) ||
+      onDisk.find((e) => !hintBucket || e.bucketName === hintBucket) ||
+      onDisk[0];
+
+    const filePath = filePathForEntry(downloadPath, entry);
+    let size = entry.size || 0;
+    try {
+      size = fs.statSync(filePath).size;
+    } catch {
+      // fall back to the recorded size
+    }
+    safeUnlink(filePath);
+
+    forgetKnownFile(md5, entry);
+    const logIdx = activityLog.findIndex(
+      (e) => e.md5 === md5 && e.fileName === entry.fileName && e.bucketName === entry.bucketName
+    );
+    if (logIdx >= 0) activityLog.splice(logIdx, 1);
+
+    deleted++;
+    bytesFreed += size;
+    deletedMd5s.push(md5);
+  }
+
+  if (deleted > 0) saveHistoryState();
+  return { deleted, bytesFreed, deletedMd5s, notFound };
+}
+
 function createServer(downloadPath, options = {}) {
   historyStatePath = options.historyStatePath || null;
   const onFileReceived = typeof options.onFileReceived === "function" ? options.onFileReceived : null;
@@ -476,6 +542,18 @@ function createServer(downloadPath, options = {}) {
       const dryRun = !!(req.body && req.body.dryRun);
       const result = removeDuplicateFiles(downloadPath, { dryRun });
       res.json({ success: true, dryRun, ...result });
+    } catch (err) {
+      res.status(500).json({ success: false, error: String((err && err.message) || err) });
+    }
+  });
+
+  // Sync mode: delete files the phone has removed. Matches by md5 (the dedup key) and only
+  // touches content the server actually holds, so manually-added files are never deleted.
+  app.post("/sync/delete", (req, res) => {
+    try {
+      const files = Array.isArray(req.body && req.body.files) ? req.body.files : [];
+      const result = deleteSyncedFiles(downloadPath, files);
+      res.json({ success: true, ...result });
     } catch (err) {
       res.status(500).json({ success: false, error: String((err && err.message) || err) });
     }
