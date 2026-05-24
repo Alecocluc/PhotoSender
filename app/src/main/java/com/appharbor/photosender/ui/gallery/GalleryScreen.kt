@@ -20,20 +20,26 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,7 +55,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -57,11 +65,11 @@ import coil.compose.AsyncImage
 import com.appharbor.photosender.data.model.MediaFilter
 import com.appharbor.photosender.data.model.MediaFolder
 import com.appharbor.photosender.data.upload.SyncPlan
+import com.appharbor.photosender.ui.components.EmptyState
+import com.appharbor.photosender.ui.components.ScreenHeader
+import com.appharbor.photosender.ui.components.SegmentedToggle
 import com.appharbor.photosender.ui.theme.LocalExtendedColors
-import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Deselect
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.ButtonDefaults
+import com.appharbor.photosender.ui.theme.Spacing
 
 @Composable
 fun GalleryScreen(
@@ -78,9 +86,15 @@ fun GalleryScreen(
     val isPreparingSync by viewModel.isPreparingSync.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
 
+    var searchQuery by remember { mutableStateOf("") }
     var hasPermission by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
-    // Surface the desktop-deletion result of a finished sync as a toast.
+    val displayFolders = remember(folders, searchQuery) {
+        if (searchQuery.isBlank()) folders
+        else folders.filter { it.bucketName.contains(searchQuery, ignoreCase = true) }
+    }
+
     val context = LocalContext.current
     LaunchedEffect(syncState.summary) {
         syncState.summary?.let { summary ->
@@ -89,7 +103,6 @@ fun GalleryScreen(
         }
     }
 
-    // Show the upload/delete preview once a plan is computed.
     pendingSyncPlan?.let { plan ->
         SyncConfirmDialog(
             plan = plan,
@@ -120,203 +133,180 @@ fun GalleryScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(horizontal = Spacing.screen, vertical = Spacing.sm),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
-            // Header
             item(span = { GridItemSpan(2) }) {
                 Column {
-                    Text(
-                        text = "Media Gallery",
-                        style = MaterialTheme.typography.headlineLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Text(
-                        text = if (totalAssets > 0) "Browse and select your digital assets"
+                    Spacer(Modifier.height(Spacing.sm))
+                    ScreenHeader(
+                        title = "Gallery",
+                        subtitle = if (totalAssets > 0) "$totalAssets items · ${folders.size} folders"
                         else "Grant permission to browse media",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(Modifier.height(Spacing.md))
 
-                    // Search bar placeholder
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.surfaceContainer)
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Filled.Search,
-                            contentDescription = "Search",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            "Search folders or dates...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        )
-                    }
+                    // Functional search
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        placeholder = {
+                            Text(
+                                "Search folders…",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Filled.Search,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp),
+                            )
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        ),
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(Modifier.height(Spacing.md))
 
-                    // Filter chips
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        val filters = listOf(
+                    SegmentedToggle(
+                        options = listOf(
                             MediaFilter.ALL to "All",
                             MediaFilter.PHOTOS to "Photos",
                             MediaFilter.VIDEOS to "Videos",
-                        )
-                        items(filters.size) { idx ->
-                            val (f, label) = filters[idx]
-                            val selected = filter == f
-                            val extColors = LocalExtendedColors.current
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .then(
-                                        if (selected) Modifier.background(extColors.buttonGradient)
-                                        else Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    )
-                                    .clickable { viewModel.setFilter(f) }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    label,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
+                        ),
+                        selected = filter,
+                        onSelect = { viewModel.setFilter(it) },
+                        fillWidth = true,
+                    )
 
-                    // Mode toggle: Add new files (pick & upload) vs Sync (mirror the whole library).
                     if (totalAssets > 0) {
-                        ModeToggle(
-                            mode = uploadMode,
-                            onModeChange = viewModel::setMode,
+                        Spacer(Modifier.height(Spacing.md))
+                        SegmentedToggle(
+                            options = listOf(
+                                UploadMode.ADD to "Add new",
+                                UploadMode.SYNC to "Sync library",
+                            ),
+                            selected = uploadMode,
+                            onSelect = { viewModel.setMode(it) },
+                            fillWidth = true,
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
+                        Spacer(Modifier.height(Spacing.md))
 
-                    when (uploadMode) {
-                        // Add mode: pick files yourself; only new ones are uploaded.
-                        UploadMode.ADD -> if (totalAssets > 0) {
-                            val allSelected = viewModel.isAllMediaSelected()
-                            FilledTonalButton(
-                                onClick = {
-                                    if (allSelected) {
-                                        viewModel.deselectAll()
-                                    } else {
-                                        viewModel.selectAllMedia()
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = if (allSelected) MaterialTheme.colorScheme.primaryContainer
-                                    else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                ),
-                            ) {
-                                Icon(
-                                    imageVector = if (allSelected) Icons.Filled.Deselect else Icons.Filled.SelectAll,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                        when (uploadMode) {
+                            UploadMode.ADD -> {
+                                val allSelected = viewModel.isAllMediaSelected()
+                                FilledTonalButton(
+                                    onClick = {
+                                        if (allSelected) viewModel.deselectAll()
+                                        else viewModel.selectAllMedia()
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = if (allSelected) MaterialTheme.colorScheme.primaryContainer
+                                        else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                    ),
+                                ) {
+                                    Icon(
+                                        imageVector = if (allSelected) Icons.Filled.Deselect else Icons.Filled.SelectAll,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                    Spacer(Modifier.width(Spacing.sm))
+                                    Text(
+                                        text = if (allSelected) "Deselect All ($totalAssets)" else "Select All ($totalAssets)",
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
+                            UploadMode.SYNC -> {
+                                FilledTonalButton(
+                                    onClick = { viewModel.prepareSync() },
+                                    enabled = !isPreparingSync,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = MaterialTheme.shapes.medium,
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    ),
+                                ) {
+                                    Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(Spacing.sm))
+                                    Text(
+                                        text = if (isPreparingSync) "Checking…" else "Sync Library",
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
                                 Text(
-                                    text = if (allSelected) "Deselect All ($totalAssets)"
-                                    else "Select All Media ($totalAssets)",
-                                    fontWeight = FontWeight.SemiBold,
+                                    text = "Uploads new photos · removes deleted ones from PC.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = Spacing.xs),
                                 )
                             }
-                            Spacer(modifier = Modifier.height(12.dp))
                         }
-                        // Sync mode: mirror the whole library — upload new, delete what's gone.
-                        UploadMode.SYNC -> if (totalAssets > 0) {
-                            FilledTonalButton(
-                                onClick = { viewModel.prepareSync() },
-                                enabled = !isPreparingSync,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                ),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Sync,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (isPreparingSync) "Checking…" else "Sync Library",
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                            }
-                            Text(
-                                text = "Uploads new photos and removes ones you deleted from this phone.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 6.dp),
-                            )
-                            Spacer(modifier = Modifier.height(12.dp))
-                        }
+                        Spacer(Modifier.height(Spacing.sm))
                     }
                 }
             }
 
-            // Featured folder (first / Camera) — full width
-            if (folders.isNotEmpty()) {
-                val featured = folders.first()
+            if (displayFolders.isEmpty() && searchQuery.isNotBlank()) {
                 item(span = { GridItemSpan(2) }) {
-                    FeaturedFolderCard(
-                        folder = featured,
-                        onClick = { onFolderClick(featured.bucketName) },
+                    EmptyState(
+                        icon = Icons.Filled.Search,
+                        title = "No folders found",
+                        subtitle = "Try a different search term",
+                        modifier = Modifier.padding(vertical = Spacing.xxl),
                     )
                 }
-            }
-
-            // Remaining folders in 2-column grid
-            if (folders.size > 1) {
-                items(folders.drop(1)) { folder ->
+            } else {
+                if (displayFolders.isNotEmpty()) {
+                    item(span = { GridItemSpan(2) }) {
+                        FolderCard(
+                            folder = displayFolders.first(),
+                            featured = true,
+                            onClick = { onFolderClick(displayFolders.first().bucketName) },
+                        )
+                    }
+                }
+                items(displayFolders.drop(1), key = { it.bucketName }) { folder ->
                     FolderCard(
                         folder = folder,
+                        featured = false,
                         onClick = { onFolderClick(folder.bucketName) },
                     )
                 }
             }
 
-            // Bottom space for FAB
-            item(span = { GridItemSpan(2) }) {
-                Spacer(modifier = Modifier.height(80.dp))
-            }
+            item(span = { GridItemSpan(2) }) { Spacer(Modifier.height(80.dp)) }
         }
 
-        // Select All / Transfer FAB — Add mode only; Sync drives uploads from its own button.
+        // Transfer FAB — Add mode only
         if (uploadMode == UploadMode.ADD && selectedIds.isNotEmpty()) {
             val extColors = LocalExtendedColors.current
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .padding(end = Spacing.lg, bottom = Spacing.lg)
+                    .clip(MaterialTheme.shapes.medium)
                     .background(extColors.buttonGradient)
                     .clickable {
                         viewModel.startTransfer()
                         onTransferClick()
                     }
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                    .padding(horizontal = Spacing.xl, vertical = Spacing.md),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -325,7 +315,7 @@ fun GalleryScreen(
                         modifier = Modifier.size(20.dp),
                         tint = Color.White,
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(Modifier.width(Spacing.sm))
                     Text(
                         "Transfer ${selectedIds.size}",
                         fontWeight = FontWeight.SemiBold,
@@ -339,15 +329,16 @@ fun GalleryScreen(
 }
 
 @Composable
-private fun FeaturedFolderCard(
+private fun FolderCard(
     folder: MediaFolder,
+    featured: Boolean,
     onClick: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(220.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .then(if (featured) Modifier.height(200.dp) else Modifier.aspectRatio(1f))
+            .clip(if (featured) MaterialTheme.shapes.large else MaterialTheme.shapes.medium)
             .clickable(onClick = onClick),
     ) {
         AsyncImage(
@@ -356,138 +347,46 @@ private fun FeaturedFolderCard(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
-        // Gradient overlay
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
-                        startY = 100f,
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = if (featured) 0.6f else 0.55f)),
+                        startY = if (featured) 80f else 60f,
                     )
                 )
         )
-        // Camera icon badge
-        Icon(
-            Icons.Filled.CameraAlt,
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.8f),
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(12.dp)
-                .size(28.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color.White.copy(alpha = 0.2f))
-                .padding(4.dp),
-        )
-        // Title and count
+        if (featured) {
+            Icon(
+                Icons.Filled.CameraAlt,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(Spacing.md)
+                    .size(26.dp)
+                    .clip(MaterialTheme.shapes.extraSmall)
+                    .background(Color.White.copy(alpha = 0.2f))
+                    .padding(4.dp),
+            )
+        }
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(16.dp)
+                .padding(if (featured) Spacing.lg else Spacing.md),
         ) {
             Text(
                 text = folder.bucketName,
-                style = MaterialTheme.typography.titleLarge,
+                style = if (featured) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall,
                 color = Color.White,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 text = "${folder.itemCount} items",
-                style = MaterialTheme.typography.bodySmall,
+                style = if (featured) MaterialTheme.typography.bodySmall else MaterialTheme.typography.labelSmall,
                 color = Color.White.copy(alpha = 0.8f),
             )
-        }
-    }
-}
-
-@Composable
-private fun FolderCard(
-    folder: MediaFolder,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
-    ) {
-        AsyncImage(
-            model = folder.coverUri,
-            contentDescription = folder.bucketName,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)),
-                        startY = 80f,
-                    )
-                )
-        )
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(12.dp)
-        ) {
-            Text(
-                text = folder.bucketName,
-                style = MaterialTheme.typography.titleSmall,
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "${folder.itemCount} items",
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.8f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ModeToggle(
-    mode: UploadMode,
-    onModeChange: (UploadMode) -> Unit,
-) {
-    val extColors = LocalExtendedColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        val segments = listOf(
-            UploadMode.ADD to "Add new",
-            UploadMode.SYNC to "Sync",
-        )
-        segments.forEach { (segment, label) ->
-            val selected = mode == segment
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .then(
-                        if (selected) Modifier.background(extColors.buttonGradient)
-                        else Modifier
-                    )
-                    .clickable { onModeChange(segment) }
-                    .padding(vertical = 10.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = label,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-                )
-            }
         }
     }
 }
@@ -510,7 +409,7 @@ private fun SyncConfirmDialog(
                         Text("• Upload ${plan.uploadCount} new file(s) (${formatBytes(plan.uploadBytes)}).")
                     }
                     if (plan.deleteCount > 0) {
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(Modifier.height(Spacing.xs))
                         Text(
                             "• Delete ${plan.deleteCount} file(s) from the desktop that you removed from this phone.",
                             color = MaterialTheme.colorScheme.error,
@@ -520,9 +419,7 @@ private fun SyncConfirmDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
-                Text(if (plan.isNoOp) "OK" else "Sync")
-            }
+            TextButton(onClick = onConfirm) { Text(if (plan.isNoOp) "OK" else "Sync") }
         },
         dismissButton = if (plan.isNoOp) null else {
             { TextButton(onClick = onDismiss) { Text("Cancel") } }

@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -44,6 +43,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.appharbor.photosender.ui.theme.LocalExtendedColors
+import com.appharbor.photosender.ui.theme.Spacing
 
 @Composable
 fun FolderDetailScreen(
@@ -62,73 +62,62 @@ fun FolderDetailScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
-            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            contentPadding = PaddingValues(horizontal = Spacing.xs, vertical = Spacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
         ) {
-            // Header
             item(span = { GridItemSpan(3) }) {
-                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        IconButton(onClick = onBack) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = bucketName,
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                text = "${items.size} items",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        // Select All button
-                        IconButton(
-                            onClick = {
-                                if (viewModel.isAllSelected(items)) {
-                                    viewModel.deselectAll()
-                                } else {
-                                    viewModel.selectAll(items)
-                                }
-                            }
-                        ) {
-                            Icon(
-                                Icons.Filled.SelectAll,
-                                contentDescription = "Select All",
-                                tint = if (viewModel.isAllSelected(items))
-                                    MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = Spacing.sm, end = Spacing.md, top = Spacing.sm),
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = bucketName,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "${items.size} items",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            if (viewModel.isAllSelected(items)) viewModel.deselectAll()
+                            else viewModel.selectAll(items)
+                        }
+                    ) {
+                        Icon(
+                            Icons.Filled.SelectAll,
+                            contentDescription = "Select All",
+                            tint = if (viewModel.isAllSelected(items))
+                                MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
 
-            // Photo grid
             items(items, key = { it.id }) { item ->
                 val isSelected = item.id in selectedIds
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(1f)
-                        .clip(RoundedCornerShape(6.dp))
+                        .clip(MaterialTheme.shapes.extraSmall)
                         .clickable { viewModel.toggleSelection(item.id) }
                         .then(
                             if (isSelected) Modifier.border(
                                 2.dp,
                                 MaterialTheme.colorScheme.primary,
-                                RoundedCornerShape(6.dp)
+                                MaterialTheme.shapes.extraSmall,
                             ) else Modifier
                         )
                 ) {
@@ -138,12 +127,10 @@ fun FolderDetailScreen(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
                     )
-
-                    // Selection indicator
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(6.dp)
+                            .padding(Spacing.sm - 2.dp)
                             .size(24.dp)
                             .clip(CircleShape)
                             .background(
@@ -155,7 +142,7 @@ fun FolderDetailScreen(
                         if (isSelected) {
                             Icon(
                                 Icons.Filled.CheckCircle,
-                                contentDescription = "Selected",
+                                contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimary,
                                 modifier = Modifier.size(20.dp),
                             )
@@ -164,26 +151,22 @@ fun FolderDetailScreen(
                 }
             }
 
-            // Bottom space for FAB
-            item(span = { GridItemSpan(3) }) {
-                Spacer(modifier = Modifier.height(80.dp))
-            }
+            item(span = { GridItemSpan(3) }) { Spacer(Modifier.height(80.dp)) }
         }
 
-        // Transfer FAB
         if (selectedIds.isNotEmpty()) {
             val extColors = LocalExtendedColors.current
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(16.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .padding(end = Spacing.lg, bottom = Spacing.lg)
+                    .clip(MaterialTheme.shapes.medium)
                     .background(extColors.buttonGradient)
                     .clickable {
                         viewModel.startTransfer()
                         onTransferClick()
                     }
-                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                    .padding(horizontal = Spacing.xl, vertical = Spacing.md),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
@@ -192,7 +175,7 @@ fun FolderDetailScreen(
                         modifier = Modifier.size(20.dp),
                         tint = Color.White,
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(Modifier.width(Spacing.sm))
                     Text(
                         "Transfer ${selectedIds.size}",
                         fontWeight = FontWeight.SemiBold,

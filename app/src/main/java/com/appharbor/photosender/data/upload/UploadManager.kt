@@ -465,10 +465,23 @@ class UploadManager @Inject constructor(
         }
 
         speedTracker = SpeedTracker()
+        // Seed the full batch as PENDING so the list is stable from the start.
+        // Items are updated in-place as they progress; none are removed mid-batch.
+        val initialTransfers = batch.map { record ->
+            FileTransferProgress(
+                recordId = record.id,
+                fileName = record.fileName,
+                contentUri = record.contentUri,
+                fileSize = record.fileSize,
+                bytesTransferred = 0,
+                status = UploadStatus.PENDING,
+            )
+        }
         _transferState.value = TransferState(
             isTransferring = true,
             totalFiles = batch.size,
             totalBytes = batch.sumOf { it.fileSize },
+            activeTransfers = initialTransfers,
         )
 
         val semaphore = Semaphore(parallelSlots())
@@ -482,7 +495,9 @@ class UploadManager @Inject constructor(
             }.forEach { it.join() }
         }
 
-        _transferState.update { it.copy(isTransferring = false, activeTransfers = emptyList()) }
+        // Keep activeTransfers visible after completion so the user can see the final state.
+        // The list is cleared when the next batch starts (see start() / runQueue init above).
+        _transferState.update { it.copy(isTransferring = false) }
     }
 
     private suspend fun uploadFile(record: UploadRecord) {
@@ -589,13 +604,10 @@ class UploadManager @Inject constructor(
                                 uploadedAt = System.currentTimeMillis()
                             )
                         )
+                        // Mark item COMPLETED in the stable batch list (in-place, no removal).
+                        updateActiveTransfer(working.id, working.fileName, working.contentUri, working.fileSize, working.fileSize, UploadStatus.COMPLETED)
                         _transferState.update { st ->
-                            val activeTransferred = st.activeTransfers.find { it.recordId == working.id }?.bytesTransferred ?: 0L
-                            val finalDelta = (working.fileSize - activeTransferred).coerceAtLeast(0)
-                            st.copy(
-                                completedFiles = st.completedFiles + 1,
-                                transferredBytes = (st.transferredBytes + finalDelta).coerceAtMost(st.totalBytes),
-                            )
+                            st.copy(completedFiles = st.completedFiles + 1)
                         }
                         return
                     }
@@ -608,19 +620,21 @@ class UploadManager @Inject constructor(
             }
         } catch (e: CancellationException) {
             uploadRecordDao.update(working.copy(status = UploadStatus.PENDING))
+            updateActiveTransfer(working.id, working.fileName, working.contentUri, working.fileSize, 0, UploadStatus.PENDING)
             throw e
         } catch (e: IOException) {
             // Network/read timeouts can happen after the server already persisted the file.
             // Keep this retryable instead of marking it as a hard failure.
             uploadRecordDao.update(working.copy(status = UploadStatus.PENDING))
+            updateActiveTransfer(working.id, working.fileName, working.contentUri, working.fileSize, 0, UploadStatus.PENDING)
         } catch (e: Exception) {
             uploadRecordDao.update(working.copy(status = UploadStatus.FAILED))
+            updateActiveTransfer(working.id, working.fileName, working.contentUri, working.fileSize, 0, UploadStatus.FAILED)
             _transferState.update { st ->
                 st.copy(failedFiles = st.failedFiles + 1)
             }
-        } finally {
-            removeActiveTransfer(working.id)
         }
+        // No removeActiveTransfer — items stay in the stable list with their final status.
     }
 
     // Ask the server whether it already stores this content. Failures default to false so we
@@ -668,17 +682,15 @@ class UploadManager @Inject constructor(
             md5Hash = md5,
             matchedOnPhone = localMatch != null,
         )
+        updateActiveTransfer(record.id, record.fileName, record.contentUri, record.fileSize, record.fileSize, UploadStatus.COMPLETED)
         _transferState.update { st ->
             st.copy(
                 completedFiles = st.completedFiles + 1,
-                // Bytes weren't sent (content already on the PC) — count it as skipped so the UI
-                // can explain why the transferred count is below the selection.
                 skippedFiles = st.skippedFiles + 1,
                 transferredBytes = (st.transferredBytes + record.fileSize).coerceAtMost(st.totalBytes),
                 skippedDuplicates = (listOf(skip) + st.skippedDuplicates).take(MAX_SKIPPED_BATCH),
             )
         }
-        removeActiveTransfer(record.id)
     }
 
     private fun resolveContentLength(uri: Uri, fallback: Long): Long {

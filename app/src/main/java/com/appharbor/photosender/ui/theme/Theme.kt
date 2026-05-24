@@ -144,7 +144,7 @@ private fun buildExtendedColors(
 @Composable
 fun PhotoSenderTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val isDynamic = dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -166,6 +166,7 @@ fun PhotoSenderTheme(
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,
+            shapes = PhotoSenderShapes,
             content = content
         )
     }

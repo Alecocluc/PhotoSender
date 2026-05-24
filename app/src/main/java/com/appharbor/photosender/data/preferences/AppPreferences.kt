@@ -47,7 +47,7 @@ class AppPreferences @Inject constructor(
     }
 
     val dynamicColorEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[dynamicColorEnabledKey] ?: true
+        prefs[dynamicColorEnabledKey] ?: false
     }
 
     val highSpeedTransferEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->

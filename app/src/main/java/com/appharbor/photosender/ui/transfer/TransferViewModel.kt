@@ -9,6 +9,7 @@ import com.appharbor.photosender.data.upload.UploadManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
@@ -18,7 +19,10 @@ class TransferViewModel @Inject constructor(
     private val uploadRecordDao: UploadRecordDao,
 ) : ViewModel() {
 
+    // Throttle to 4 updates/sec so per-byte progress storms don't thrash the LazyColumn.
     val transferState: StateFlow<TransferState> = uploadManager.transferState
+        .sample(250L)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TransferState())
 
     val recentBatch: StateFlow<List<UploadRecord>> = uploadRecordDao.getRecentCompleted(10)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

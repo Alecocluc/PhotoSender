@@ -10,61 +10,64 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.SwapHorizontalCircle
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Sensors
 import androidx.compose.material.icons.outlined.SwapHorizontalCircle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.isSystemInDarkTheme
-import com.appharbor.photosender.ui.theme.LocalExtendedColors
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -75,17 +78,21 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.appharbor.photosender.data.model.ConnectionState
+import com.appharbor.photosender.data.preferences.ThemeMode
 import com.appharbor.photosender.navigation.Screen
-import com.appharbor.photosender.ui.connect.ConnectScreen
+import com.appharbor.photosender.ui.activity.ActivityScreen
+import com.appharbor.photosender.ui.components.ConnectionStatusChip
+import com.appharbor.photosender.ui.connect.ConnectSheet
 import com.appharbor.photosender.ui.gallery.FolderDetailScreen
 import com.appharbor.photosender.ui.gallery.GalleryScreen
-import com.appharbor.photosender.ui.history.HistoryScreen
+import com.appharbor.photosender.ui.settings.SettingsScreen
+import com.appharbor.photosender.ui.theme.LocalExtendedColors
 import com.appharbor.photosender.ui.theme.Manrope
 import com.appharbor.photosender.ui.theme.PhotoSenderTheme
-import com.appharbor.photosender.ui.settings.SettingsScreen
-import com.appharbor.photosender.ui.transfer.TransferScreen
-import com.appharbor.photosender.data.preferences.ThemeMode
+import com.appharbor.photosender.ui.theme.Spacing
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 
 data class BottomNavItem(
     val route: String,
@@ -103,7 +110,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         maybeRequestNotificationPermission()
-        // Start with auto (light); the Compose layer will re-apply based on the resolved theme.
         enableEdgeToEdge()
         setContent {
             PhotoSenderApp(
@@ -119,7 +125,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Needed on Android 13+ for the transfer progress notification to be visible.
     private fun maybeRequestNotificationPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         val granted = ContextCompat.checkSelfPermission(
@@ -138,6 +143,9 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
     val mainViewModel: MainViewModel = hiltViewModel()
     val themeMode by mainViewModel.themeMode.collectAsStateWithLifecycle()
     val dynamicColorEnabled by mainViewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
+    val connectionState by mainViewModel.connectionState.collectAsStateWithLifecycle()
+    val serverName by mainViewModel.serverName.collectAsStateWithLifecycle()
+
     val isSystemDark = isSystemInDarkTheme()
     val darkTheme = when (themeMode) {
         ThemeMode.SYSTEM -> isSystemDark
@@ -145,153 +153,172 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
         ThemeMode.DARK -> true
     }
 
-    androidx.compose.runtime.LaunchedEffect(darkTheme) { onThemeResolved(darkTheme) }
+    LaunchedEffect(darkTheme) { onThemeResolved(darkTheme) }
 
-    PhotoSenderTheme(
-        darkTheme = darkTheme,
-        dynamicColor = dynamicColorEnabled,
-    ) {
-    val navController = rememberNavController()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
+    PhotoSenderTheme(darkTheme = darkTheme, dynamicColor = dynamicColorEnabled) {
+        val navController = rememberNavController()
+        val navBackStackEntry by navController.currentBackStackEntryAsState()
+        val currentDestination = navBackStackEntry?.destination
 
-    val bottomNavItems = remember {
-        listOf(
-            BottomNavItem(Screen.Connect.route, "Connect", Icons.Filled.Sensors, Icons.Outlined.Sensors),
-            BottomNavItem(Screen.Gallery.route, "Gallery", Icons.Filled.PhotoLibrary, Icons.Outlined.PhotoLibrary),
-            BottomNavItem(Screen.Transfer.route, "Transfer", Icons.Filled.SwapHorizontalCircle, Icons.Outlined.SwapHorizontalCircle),
-            BottomNavItem(Screen.History.route, "History", Icons.Filled.History, Icons.Outlined.History),
-            BottomNavItem(Screen.Settings.route, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
-        )
-    }
-
-    val showBottomBar = currentDestination?.route in bottomNavItems.map { it.route }
-
-    val extendedColors = LocalExtendedColors.current
-    val gradientBrush = extendedColors.buttonGradient
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Outlined.Sensors,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .size(24.dp)
-                                .graphicsLayer(alpha = 0.99f)
-                                .drawWithContent {
-                                    drawContent()
-                                    drawRect(
-                                        brush = gradientBrush,
-                                        blendMode = BlendMode.SrcAtop,
-                                    )
-                                }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "PhotoSender",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontFamily = Manrope,
-                                fontWeight = FontWeight.Bold,
-                                brush = gradientBrush,
-                            ),
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                ),
-                windowInsets = TopAppBarDefaults.windowInsets,
+        val bottomNavItems = remember {
+            listOf(
+                BottomNavItem(Screen.Gallery.route, "Gallery", Icons.Filled.PhotoLibrary, Icons.Outlined.PhotoLibrary),
+                BottomNavItem(Screen.Activity.route, "Activity", Icons.Filled.SwapHorizontalCircle, Icons.Outlined.SwapHorizontalCircle),
+                BottomNavItem(Screen.Settings.route, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
             )
-        },
-        bottomBar = {
-            AnimatedVisibility(
-                visible = showBottomBar,
-                enter = fadeIn(),
-                exit = fadeOut(),
+        }
+
+        val showBottomBar = currentDestination?.route in bottomNavItems.map { it.route }
+
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val scope = rememberCoroutineScope()
+        var showConnectSheet by remember { mutableStateOf(false) }
+
+        // Auto-open Connect sheet on first app open when not connected.
+        LaunchedEffect(Unit) {
+            if (connectionState == ConnectionState.DISCONNECTED) {
+                showConnectSheet = true
+            }
+        }
+
+        if (showConnectSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showConnectSheet = false },
+                sheetState = sheetState,
+                containerColor = MaterialTheme.colorScheme.surface,
             ) {
-                StitchBottomNav(
-                    items = bottomNavItems,
-                    currentDestination = currentDestination,
-                    onItemSelected = { route ->
-                        navController.navigate(route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
+                ConnectSheet(
+                    onDismiss = {
+                        scope.launch { sheetState.hide() }.invokeOnCompletion {
+                            showConnectSheet = false
                         }
                     }
                 )
             }
         }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = Screen.Connect.route,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            composable(Screen.Connect.route) {
-                ConnectScreen()
-            }
-            composable(Screen.Gallery.route) { backStackEntry ->
-                val galleryViewModel: com.appharbor.photosender.ui.gallery.GalleryViewModel = hiltViewModel(backStackEntry)
-                GalleryScreen(
-                    viewModel = galleryViewModel,
-                    onFolderClick = { bucketName ->
-                        navController.navigate(Screen.FolderDetail.createRoute(bucketName))
+
+        val extendedColors = LocalExtendedColors.current
+        val gradientBrush = extendedColors.buttonGradient
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.PhotoLibrary,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .size(22.dp)
+                                    .graphicsLayer(alpha = 0.99f)
+                                    .drawWithContent {
+                                        drawContent()
+                                        drawRect(brush = gradientBrush, blendMode = BlendMode.SrcAtop)
+                                    }
+                            )
+                            Spacer(Modifier.width(Spacing.sm))
+                            Text(
+                                text = "PhotoSender",
+                                style = MaterialTheme.typography.titleLarge.copy(
+                                    fontFamily = Manrope,
+                                    fontWeight = FontWeight.Bold,
+                                    brush = gradientBrush,
+                                ),
+                            )
+                        }
                     },
-                    onTransferClick = {
-                        navController.navigate(Screen.Transfer.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
+                    actions = {
+                        ConnectionStatusChip(
+                            connectionState = connectionState,
+                            serverName = serverName,
+                            onClick = { showConnectSheet = true },
+                            modifier = Modifier.padding(end = Spacing.sm),
+                        )
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ),
+                    windowInsets = TopAppBarDefaults.windowInsets,
                 )
-            }
-            composable(
-                route = Screen.FolderDetail.route,
-                arguments = listOf(navArgument("bucketName") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val bucketName = backStackEntry.arguments?.getString("bucketName") ?: ""
-                val galleryEntry = remember(backStackEntry) {
-                    navController.getBackStackEntry(Screen.Gallery.route)
+            },
+            bottomBar = {
+                AnimatedVisibility(visible = showBottomBar, enter = fadeIn(), exit = fadeOut()) {
+                    StitchBottomNav(
+                        items = bottomNavItems,
+                        currentDestination = currentDestination,
+                        onItemSelected = { route ->
+                            navController.navigate(route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
                 }
-                val galleryViewModel: com.appharbor.photosender.ui.gallery.GalleryViewModel = hiltViewModel(galleryEntry)
-                FolderDetailScreen(
-                    bucketName = bucketName,
-                    viewModel = galleryViewModel,
-                    onBack = { navController.popBackStack() },
-                    onTransferClick = {
-                        navController.navigate(Screen.Transfer.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
+            }
+        ) { innerPadding ->
+            NavHost(
+                navController = navController,
+                startDestination = Screen.Gallery.route,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+            ) {
+                composable(Screen.Gallery.route) { backStackEntry ->
+                    val galleryViewModel: com.appharbor.photosender.ui.gallery.GalleryViewModel =
+                        hiltViewModel(backStackEntry)
+                    GalleryScreen(
+                        viewModel = galleryViewModel,
+                        onFolderClick = { bucketName ->
+                            navController.navigate(Screen.FolderDetail.createRoute(bucketName))
+                        },
+                        onTransferClick = {
+                            navController.navigate(Screen.Activity.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
                             }
-                            launchSingleTop = true
-                            restoreState = true
                         }
+                    )
+                }
+                composable(
+                    route = Screen.FolderDetail.route,
+                    arguments = listOf(navArgument("bucketName") { type = NavType.StringType }),
+                ) { backStackEntry ->
+                    val bucketName = backStackEntry.arguments?.getString("bucketName") ?: ""
+                    val galleryEntry = remember(backStackEntry) {
+                        navController.getBackStackEntry(Screen.Gallery.route)
                     }
-                )
-            }
-            composable(Screen.Transfer.route) {
-                TransferScreen()
-            }
-            composable(Screen.History.route) {
-                HistoryScreen()
-            }
-            composable(Screen.Settings.route) {
-                SettingsScreen()
+                    val galleryViewModel: com.appharbor.photosender.ui.gallery.GalleryViewModel =
+                        hiltViewModel(galleryEntry)
+                    FolderDetailScreen(
+                        bucketName = bucketName,
+                        viewModel = galleryViewModel,
+                        onBack = { navController.popBackStack() },
+                        onTransferClick = {
+                            navController.navigate(Screen.Activity.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        }
+                    )
+                }
+                composable(Screen.Activity.route) {
+                    ActivityScreen()
+                }
+                composable(Screen.Settings.route) {
+                    SettingsScreen()
+                }
             }
         }
-    }
     }
 }
 
@@ -306,19 +333,19 @@ private fun StitchBottomNav(
             .fillMaxWidth()
             .background(Color.Transparent)
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
     ) {
         Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.86f),
+            color = MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.90f),
             tonalElevation = 0.dp,
-            shadowElevation = 14.dp,
-            shape = RoundedCornerShape(28.dp),
+            shadowElevation = 12.dp,
+            shape = MaterialTheme.shapes.extraLarge,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 6.dp, vertical = 6.dp),
+                    .padding(horizontal = Spacing.sm, vertical = Spacing.sm - 2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -326,20 +353,15 @@ private fun StitchBottomNav(
                 items.forEach { item ->
                     val selected = currentDestination?.hierarchy?.any { it.route == item.route } == true
                     val bg = if (selected) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
-                    } else {
-                        Color.Transparent
-                    }
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.14f)
+                    } else Color.Transparent
 
                     val gradientMod = if (selected) {
                         Modifier
                             .graphicsLayer(alpha = 0.99f)
                             .drawWithContent {
                                 drawContent()
-                                drawRect(
-                                    brush = navGradient,
-                                    blendMode = BlendMode.SrcAtop,
-                                )
+                                drawRect(brush = navGradient, blendMode = BlendMode.SrcAtop)
                             }
                     } else Modifier
 
@@ -349,22 +371,24 @@ private fun StitchBottomNav(
                             .clip(RoundedCornerShape(18.dp))
                             .background(bg)
                             .clickable { onItemSelected(item.route) }
-                            .padding(vertical = 8.dp)
+                            .padding(vertical = Spacing.sm)
                             .then(gradientMod),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Icon(
                             imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
                             contentDescription = item.label,
-                            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp),
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(Modifier.height(Spacing.xs))
                         Text(
                             text = item.label,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (selected) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
