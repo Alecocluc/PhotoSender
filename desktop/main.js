@@ -264,6 +264,30 @@ ipcMain.handle("rebuild-history-index", async () => {
   }
 });
 
+ipcMain.handle("rebuild-history-progress", async () => {
+  try {
+    const res = await fetch(`http://127.0.0.1:${settings.port}/history/rebuild-progress`);
+    if (!res.ok) return { success: false };
+    return { success: true, ...(await res.json()) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle("remove-duplicates", async (_e, opts = {}) => {
+  try {
+    const res = await fetch(`http://127.0.0.1:${settings.port}/history/remove-duplicates`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dryRun: !!opts.dryRun }),
+    });
+    if (!res.ok) return { success: false };
+    return await res.json();
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle("get-local-ips", () => getLocalIPs());
 
 ipcMain.handle("get-settings", () => ({ ...settings }));

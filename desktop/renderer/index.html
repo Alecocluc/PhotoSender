@@ -797,7 +797,9 @@
     ips: [],
     server: { running: true, port: 3210, error: null },
     startedAt: Date.now(),
+    rebuild: { running: false, indexed: 0, total: 0 },
   };
+  let rebuildPoller = null;
   const mq = window.matchMedia("(prefers-color-scheme: dark)");
 
   // ── Helpers ───────────────────────────────────────────────────────────
@@ -1186,18 +1188,89 @@
     alert("History imported.");
   }
 
+  function updateRebuildButton() {
+    const btn = $("#rebuild-index-settings");
+    const cleanBtn = $("#clean-duplicates-settings");
+    if (cleanBtn) cleanBtn.disabled = state.rebuild.running;
+    if (!btn) return;
+    if (state.rebuild.running) {
+      btn.disabled = true;
+      const { indexed, total } = state.rebuild;
+      const label = total > 0
+        ? `Hashing ${indexed.toLocaleString()} / ${total.toLocaleString()}…`
+        : "Scanning…";
+      btn.innerHTML = `<span class="icon sm">hourglass_top</span>${label}`;
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = `<span class="icon sm">sync</span>Rebuild`;
+    }
+  }
+
+  function startRebuildPolling() {
+    if (rebuildPoller) return;
+    rebuildPoller = setInterval(async () => {
+      const p = await window.api.rebuildHistoryProgress();
+      if (!p?.success) return;
+      state.rebuild.running = !!p.running;
+      state.rebuild.indexed = p.indexed || 0;
+      state.rebuild.total = p.total || 0;
+      updateRebuildButton();
+      if (p.done || !p.running) {
+        clearInterval(rebuildPoller);
+        rebuildPoller = null;
+        state.rebuild.running = false;
+        await Promise.all([refreshHistory(), refreshStatus()]);
+        if (state.view === "settings") renderSettings();
+        else if (state.view === "history") renderHistory();
+        else renderDashboard();
+        if (p.error) alert("Rebuild failed: " + p.error);
+        else alert(`Indexed ${Number(p.indexed || 0).toLocaleString()} files.`);
+      }
+    }, 500);
+  }
+
   async function rebuildHistoryIndex() {
-    if (!confirm("Rebuild the desktop dedup index from the download folder? This hashes every file there and can take a while.")) return;
+    if (state.rebuild.running) return;
+    if (!confirm("Rebuild the desktop dedup index from the download folder? This hashes every file there and can take a while. You can keep using the app while it runs.")) return;
     const res = await window.api.rebuildHistoryIndex();
     if (!res?.success) {
       alert("Could not rebuild index" + (res?.error ? `: ${res.error}` : "."));
+      return;
+    }
+    state.rebuild = { running: true, indexed: 0, total: 0 };
+    updateRebuildButton();
+    startRebuildPolling();
+  }
+
+  async function cleanDuplicates() {
+    if (state.rebuild.running) {
+      alert("Wait for the rebuild to finish before cleaning duplicates.");
+      return;
+    }
+    const probe = await window.api.removeDuplicates({ dryRun: true });
+    if (!probe?.success) {
+      alert("Could not scan for duplicates" + (probe?.error ? `: ${probe.error}` : "."));
+      return;
+    }
+    if (!probe.removed) {
+      alert("No duplicate files found.\n\nTip: run Rebuild first so the index matches the current folder.");
+      return;
+    }
+    const ok = confirm(
+      `Found ${Number(probe.removed).toLocaleString()} duplicate file(s) using ${fmtBytes(probe.bytesFreed)}.\n\n` +
+      "Delete the extra copies, keeping one of each? This cannot be undone."
+    );
+    if (!ok) return;
+    const res = await window.api.removeDuplicates({ dryRun: false });
+    if (!res?.success) {
+      alert("Could not remove duplicates" + (res?.error ? `: ${res.error}` : "."));
       return;
     }
     await Promise.all([refreshHistory(), refreshStatus()]);
     if (state.view === "settings") renderSettings();
     else if (state.view === "history") renderHistory();
     else renderDashboard();
-    alert(`Indexed ${Number(res.indexed || 0).toLocaleString()} files.`);
+    alert(`Removed ${Number(res.removed || 0).toLocaleString()} duplicate file(s), freed ${fmtBytes(res.bytesFreed || 0)}.`);
   }
 
   // ── Settings ──────────────────────────────────────────────────────────
@@ -1263,6 +1336,12 @@
               <button class="btn" id="rebuild-index-settings"><span class="icon sm">sync</span>Rebuild</button>
             </div>
           </div>
+          <div class="form-row">
+            <label>Duplicate files <span class="help">Deletes extra copies of identical files, keeping one each. Run Rebuild first for an accurate scan.</span></label>
+            <div class="row-flex">
+              <button class="btn" id="clean-duplicates-settings"><span class="icon sm">delete_sweep</span>Clean duplicates</button>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -1313,6 +1392,9 @@
     $("#export-history-settings")?.addEventListener("click", exportHistory);
     $("#import-history-settings")?.addEventListener("click", importHistory);
     $("#rebuild-index-settings")?.addEventListener("click", rebuildHistoryIndex);
+    $("#clean-duplicates-settings")?.addEventListener("click", cleanDuplicates);
+    updateRebuildButton();
+    if (state.rebuild.running) startRebuildPolling();
   }
 
   // ── Router ────────────────────────────────────────────────────────────

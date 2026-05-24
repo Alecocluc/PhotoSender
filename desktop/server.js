@@ -22,6 +22,18 @@ const knownMd5s = new Set();
 const knownFilesByMd5 = new Map();
 let historyStatePath = null;
 
+/** Live progress for the (long-running, background) disk rebuild. Polled by the UI. */
+let rebuildProgress = {
+  running: false,
+  total: 0,
+  indexed: 0,
+  bytes: 0,
+  done: false,
+  error: null,
+  startedAt: 0,
+  finishedAt: 0,
+};
+
 /** Hash a file by streaming it, so we never hold a whole (multi-GB) file in memory. */
 function hashFileStreaming(filePath) {
   return new Promise((resolve, reject) => {
@@ -61,6 +73,7 @@ async function rebuildIndexFromDisk(downloadPath) {
   knownFilesByMd5.clear();
 
   const files = listFilesRecursive(downloadPath);
+  rebuildProgress.total = files.length;
   let indexed = 0;
   let bytes = 0;
   for (const filePath of files) {
@@ -78,10 +91,45 @@ async function rebuildIndexFromDisk(downloadPath) {
     });
     indexed++;
     bytes += stat.size;
+    rebuildProgress.indexed = indexed;
+    rebuildProgress.bytes = bytes;
   }
 
   saveHistoryState();
   return { indexed, bytes };
+}
+
+/**
+ * Kick off a disk rebuild in the background. Returns immediately so the HTTP request
+ * never blocks for the (potentially many-minute) hashing pass. Progress is tracked in
+ * `rebuildProgress` and polled via GET /history/rebuild-progress.
+ */
+function startRebuild(downloadPath) {
+  if (rebuildProgress.running) return false;
+  rebuildProgress = {
+    running: true,
+    total: 0,
+    indexed: 0,
+    bytes: 0,
+    done: false,
+    error: null,
+    startedAt: Date.now(),
+    finishedAt: 0,
+  };
+  rebuildIndexFromDisk(downloadPath)
+    .then((result) => {
+      rebuildProgress.indexed = result.indexed;
+      rebuildProgress.bytes = result.bytes;
+    })
+    .catch((err) => {
+      rebuildProgress.error = String((err && err.message) || err);
+    })
+    .finally(() => {
+      rebuildProgress.running = false;
+      rebuildProgress.done = true;
+      rebuildProgress.finishedAt = Date.now();
+    });
+  return true;
 }
 
 /** Resolve a non-colliding final name in destDir (appends " (n)" like before). */
@@ -276,6 +324,67 @@ function findKnownMd5Entry(downloadPath, md5) {
   return knownMd5s.has(md5) ? { md5, legacyOnly: true } : null;
 }
 
+/**
+ * Group on-disk files that share an MD5. Reads from the in-memory index (built by a rebuild
+ * or normal uploads), so run a rebuild first for an accurate picture of the current folder.
+ */
+function findDuplicateGroups(downloadPath) {
+  const groups = [];
+  for (const [md5, entries] of knownFilesByMd5) {
+    const onDisk = entries.filter((e) => isEntryOnDisk(downloadPath, e));
+    if (onDisk.length > 1) groups.push({ md5, entries: onDisk });
+  }
+  return groups;
+}
+
+/**
+ * Find duplicates and (unless dryRun) delete the extras, keeping the oldest copy of each.
+ * Matches the dedup design: one stored file per MD5.
+ */
+function removeDuplicateFiles(downloadPath, { dryRun = false } = {}) {
+  const groups = findDuplicateGroups(downloadPath);
+  let removed = 0;
+  let bytesFreed = 0;
+
+  for (const group of groups) {
+    const sorted = [...group.entries].sort((a, b) => (a.time || 0) - (b.time || 0));
+    const extras = sorted.slice(1); // keep sorted[0] (oldest)
+    for (const entry of extras) {
+      const filePath = filePathForEntry(downloadPath, entry);
+      let size = entry.size || 0;
+      try {
+        size = fs.statSync(filePath).size;
+      } catch {
+        // fall back to the recorded size
+      }
+      if (dryRun) {
+        removed++;
+        bytesFreed += size;
+        continue;
+      }
+      try {
+        fs.unlinkSync(filePath);
+      } catch {
+        continue; // couldn't delete — leave the index entry alone
+      }
+      removed++;
+      bytesFreed += size;
+      const list = (knownFilesByMd5.get(group.md5) || []).filter(
+        (e) => !(e.fileName === entry.fileName && e.bucketName === entry.bucketName)
+      );
+      if (list.length > 0) {
+        knownFilesByMd5.set(group.md5, list);
+      } else {
+        knownFilesByMd5.delete(group.md5);
+        knownMd5s.delete(group.md5);
+      }
+    }
+  }
+
+  if (!dryRun && removed > 0) saveHistoryState();
+  return { groups: groups.length, removed, bytesFreed };
+}
+
 function createServer(downloadPath, options = {}) {
   historyStatePath = options.historyStatePath || null;
   const onFileReceived = typeof options.onFileReceived === "function" ? options.onFileReceived : null;
@@ -353,10 +462,20 @@ function createServer(downloadPath, options = {}) {
     res.json({ success: true });
   });
 
-  app.post("/history/rebuild-index", async (_req, res) => {
+  app.post("/history/rebuild-index", (_req, res) => {
+    const started = startRebuild(downloadPath);
+    res.json({ success: true, started, alreadyRunning: !started });
+  });
+
+  app.get("/history/rebuild-progress", (_req, res) => {
+    res.json({ ...rebuildProgress });
+  });
+
+  app.post("/history/remove-duplicates", (req, res) => {
     try {
-      const result = await rebuildIndexFromDisk(downloadPath);
-      res.json({ success: true, ...result });
+      const dryRun = !!(req.body && req.body.dryRun);
+      const result = removeDuplicateFiles(downloadPath, { dryRun });
+      res.json({ success: true, dryRun, ...result });
     } catch (err) {
       res.status(500).json({ success: false, error: String((err && err.message) || err) });
     }
