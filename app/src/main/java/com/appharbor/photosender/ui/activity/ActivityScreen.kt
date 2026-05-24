@@ -139,8 +139,14 @@ private fun LiveSegment(viewModel: TransferViewModel) {
             }
         }
 
-        // Transfer items — stable keyed list
-        if (state.activeTransfers.isEmpty() && !state.isTransferring) {
+        // Transfer items — partitioned by status so 22k-file batches stay fast
+        val uploading = state.activeTransfers.filter { it.status == UploadStatus.UPLOADING }
+        val pendingCount = state.activeTransfers.count { it.status == UploadStatus.PENDING }
+        val completedCount = state.activeTransfers.count { it.status == UploadStatus.COMPLETED }
+        val failed = state.activeTransfers.filter { it.status == UploadStatus.FAILED }
+        val hasAny = state.activeTransfers.isNotEmpty()
+
+        if (!hasAny && !state.isTransferring) {
             item {
                 EmptyState(
                     icon = Icons.Filled.CloudUpload,
@@ -150,7 +156,8 @@ private fun LiveSegment(viewModel: TransferViewModel) {
                 )
             }
         } else {
-            if (state.activeTransfers.isNotEmpty()) {
+            // Section header + cancel
+            if (hasAny) {
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -184,15 +191,46 @@ private fun LiveSegment(viewModel: TransferViewModel) {
                     }
                     Spacer(Modifier.height(Spacing.sm))
                 }
+            }
 
-                items(state.activeTransfers, key = { it.recordId }) { transfer ->
-                    TransferRow(transfer = transfer, formatBytes = viewModel::formatBytes)
+            // UPLOADING files — show individually (usually 1–3 concurrent)
+            items(uploading, key = { it.recordId }) { transfer ->
+                TransferRow(transfer = transfer, formatBytes = viewModel::formatBytes)
+                Spacer(Modifier.height(Spacing.sm))
+            }
+
+            // PENDING summary — single row instead of N cards
+            if (pendingCount > 0) {
+                item {
+                    TransferSummaryRow(
+                        icon = Icons.Filled.HourglassEmpty,
+                        label = "$pendingCount file${if (pendingCount == 1) "" else "s"} waiting…",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Spacer(Modifier.height(Spacing.sm))
                 }
             }
+
+            // COMPLETED summary — single row
+            if (completedCount > 0) {
+                item {
+                    TransferSummaryRow(
+                        icon = Icons.Filled.CheckCircle,
+                        label = "$completedCount file${if (completedCount == 1) "" else "s"} done",
+                        tint = MaterialTheme.colorScheme.tertiary,
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                }
+            }
+
+            // FAILED files — always show individually
+            items(failed, key = { "failed_${it.recordId}" }) { transfer ->
+                TransferRow(transfer = transfer, formatBytes = viewModel::formatBytes)
+                Spacer(Modifier.height(Spacing.sm))
+            }
         }
 
-        // Skipped duplicates
+        // Skipped duplicates — show first 3, then summary
         if (state.skippedDuplicates.isNotEmpty()) {
             item {
                 Spacer(Modifier.height(Spacing.md))
@@ -203,9 +241,21 @@ private fun LiveSegment(viewModel: TransferViewModel) {
                 )
                 Spacer(Modifier.height(Spacing.sm))
             }
-            items(state.skippedDuplicates, key = { it.skippedRecordId }) { skip ->
+            val shown = state.skippedDuplicates.take(3)
+            val hiddenCount = state.skippedDuplicates.size - shown.size
+            items(shown, key = { it.skippedRecordId }) { skip ->
                 DuplicateRow(skip = skip, formatBytes = viewModel::formatBytes)
                 Spacer(Modifier.height(Spacing.sm))
+            }
+            if (hiddenCount > 0) {
+                item {
+                    TransferSummaryRow(
+                        icon = Icons.Filled.ContentCopy,
+                        label = "…and $hiddenCount more duplicate${if (hiddenCount == 1) "" else "s"} skipped",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(Spacing.sm))
+                }
             }
         }
 
@@ -605,6 +655,26 @@ private fun HistoryRow(
             }
         },
     )
+}
+
+@Composable
+private fun TransferSummaryRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    tint: androidx.compose.ui.graphics.Color,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm + 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Spacing.md),
+    ) {
+        Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(18.dp))
+        Text(text = label, style = MaterialTheme.typography.bodyMedium, color = tint)
+    }
 }
 
 private fun canPreviewThumbnail(fileName: String): Boolean {

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -299,7 +300,8 @@ fun GalleryScreen(
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = Spacing.lg, bottom = Spacing.lg)
+                    .navigationBarsPadding()
+                    .padding(end = Spacing.lg, bottom = 80.dp)
                     .clip(MaterialTheme.shapes.medium)
                     .background(extColors.buttonGradient)
                     .clickable {
