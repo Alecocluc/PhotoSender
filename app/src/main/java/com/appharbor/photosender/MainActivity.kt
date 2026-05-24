@@ -242,30 +242,16 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
                     windowInsets = TopAppBarDefaults.windowInsets,
                 )
             },
-            bottomBar = {
-                AnimatedVisibility(visible = showBottomBar, enter = fadeIn(), exit = fadeOut()) {
-                    StitchBottomNav(
-                        items = bottomNavItems,
-                        currentDestination = currentDestination,
-                        onItemSelected = { route ->
-                            navController.navigate(route) {
-                                popUpTo(navController.graph.findStartDestination().id) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
-                        }
-                    )
-                }
-            }
         ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = innerPadding.calculateTopPadding()),
+            ) {
             NavHost(
                 navController = navController,
                 startDestination = Screen.Gallery.route,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
+                modifier = Modifier.fillMaxSize(),
             ) {
                 composable(Screen.Gallery.route) { backStackEntry ->
                     val galleryViewModel: com.appharbor.photosender.ui.gallery.GalleryViewModel =
@@ -318,6 +304,27 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
                     SettingsScreen()
                 }
             }
+            AnimatedVisibility(
+                visible = showBottomBar,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) {
+                StitchBottomNav(
+                    items = bottomNavItems,
+                    currentDestination = currentDestination,
+                    onItemSelected = { route ->
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                )
+            }
+            } // Box
         }
     }
 }
