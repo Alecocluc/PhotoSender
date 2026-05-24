@@ -27,12 +27,19 @@ function renderDashboard() {
   document.querySelector("#page-title").textContent = "Dashboard Overview";
   document.querySelector("#page-tag").hidden = true;
 
+  const loading = state.initializing;
   const s = state.status || { totalReceived: 0, totalBytes: 0, recentActivity: [], uptimeMs: 0, currentSpeedBytesPerSec: 0 };
   const recent = (s.recentActivity || []).slice(0, 8);
-  const ip = primaryIP(state.ips);
+  const ip = loading ? "—" : primaryIP(state.ips);
   const port = state.server.port || state.settings?.port || 3210;
   const speed = fmtSpeed(s.currentSpeedBytesPerSec);
   const dlPath = state.settings?.downloadPath || "";
+
+  function skelVal(content, width = "80px") {
+    return loading
+      ? `<span class="skeleton" style="width:${width};border-radius:6px;">&nbsp;</span>`
+      : content;
+  }
 
   document.querySelector("#view-root").innerHTML = `
     <div class="bento">
@@ -45,8 +52,8 @@ function renderDashboard() {
           <h2 class="server-on">Server is ${state.server.running ? "ON" : "OFF"}</h2>
           <div class="gateway-label"><span class="icon xs">router</span>Local Gateway</div>
           <div class="ip-row">
-            <div class="ip">${escHtml(ip)}${ip !== "—" ? `<span style="color:var(--text-muted);font-size:18px;">:${port}</span>` : ""}</div>
-            <button class="btn-copy" id="copy-ip-btn"><span class="icon xs">content_copy</span><span>Copy IP</span></button>
+            <div class="ip">${loading ? `<span class="skeleton" style="width:160px;">&nbsp;</span>` : `${escHtml(ip)}${ip !== "—" ? `<span style="color:var(--text-muted);font-size:18px;">:${port}</span>` : ""}`}</div>
+            <button class="btn-copy" id="copy-ip-btn" ${loading ? "disabled" : ""}><span class="icon xs">content_copy</span><span>Copy IP</span></button>
           </div>
           <div class="ip-hint">Enter this address on your mobile device</div>
         </div>
@@ -68,24 +75,33 @@ function renderDashboard() {
           <span class="live"><span class="pulse"></span>Live</span>
         </div>
         <div class="activity-list" id="activity-list">
-          ${recent.length === 0
-            ? `<div style="color:var(--text-muted);font-size:13px;padding:20px 8px;text-align:center;">No transfers yet.</div>`
-            : recent.map(activityItem).join("")}
+          ${loading
+            ? Array.from({ length: 4 }, () => `
+              <div class="activity-item">
+                <div class="activity-thumb"><span class="icon">image</span></div>
+                <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;">
+                  <span class="skeleton-block" style="width:60%;height:12px;"></span>
+                  <span class="skeleton-block" style="width:35%;height:10px;"></span>
+                </div>
+              </div>`).join("")
+            : recent.length === 0
+              ? `<div style="color:var(--text-muted);font-size:13px;padding:20px 8px;text-align:center;">No transfers yet.</div>`
+              : recent.map(activityItem).join("")}
         </div>
       </section>
 
       <div class="stats-row">
         <div class="card">
           <div class="stat-label">Transfer Speed</div>
-          <div class="stat-value">${speed.v}<span class="unit">${speed.u}</span></div>
+          <div class="stat-value">${skelVal(`${speed.v}<span class="unit">${speed.u}</span>`, "60px")}</div>
         </div>
         <div class="card">
           <div class="stat-label">Total Received</div>
-          <div class="stat-value">${(s.totalReceived || 0).toLocaleString()}<span class="unit">files</span></div>
+          <div class="stat-value">${skelVal(`${(s.totalReceived || 0).toLocaleString()}<span class="unit">files</span>`, "50px")}</div>
         </div>
         <div class="card primary">
           <div class="stat-label">Uptime</div>
-          <div class="stat-value mono" id="uptime-display">${fmtUptime(s.uptimeMs)}</div>
+          <div class="stat-value mono" id="uptime-display">${skelVal(fmtUptime(s.uptimeMs), "70px")}</div>
         </div>
       </div>
     </div>

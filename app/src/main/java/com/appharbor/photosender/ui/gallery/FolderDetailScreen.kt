@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -24,6 +25,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.Icon
@@ -60,7 +62,7 @@ fun FolderDetailScreen(
         viewModel.loadFolderItems(bucketName)
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             contentPadding = PaddingValues(horizontal = Spacing.xs, vertical = Spacing.xs),
@@ -131,21 +133,25 @@ fun FolderDetailScreen(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(Spacing.sm - 2.dp)
-                            .size(24.dp)
+                            .padding(6.dp)
+                            .size(22.dp)
                             .clip(CircleShape)
-                            .background(
-                                if (isSelected) MaterialTheme.colorScheme.primary
-                                else Color.Black.copy(alpha = 0.3f)
+                            .then(
+                                if (isSelected)
+                                    Modifier.background(MaterialTheme.colorScheme.primary)
+                                else
+                                    Modifier
+                                        .background(Color.Black.copy(alpha = 0.22f))
+                                        .border(1.5.dp, Color.White.copy(alpha = 0.6f), CircleShape)
                             ),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (isSelected) {
                             Icon(
-                                Icons.Filled.CheckCircle,
+                                Icons.Filled.Check,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(20.dp),
+                                tint = Color.White,
+                                modifier = Modifier.size(14.dp),
                             )
                         }
                     }
@@ -161,7 +167,7 @@ fun FolderDetailScreen(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .navigationBarsPadding()
-                    .padding(end = Spacing.lg, bottom = 80.dp)
+                    .padding(end = Spacing.lg, bottom = Spacing.lg)
                     .clip(MaterialTheme.shapes.medium)
                     .background(extColors.buttonGradient)
                     .clickable {

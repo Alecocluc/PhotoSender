@@ -2,7 +2,6 @@ import { state, refreshStatus, refreshHistory, refreshIPs, refreshSettings } fro
 import { fmtUptime } from './utils.js';
 import { applyTheme, renderFooter, renderDevices } from './shell.js';
 import { navigate, initSidebarHelper, rerender } from './router.js';
-import { clearHistoryConfirm } from './actions.js';
 import './views/dashboard.js';
 import './views/activity.js';
 import './views/history.js';
@@ -36,7 +35,6 @@ document.querySelector("#theme-toggle").addEventListener("click", async () => {
 });
 
 document.querySelector("#open-folder-btn").addEventListener("click", () => window.api.openFolder());
-document.querySelector("#clear-history-btn").addEventListener("click", clearHistoryConfirm);
 
 window.api.onFileReceived((entry) => {
   state.history.items = [entry, ...(state.history.items || [])].slice(0, 200);
@@ -75,8 +73,10 @@ setInterval(async () => {
   await refreshSettings();
   applyTheme();
   state.server.port = state.settings?.port || 3210;
+  navigate("dashboard");
   await Promise.all([refreshStatus(), refreshHistory(), refreshIPs()]);
+  state.initializing = false;
   renderDevices();
   renderFooter();
-  navigate("dashboard");
+  rerender();
 })();

@@ -35,13 +35,17 @@ fun ConnectionStatusChip(
     val label = when (connectionState) {
         ConnectionState.CONNECTED -> serverName.takeIf { it.isNotBlank() } ?: "Linked"
         ConnectionState.CONNECTING -> "Connecting…"
-        ConnectionState.DISCONNECTED -> "Offline"
+        ConnectionState.DISCONNECTED -> "Connect"
+    }
+    val chipBackground = when (connectionState) {
+        ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
 
     Row(
         modifier = modifier
             .clip(MaterialTheme.shapes.extraLarge)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .background(chipBackground)
             .clickable(onClick = onClick)
             .padding(horizontal = Spacing.md, vertical = Spacing.sm - 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -57,7 +61,9 @@ fun ConnectionStatusChip(
             text = label,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (connectionState == ConnectionState.DISCONNECTED)
+                MaterialTheme.colorScheme.error
+            else MaterialTheme.colorScheme.onSurface,
         )
     }
 }

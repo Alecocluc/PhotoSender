@@ -65,6 +65,7 @@ import com.appharbor.photosender.ui.theme.LocalExtendedColors
 import com.appharbor.photosender.ui.theme.Spacing
 import com.appharbor.photosender.ui.transfer.TransferViewModel
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -433,6 +434,41 @@ private fun DuplicateRow(
 
 // ── History segment ──────────────────────────────────────────────────────────
 
+private data class HistoryGroup(val label: String, val items: List<com.appharbor.photosender.data.db.UploadRecord>)
+
+private fun groupHistoryByDate(items: List<com.appharbor.photosender.data.db.UploadRecord>): List<HistoryGroup> {
+    if (items.isEmpty()) return emptyList()
+    val now = Calendar.getInstance()
+    val todayYear = now.get(Calendar.YEAR); val todayDay = now.get(Calendar.DAY_OF_YEAR)
+    val yesterday = Calendar.getInstance().also { it.add(Calendar.DAY_OF_YEAR, -1) }
+    val yYear = yesterday.get(Calendar.YEAR); val yDay = yesterday.get(Calendar.DAY_OF_YEAR)
+    fun label(ts: Long): String {
+        if (ts <= 0) return "Older"
+        val c = Calendar.getInstance().also { it.timeInMillis = ts }
+        return when {
+            c.get(Calendar.YEAR) == todayYear && c.get(Calendar.DAY_OF_YEAR) == todayDay -> "Today"
+            c.get(Calendar.YEAR) == yYear && c.get(Calendar.DAY_OF_YEAR) == yDay -> "Yesterday"
+            else -> SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(ts))
+        }
+    }
+    val groups = LinkedHashMap<String, MutableList<com.appharbor.photosender.data.db.UploadRecord>>()
+    for (item in items) groups.getOrPut(label(item.uploadedAt)) { mutableListOf() }.add(item)
+    return groups.map { (l, its) -> HistoryGroup(l, its) }
+}
+
+private fun formatHistoryTime(timestamp: Long): String {
+    if (timestamp <= 0) return ""
+    val diff = System.currentTimeMillis() - timestamp
+    val time = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(timestamp))
+    return when {
+        diff < 60_000L -> "Just now"
+        diff < 3_600_000L -> "${diff / 60_000L}m ago"
+        diff < 86_400_000L -> "${diff / 3_600_000L}h ago"
+        diff < 172_800_000L -> "Yesterday at $time"
+        else -> SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(timestamp))
+    }
+}
+
 @Composable
 private fun HistorySegment(viewModel: HistoryViewModel) {
     val completedCount by viewModel.completedCount.collectAsStateWithLifecycle()
@@ -441,6 +477,7 @@ private fun HistorySegment(viewModel: HistoryViewModel) {
     val totalTransferredBytes by viewModel.totalTransferredBytes.collectAsStateWithLifecycle()
     val lastSync by viewModel.lastSyncTimestamp.collectAsStateWithLifecycle()
     val recentHistory by viewModel.recentHistory.collectAsStateWithLifecycle()
+    val groups = androidx.compose.runtime.remember(recentHistory) { groupHistoryByDate(recentHistory) }
 
     var showClearDialog by remember { mutableStateOf(false) }
 
@@ -587,28 +624,22 @@ private fun HistorySegment(viewModel: HistoryViewModel) {
             Spacer(Modifier.height(Spacing.lg))
         }
 
-        // Recent activity header
+        // Clear button (compact, right-aligned)
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Recent Activity",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (recentHistory.isNotEmpty()) {
+            if (recentHistory.isNotEmpty()) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { showClearDialog = true }) {
-                        Text("Clear", color = MaterialTheme.colorScheme.error)
+                        Text(
+                            "Clear all",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
                     }
                 }
             }
-            Spacer(Modifier.height(Spacing.sm))
         }
 
-        if (recentHistory.isEmpty()) {
+        if (groups.isEmpty()) {
             item {
                 EmptyState(
                     icon = Icons.Filled.Description,
@@ -618,9 +649,20 @@ private fun HistorySegment(viewModel: HistoryViewModel) {
                 )
             }
         } else {
-            items(recentHistory, key = { it.id }) { record ->
-                HistoryRow(record = record, formatBytes = viewModel::formatBytes)
-                Spacer(Modifier.height(Spacing.sm))
+            groups.forEach { group ->
+                item(key = "header_${group.label}") {
+                    Text(
+                        text = group.label,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = Spacing.sm, bottom = Spacing.xs),
+                    )
+                }
+                items(group.items, key = { "record_${it.id}" }) { record ->
+                    HistoryRow(record = record, formatBytes = viewModel::formatBytes)
+                    Spacer(Modifier.height(Spacing.sm))
+                }
             }
         }
 
@@ -646,9 +688,10 @@ private fun HistoryRow(
             )
         },
         trailingContent = {
-            if (record.uploadedAt > 0) {
+            val timeLabel = formatHistoryTime(record.uploadedAt)
+            if (timeLabel.isNotEmpty()) {
                 Text(
-                    text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(record.uploadedAt)),
+                    text = timeLabel,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -1,5 +1,6 @@
 export const state = {
   view: "dashboard",
+  initializing: true,
   settings: null,
   status: null,
   history: { items: [], totalCount: 0 },

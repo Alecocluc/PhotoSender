@@ -25,8 +25,8 @@ export function renderFooter() {
   const chip = document.querySelector("#server-chip");
   if (state.server.running) {
     dot.classList.remove("off");
-    statusText.textContent = "CONNECTED";
-    linkPill.textContent = "LINK-STATE: NOMINAL";
+    statusText.textContent = "Active";
+    linkPill.textContent = "All good";
     linkPill.style.background = "var(--success-bg)";
     linkPill.style.color = "var(--success-fg)";
     chip.style.background = "var(--success-bg)";
@@ -34,8 +34,8 @@ export function renderFooter() {
     chip.innerHTML = '<span class="dot"></span>Active';
   } else {
     dot.classList.add("off");
-    statusText.textContent = "OFFLINE";
-    linkPill.textContent = state.server.error ? "LINK-STATE: ERROR" : "LINK-STATE: DOWN";
+    statusText.textContent = "Offline";
+    linkPill.textContent = state.server.error ? "Connection error" : "Server offline";
     linkPill.style.background = "var(--danger-bg)";
     linkPill.style.color = "var(--danger)";
     chip.style.background = "var(--danger-bg)";

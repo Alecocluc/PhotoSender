@@ -54,12 +54,12 @@
   --text-muted: #94a3b8;
   --text-soft: #cbd5e1;
   --label: #64748b;
-  --primary: #3b82f6;
-  --primary-2: #60a5fa;
-  --primary-fg: #0b1220;
-  --primary-soft: rgba(59,130,246,0.18);
-  --primary-soft-fg: #93c5fd;
-  --primary-pulse: #60a5fa;
+  --primary: #6b9bff;
+  --primary-2: #8ba7ff;
+  --primary-fg: #ffffff;
+  --primary-soft: rgba(107,155,255,0.18);
+  --primary-soft-fg: #b0c8ff;
+  --primary-pulse: #6b9bff;
   --success: #34d399;
   --success-bg: rgba(52,211,153,0.14);
   --success-fg: #6ee7b7;
@@ -70,7 +70,7 @@
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
   --shadow: 0 4px 16px -6px rgba(0,0,0,0.5);
   --shadow-lg: 0 24px 48px -24px rgba(0,0,0,0.7);
-  --gradient: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+  --gradient: linear-gradient(135deg, #0056d2 0%, #6b9bff 100%);
 }
 
 * { box-sizing: border-box; }
@@ -402,4 +402,27 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monosp
   .footer .hide-sm { display: none; }
   .topbar h1 { font-size: 16px; }
   .topbar-tag { display: none; }
+}
+
+/* ── Skeleton loading ── */
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+.skeleton {
+  display: inline-block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--border) 25%, var(--border-strong) 50%, var(--border) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  color: transparent !important;
+  user-select: none;
+}
+.skeleton-block {
+  display: block;
+  height: 1em;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--border) 25%, var(--border-strong) 50%, var(--border) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
 }

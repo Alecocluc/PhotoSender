@@ -169,6 +169,7 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
         }
 
         val showBottomBar = currentDestination?.route in bottomNavItems.map { it.route }
+        val showTopBar = currentDestination?.route != Screen.FolderDetail.route
 
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val scope = rememberCoroutineScope()
@@ -202,6 +203,7 @@ fun PhotoSenderApp(onThemeResolved: (Boolean) -> Unit = {}) {
 
         Scaffold(
             topBar = {
+                if (!showTopBar) return@Scaffold
                 TopAppBar(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {

@@ -1,6 +1,7 @@
 package com.appharbor.photosender.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -94,7 +95,11 @@ fun <T> SegmentedToggle(
                         .clip(MaterialTheme.shapes.extraLarge)
                         .then(
                             if (isSelected) Modifier.background(extColors.buttonGradient)
-                            else Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                            else Modifier.border(
+                                1.dp,
+                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                                MaterialTheme.shapes.extraLarge,
+                            )
                         )
                         .clickable { onSelect(value) }
                         .padding(horizontal = Spacing.md, vertical = Spacing.sm),

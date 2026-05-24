@@ -5,6 +5,11 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +35,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
@@ -88,6 +94,7 @@ fun GalleryScreen(
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
+    var showSearch by remember { mutableStateOf(false) }
     var hasPermission by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
@@ -148,50 +155,94 @@ fun GalleryScreen(
                     )
                     Spacer(Modifier.height(Spacing.md))
 
-                    // Functional search
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        placeholder = {
-                            Text(
-                                "Search folders…",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            )
-                        },
-                        leadingIcon = {
+                    // Filter row with inline search toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    ) {
+                        SegmentedToggle(
+                            options = listOf(
+                                MediaFilter.ALL to "All",
+                                MediaFilter.PHOTOS to "Photos",
+                                MediaFilter.VIDEOS to "Videos",
+                            ),
+                            selected = filter,
+                            onSelect = { viewModel.setFilter(it) },
+                            fillWidth = true,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(MaterialTheme.shapes.medium)
+                                .background(
+                                    if (showSearch || searchQuery.isNotEmpty())
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
+                                    else MaterialTheme.colorScheme.surfaceContainerHigh
+                                )
+                                .clickable {
+                                    if (showSearch) {
+                                        showSearch = false
+                                        searchQuery = ""
+                                        focusManager.clearFocus()
+                                    } else {
+                                        showSearch = true
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
                             Icon(
-                                Icons.Filled.Search,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                imageVector = if (showSearch || searchQuery.isNotEmpty()) Icons.Filled.Close else Icons.Filled.Search,
+                                contentDescription = if (showSearch) "Close search" else "Search folders",
+                                tint = if (showSearch || searchQuery.isNotEmpty())
+                                    MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp),
                             )
-                        },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                        ),
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                        }
+                    }
 
-                    Spacer(Modifier.height(Spacing.md))
-
-                    SegmentedToggle(
-                        options = listOf(
-                            MediaFilter.ALL to "All",
-                            MediaFilter.PHOTOS to "Photos",
-                            MediaFilter.VIDEOS to "Videos",
-                        ),
-                        selected = filter,
-                        onSelect = { viewModel.setFilter(it) },
-                        fillWidth = true,
-                    )
+                    // Collapsible search field
+                    AnimatedVisibility(
+                        visible = showSearch,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut(),
+                    ) {
+                        Column {
+                            Spacer(Modifier.height(Spacing.sm))
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = {
+                                    Text(
+                                        "Search folders…",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    )
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Filled.Search,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                ),
+                                shape = MaterialTheme.shapes.medium,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
 
                     if (totalAssets > 0) {
                         Spacer(Modifier.height(Spacing.md))
@@ -421,7 +472,17 @@ private fun SyncConfirmDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text(if (plan.isNoOp) "OK" else "Sync") }
+            when {
+                plan.isNoOp -> TextButton(onClick = onConfirm) { Text("OK") }
+                plan.deleteCount > 0 -> FilledTonalButton(
+                    onClick = onConfirm,
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ),
+                ) { Text("Sync & Delete") }
+                else -> TextButton(onClick = onConfirm) { Text("Sync") }
+            }
         },
         dismissButton = if (plan.isNoOp) null else {
             { TextButton(onClick = onDismiss) { Text("Cancel") } }

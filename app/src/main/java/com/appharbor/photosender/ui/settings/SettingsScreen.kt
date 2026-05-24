@@ -98,9 +98,11 @@ fun SettingsScreen(
                 ToggleRow(
                     icon = Icons.Filled.Storage,
                     title = "Auto-Archive",
-                    subtitle = "Coming soon — archive transferred files after 30 days",
+                    subtitle = "Archive transferred files after 30 days",
                     checked = autoArchiveEnabled,
                     onCheckedChange = viewModel::onAutoArchiveChanged,
+                    enabled = false,
+                    badge = "SOON",
                 )
             }
         }
