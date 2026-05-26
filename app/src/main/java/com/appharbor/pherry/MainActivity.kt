@@ -84,12 +84,12 @@ import com.appharbor.pherry.data.preferences.ThemeMode
 import com.appharbor.pherry.navigation.Screen
 import com.appharbor.pherry.ui.activity.ActivityScreen
 import com.appharbor.pherry.ui.components.ConnectionStatusChip
+import com.appharbor.pherry.ui.components.PherryWordmark
 import com.appharbor.pherry.ui.connect.ConnectSheet
 import com.appharbor.pherry.ui.gallery.FolderDetailScreen
 import com.appharbor.pherry.ui.gallery.GalleryScreen
 import com.appharbor.pherry.ui.settings.SettingsScreen
 import com.appharbor.pherry.ui.theme.LocalExtendedColors
-import com.appharbor.pherry.ui.theme.Manrope
 import com.appharbor.pherry.ui.theme.PherryTheme
 import com.appharbor.pherry.ui.theme.Spacing
 import dagger.hilt.android.AndroidEntryPoint
@@ -166,8 +166,8 @@ fun PherryApp(
 
         val bottomNavItems = remember {
             listOf(
-                BottomNavItem(Screen.Gallery.route, "Gallery", Icons.Filled.PhotoLibrary, Icons.Outlined.PhotoLibrary),
-                BottomNavItem(Screen.Activity.route, "Activity", Icons.Filled.SwapHorizontalCircle, Icons.Outlined.SwapHorizontalCircle),
+                BottomNavItem(Screen.Gallery.route, "Library", Icons.Filled.PhotoLibrary, Icons.Outlined.PhotoLibrary),
+                BottomNavItem(Screen.Activity.route, "Transfers", Icons.Filled.SwapHorizontalCircle, Icons.Outlined.SwapHorizontalCircle),
                 BottomNavItem(Screen.Settings.route, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
             )
         }
@@ -195,38 +195,11 @@ fun PherryApp(
             }
         }
 
-        val extendedColors = LocalExtendedColors.current
-        val gradientBrush = extendedColors.buttonGradient
-
         Scaffold(
             topBar = {
                 if (!showTopBar) return@Scaffold
                 TopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Outlined.PhotoLibrary,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .graphicsLayer(alpha = 0.99f)
-                                    .drawWithContent {
-                                        drawContent()
-                                        drawRect(brush = gradientBrush, blendMode = BlendMode.SrcAtop)
-                                    }
-                            )
-                            Spacer(Modifier.width(Spacing.sm))
-                            Text(
-                                text = "Pherry",
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontFamily = Manrope,
-                                    fontWeight = FontWeight.Bold,
-                                    brush = gradientBrush,
-                                ),
-                            )
-                        }
-                    },
+                    title = { PherryWordmark() },
                     actions = {
                         ConnectionStatusChip(
                             connectionState = connectionState,
@@ -247,7 +220,7 @@ fun PherryApp(
                     enter = fadeIn(),
                     exit = fadeOut(),
                 ) {
-                    StitchBottomNav(
+                    PherryBottomNav(
                         items = bottomNavItems,
                         currentDestination = currentDestination,
                         onItemSelected = { route ->
@@ -334,7 +307,7 @@ fun PherryApp(
 }
 
 @Composable
-private fun StitchBottomNav(
+private fun PherryBottomNav(
     items: List<BottomNavItem>,
     currentDestination: androidx.navigation.NavDestination?,
     onItemSelected: (String) -> Unit,
