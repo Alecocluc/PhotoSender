@@ -97,13 +97,12 @@ data class ExtendedColors(
 
 val LocalExtendedColors = staticCompositionLocalOf { ExtendedColors() }
 
-// Azure Stream gradient — always use the deep azure blues for both dark & light
-// This is the signature brand gradient, consistent across all modes.
-private val AzureButtonGradient = Brush.horizontalGradient(
-    listOf(PrimaryLight, PrimaryContainerLight)  // #0040A1 → #0056D2
+// Pherry signature gradient — teal "ferry/flow", consistent across all modes.
+private val PherryButtonGradient = Brush.horizontalGradient(
+    listOf(PrimaryLight, PrimaryContainerLight)  // #0E9E8E → #13B5A6
 )
-private val AzureProgressGradient = Brush.horizontalGradient(
-    listOf(PrimaryLight, SecondaryLight)  // #0040A1 → #2B4CDA
+private val PherryProgressGradient = Brush.horizontalGradient(
+    listOf(PrimaryLight, SecondaryLight)  // #0E9E8E → #119EB0
 )
 
 private fun buildExtendedColors(
@@ -113,20 +112,20 @@ private fun buildExtendedColors(
 ): ExtendedColors {
     // When dynamic (Material You) is enabled, derive gradients from the
     // dynamic colorScheme so they blend with the wallpaper palette.
-    // When dynamic is off, always use the Azure Stream signature gradient.
+    // When dynamic is off, always use the Pherry signature gradient.
     val buttonGradient = if (isDynamic) {
         Brush.horizontalGradient(
             listOf(colorScheme.primary, colorScheme.primaryContainer)
         )
     } else {
-        AzureButtonGradient
+        PherryButtonGradient
     }
     val progressGradient = if (isDynamic) {
         Brush.horizontalGradient(
             listOf(colorScheme.primary, colorScheme.secondary)
         )
     } else {
-        AzureProgressGradient
+        PherryProgressGradient
     }
     val glowColor = if (isDynamic) colorScheme.primary else PrimaryLight
 

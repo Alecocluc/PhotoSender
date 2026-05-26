@@ -9,5 +9,6 @@ object Spacing {
     val lg = 16.dp
     val xl = 24.dp
     val xxl = 32.dp
+    val xxxl = 48.dp
     val screen = 20.dp
 }
