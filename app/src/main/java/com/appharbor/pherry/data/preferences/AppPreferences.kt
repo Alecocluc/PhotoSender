@@ -38,6 +38,7 @@ class AppPreferences @Inject constructor(
     private val wifiOnlyTransferKey = booleanPreferencesKey("wifi_only_transfer")
     private val keepScreenAwakeKey = booleanPreferencesKey("keep_screen_awake")
     private val defaultUploadModeKey = stringPreferencesKey("default_upload_mode")
+    private val onboardingCompletedKey = booleanPreferencesKey("onboarding_completed")
 
     val lastIpAddress: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[lastIpKey] ?: ""
@@ -85,6 +86,10 @@ class AppPreferences @Inject constructor(
 
     val defaultUploadMode: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[defaultUploadModeKey] ?: "ADD"
+    }
+
+    val onboardingCompleted: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[onboardingCompletedKey] ?: false
     }
 
     suspend fun saveLastIpAddress(ip: String) {
@@ -160,6 +165,12 @@ class AppPreferences @Inject constructor(
     suspend fun saveDefaultUploadMode(mode: String) {
         context.dataStore.edit { prefs ->
             prefs[defaultUploadModeKey] = mode
+        }
+    }
+
+    suspend fun setOnboardingCompleted(completed: Boolean = true) {
+        context.dataStore.edit { prefs ->
+            prefs[onboardingCompletedKey] = completed
         }
     }
 

@@ -1,7 +1,7 @@
 {
-  "name": "photosender-desktop",
+  "name": "pherry-desktop",
   "version": "1.0.0",
-  "description": "PhotoSender Desktop - Wireless photo & video receiver",
+  "description": "Pherry Desktop - Wireless photo & video receiver",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

@@ -9,12 +9,14 @@ import com.appharbor.pherry.data.preferences.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    appPreferences: AppPreferences,
+    private val appPreferences: AppPreferences,
     connectionManager: ConnectionManager,
 ) : ViewModel() {
 
@@ -27,4 +29,13 @@ class MainViewModel @Inject constructor(
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
 
     val serverName: StateFlow<String> = connectionManager.serverName
+
+    // null = still loading from DataStore (avoids an onboarding flash for returning users)
+    val onboardingCompleted: StateFlow<Boolean?> = appPreferences.onboardingCompleted
+        .map<Boolean, Boolean?> { it }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun completeOnboarding() {
+        viewModelScope.launch { appPreferences.setOnboardingCompleted() }
+    }
 }

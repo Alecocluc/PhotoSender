@@ -97,7 +97,7 @@ fun ActivityScreen(
             .padding(horizontal = Spacing.screen),
     ) {
         Spacer(Modifier.height(Spacing.md))
-        ScreenHeader(title = "Activity", subtitle = "Transfers & history")
+        ScreenHeader(title = "Transfers", subtitle = "Live & history")
         Spacer(Modifier.height(Spacing.md))
 
         SegmentedToggle(

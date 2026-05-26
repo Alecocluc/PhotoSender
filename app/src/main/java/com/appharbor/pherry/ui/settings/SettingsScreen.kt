@@ -1,10 +1,13 @@
 package com.appharbor.pherry.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
@@ -21,10 +24,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.appharbor.pherry.data.preferences.ThemeMode
+import com.appharbor.pherry.ui.components.PherryMark
 import com.appharbor.pherry.ui.components.ScreenHeader
 import com.appharbor.pherry.ui.components.SectionCard
 import com.appharbor.pherry.ui.components.SegmentedToggle
@@ -157,6 +164,33 @@ fun SettingsScreen(
                     onCheckedChange = viewModel::onAutoArchiveChanged,
                     enabled = false,
                     badge = "SOON",
+                )
+            }
+        }
+
+        item {
+            SectionCard(title = "About") {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    PherryMark(size = 48.dp, cornerRadius = 14.dp)
+                    Spacer(Modifier.width(Spacing.md))
+                    Column {
+                        Text(
+                            text = "Pherry",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "Version 1.0 · photo ferry",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(Spacing.md))
+                Text(
+                    text = "Ferry photos and videos to your computer over your local network — no cables, no cloud.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }

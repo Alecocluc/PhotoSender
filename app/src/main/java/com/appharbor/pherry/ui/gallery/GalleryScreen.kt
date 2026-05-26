@@ -195,7 +195,7 @@ fun GalleryScreen(
                 Column {
                     Spacer(Modifier.height(Spacing.sm))
                     ScreenHeader(
-                        title = "Gallery",
+                        title = "Library",
                         subtitle = when {
                             connectionState != ConnectionState.CONNECTED -> "Pair with desktop to start"
                             !hasPermission -> "Allow media access after pairing"

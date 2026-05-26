@@ -88,6 +88,7 @@ import com.appharbor.pherry.ui.components.PherryWordmark
 import com.appharbor.pherry.ui.connect.ConnectSheet
 import com.appharbor.pherry.ui.gallery.FolderDetailScreen
 import com.appharbor.pherry.ui.gallery.GalleryScreen
+import com.appharbor.pherry.ui.onboarding.OnboardingScreen
 import com.appharbor.pherry.ui.settings.SettingsScreen
 import com.appharbor.pherry.ui.theme.LocalExtendedColors
 import com.appharbor.pherry.ui.theme.PherryTheme
@@ -149,6 +150,7 @@ fun PherryApp(
     val dynamicColorEnabled by mainViewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
     val connectionState by mainViewModel.connectionState.collectAsStateWithLifecycle()
     val serverName by mainViewModel.serverName.collectAsStateWithLifecycle()
+    val onboardingCompleted by mainViewModel.onboardingCompleted.collectAsStateWithLifecycle()
 
     val isSystemDark = isSystemInDarkTheme()
     val darkTheme = when (themeMode) {
@@ -160,6 +162,18 @@ fun PherryApp(
     LaunchedEffect(darkTheme) { onThemeResolved(darkTheme) }
 
     PherryTheme(darkTheme = darkTheme, dynamicColor = dynamicColorEnabled) {
+        when (onboardingCompleted) {
+            null -> {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {}
+                return@PherryTheme
+            }
+            false -> {
+                OnboardingScreen(onFinish = { mainViewModel.completeOnboarding() })
+                return@PherryTheme
+            }
+            else -> Unit
+        }
+
         val navController = rememberNavController()
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentDestination = navBackStackEntry?.destination

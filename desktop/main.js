@@ -33,7 +33,7 @@ function loadSettings() {
     // ignore — fall back to defaults
   }
   if (!settings.downloadPath || typeof settings.downloadPath !== "string") {
-    settings.downloadPath = path.join(app.getPath("pictures"), "PhotoSender");
+    settings.downloadPath = path.join(app.getPath("pictures"), "Pherry");
   }
   const port = Number(settings.port);
   if (!Number.isFinite(port) || port < MIN_PORT || port > MAX_PORT) {
@@ -71,7 +71,7 @@ function createWindow() {
     height: 820,
     minWidth: 480,
     minHeight: 560,
-    title: "PhotoSender Desktop",
+    title: "Pherry Desktop",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -126,7 +126,7 @@ async function startServer() {
   return new Promise((resolve, reject) => {
     const server = expressApp.listen(settings.port, "0.0.0.0", () => {
       serverInstance = server;
-      console.log(`PhotoSender server listening on port ${settings.port}`);
+      console.log(`Pherry server listening on port ${settings.port}`);
       broadcastToRenderer("server-state", { running: true, port: settings.port, error: null });
       resolve();
     });
@@ -192,8 +192,8 @@ ipcMain.handle("clear-history", async () => {
 ipcMain.handle("export-history", async () => {
   const stamp = new Date().toISOString().slice(0, 10);
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: "Export PhotoSender history",
-    defaultPath: path.join(app.getPath("documents"), `PhotoSender-history-${stamp}.json`),
+    title: "Export Pherry history",
+    defaultPath: path.join(app.getPath("documents"), `Pherry-history-${stamp}.json`),
     filters: [{ name: "JSON", extensions: ["json"] }],
   });
   if (result.canceled || !result.filePath) return { success: false, canceled: true };
@@ -220,7 +220,7 @@ ipcMain.handle("export-history", async () => {
 
 ipcMain.handle("import-history", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: "Import PhotoSender history",
+    title: "Import Pherry history",
     properties: ["openFile"],
     filters: [{ name: "JSON", extensions: ["json"] }],
   });
@@ -238,7 +238,7 @@ ipcMain.handle("import-history", async () => {
         Array.isArray(parsed.completedMd5s)
       );
     if (!looksLikeHistory) {
-      return { success: false, error: "That file does not look like a PhotoSender history export." };
+      return { success: false, error: "That file does not look like a Pherry history export." };
     }
 
     fs.mkdirSync(path.dirname(historyStatePath), { recursive: true });
