@@ -76,7 +76,7 @@ fun TransferScreen(
         item {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "GLOBAL STATUS",
+                text = "Transfer status",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold,
@@ -193,7 +193,7 @@ fun TransferScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = "Select files from the Gallery to start transferring",
+                        text = "Select files from the Library to start transferring",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )

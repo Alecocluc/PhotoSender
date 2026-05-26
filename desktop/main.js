@@ -77,8 +77,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
+    icon: path.join(__dirname, "renderer", "pherry-icon.svg"),
     show: false,
-    backgroundColor: settings.theme === "dark" ? "#0f172a" : "#f7f9fb",
+    backgroundColor: settings.theme === "dark" ? "#0B0F11" : "#F6F8F9",
   });
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));

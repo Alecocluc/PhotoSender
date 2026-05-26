@@ -23,10 +23,6 @@ import androidx.compose.ui.unit.dp
 import com.appharbor.pherry.ui.theme.LocalExtendedColors
 import com.appharbor.pherry.ui.theme.Manrope
 
-/**
- * The Pherry mark: a teal tile with a white forward double-chevron ("ferry crossing / send").
- * Simplified vs. the launcher icon (drops the wave) so it stays crisp at small sizes.
- */
 @Composable
 fun PherryMark(
     modifier: Modifier = Modifier,
@@ -42,14 +38,28 @@ fun PherryMark(
     ) {
         drawRect(brush = brush)
         val s = this.size.minDimension
-        val stroke = Stroke(width = s * 0.085f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        fun chevron(x0: Float) = Path().apply {
-            moveTo(s * x0, s * 0.31f)
-            lineTo(s * (x0 + 0.18f), s * 0.50f)
-            lineTo(s * x0, s * 0.69f)
+        val chevronStroke = Stroke(
+            width = s * 0.085f,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round,
+        )
+        val chevron = Path().apply {
+            moveTo(s * 0.40f, s * 0.27f)
+            lineTo(s * 0.60f, s * 0.47f)
+            lineTo(s * 0.40f, s * 0.67f)
         }
-        drawPath(chevron(0.36f), color = glyphColor, style = stroke)
-        drawPath(chevron(0.54f), color = glyphColor.copy(alpha = 0.5f), style = stroke)
+        drawPath(chevron, color = glyphColor, style = chevronStroke)
+
+        val wave = Path().apply {
+            moveTo(s * 0.24f, s * 0.72f)
+            cubicTo(s * 0.36f, s * 0.62f, s * 0.47f, s * 0.80f, s * 0.59f, s * 0.70f)
+            cubicTo(s * 0.67f, s * 0.64f, s * 0.74f, s * 0.66f, s * 0.81f, s * 0.70f)
+        }
+        drawPath(
+            path = wave,
+            color = glyphColor.copy(alpha = 0.9f),
+            style = Stroke(width = s * 0.055f, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
     }
 }
 

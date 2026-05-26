@@ -21,28 +21,28 @@ fun StatusBadge(
 ) {
     val (label, container, content) = when (variant) {
         BadgeVariant.UPLOADING -> Triple(
-            "UPLOADING",
-            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f),
-            MaterialTheme.colorScheme.tertiary,
-        )
-        BadgeVariant.DONE -> Triple(
-            "DONE",
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.32f),
+            "Uploading",
+            MaterialTheme.colorScheme.primaryContainer,
             MaterialTheme.colorScheme.primary,
         )
+        BadgeVariant.DONE -> Triple(
+            "Done",
+            MaterialTheme.colorScheme.tertiaryContainer,
+            MaterialTheme.colorScheme.tertiary,
+        )
         BadgeVariant.PENDING -> Triple(
-            "PENDING",
+            "Pending",
             MaterialTheme.colorScheme.surfaceContainerHighest,
             MaterialTheme.colorScheme.onSurfaceVariant,
         )
         BadgeVariant.FAILED -> Triple(
-            "FAILED",
+            "Failed",
             MaterialTheme.colorScheme.errorContainer,
             MaterialTheme.colorScheme.error,
         )
         BadgeVariant.SKIPPED -> Triple(
-            "SKIPPED",
-            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f),
+            "Skipped",
+            MaterialTheme.colorScheme.secondaryContainer,
             MaterialTheme.colorScheme.secondary,
         )
     }

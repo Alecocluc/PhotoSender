@@ -2,31 +2,32 @@ package com.appharbor.pherry.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Pherry Design System — Light Mode
-// Calm minimalist: neutral slate surfaces with a single teal accent (photo ferry → water/flow).
+// Pherry design system: calm slate neutrals, one teal accent.
 val PrimaryLight = Color(0xFF0E9E8E)
+val PrimaryBrightLight = Color(0xFF13B5A6)
+val PrimaryDeepLight = Color(0xFF0B7E72)
+val PrimaryTintLight = Color(0xFFD6F5F0)
 val OnPrimaryLight = Color(0xFFFFFFFF)
-val PrimaryContainerLight = Color(0xFF13B5A6)
-val OnPrimaryContainerLight = Color(0xFFFFFFFF)
-val PrimaryFixedLight = Color(0xFFCFF8EF)
-val PrimaryFixedDimLight = Color(0xFF9FEFE0)
+val OnPrimaryContainerLight = PrimaryDeepLight
+val PrimaryFixedLight = PrimaryTintLight
+val PrimaryFixedDimLight = Color(0xFFB4ECE4)
 
-val SecondaryLight = Color(0xFF119EB0)
+val SecondaryLight = PrimaryDeepLight
 val OnSecondaryLight = Color(0xFFFFFFFF)
-val SecondaryContainerLight = Color(0xFF1AB3C4)
-val OnSecondaryContainerLight = Color(0xFFFFFFFF)
+val SecondaryContainerLight = PrimaryTintLight
+val OnSecondaryContainerLight = PrimaryDeepLight
 
-val TertiaryLight = Color(0xFF0E8A63)
+val TertiaryLight = Color(0xFF16A34A)
 val OnTertiaryLight = Color(0xFFFFFFFF)
-val TertiaryContainerLight = Color(0xFF10B981)
-val OnTertiaryContainerLight = Color(0xFFFFFFFF)
-val TertiaryFixedLight = Color(0xFFA7F3D0)
-val TertiaryFixedDimLight = Color(0xFF6EE7B7)
+val TertiaryContainerLight = Color(0xFFDDF7E8)
+val OnTertiaryContainerLight = Color(0xFF0B5F2A)
+val TertiaryFixedLight = Color(0xFFDDF7E8)
+val TertiaryFixedDimLight = Color(0xFFB8ECCC)
 
-val ErrorLight = Color(0xFFC2362B)
+val ErrorLight = Color(0xFFDC2626)
 val OnErrorLight = Color(0xFFFFFFFF)
-val ErrorContainerLight = Color(0xFFFFDAD5)
-val OnErrorContainerLight = Color(0xFF410001)
+val ErrorContainerLight = Color(0xFFFFE1DF)
+val OnErrorContainerLight = Color(0xFF7F1D1D)
 
 val SurfaceLight = Color(0xFFF6F8F9)
 val OnSurfaceLight = Color(0xFF0E1518)
@@ -34,50 +35,56 @@ val SurfaceDimLight = Color(0xFFDCE2E4)
 val SurfaceBrightLight = Color(0xFFFFFFFF)
 val SurfaceContainerLowestLight = Color(0xFFFFFFFF)
 val SurfaceContainerLowLight = Color(0xFFF1F4F5)
-val SurfaceContainerLight = Color(0xFFECEFF1)
-val SurfaceContainerHighLight = Color(0xFFE6EAEC)
-val SurfaceContainerHighestLight = Color(0xFFDFE4E6)
+val SurfaceContainerLight = Color(0xFFEAEEF0)
+val SurfaceContainerHighLight = Color(0xFFE3E8EA)
+val SurfaceContainerHighestLight = Color(0xFFDCE2E4)
 val OnSurfaceVariantLight = Color(0xFF566066)
-val OutlineLight = Color(0xFF6E7A80)
-val OutlineVariantLight = Color(0xFFC7CFD3)
-val InverseSurfaceLight = Color(0xFF2A3338)
-val InverseOnSurfaceLight = Color(0xFFEFF3F4)
-val InversePrimaryLight = Color(0xFF7FE0D4)
+val OutlineLight = Color(0xFFDCE2E4)
+val OutlineVariantLight = Color(0xFFDCE2E4)
+val InverseSurfaceLight = Color(0xFF0E1518)
+val InverseOnSurfaceLight = Color(0xFFE7EDEF)
+val InversePrimaryLight = Color(0xFF2DD4BF)
 
-// Pherry Design System — Dark Mode
-// Deep slate with a teal undertone (not pure black); accent teal brightened to pop.
+val WarningLight = Color(0xFFD97706)
+val TextSoftLight = Color(0xFF7A848A)
+
+// Deep slate with a teal undertone, never pure black.
 val PrimaryDark = Color(0xFF2DD4BF)
+val PrimaryDeepDark = Color(0xFF14B8A6)
+val PrimaryContainerDark = Color(0x292DD4BF)
 val OnPrimaryDark = Color(0xFF00322C)
-val PrimaryContainerDark = Color(0xFF14B8A6)
-val OnPrimaryContainerDark = Color(0xFFC9FBF1)
+val OnPrimaryContainerDark = Color(0xFFA7FFF2)
 
-val SecondaryDark = Color(0xFF3FC9D6)
-val OnSecondaryDark = Color(0xFF00363E)
-val SecondaryContainerDark = Color(0xFF119EB0)
-val OnSecondaryContainerDark = Color(0xFFC9F4FA)
+val SecondaryDark = PrimaryDeepDark
+val OnSecondaryDark = Color(0xFF002F2A)
+val SecondaryContainerDark = Color(0x2914B8A6)
+val OnSecondaryContainerDark = Color(0xFFA7FFF2)
 
 val TertiaryDark = Color(0xFF34D399)
 val OnTertiaryDark = Color(0xFF00391F)
-val TertiaryContainerDark = Color(0xFF0E8A63)
-val OnTertiaryContainerDark = Color(0xFFA7F3D0)
+val TertiaryContainerDark = Color(0x2634D399)
+val OnTertiaryContainerDark = Color(0xFFC8FADF)
 
-val ErrorDark = Color(0xFFFFB4AB)
-val OnErrorDark = Color(0xFF690004)
-val ErrorContainerDark = Color(0xFF93000A)
-val OnErrorContainerDark = Color(0xFFFFDAD5)
+val ErrorDark = Color(0xFFF87171)
+val OnErrorDark = Color(0xFF4A0000)
+val ErrorContainerDark = Color(0x2EF87171)
+val OnErrorContainerDark = Color(0xFFFFD5D5)
 
 val SurfaceDark = Color(0xFF0B0F11)
 val OnSurfaceDark = Color(0xFFE7EDEF)
 val SurfaceDimDark = Color(0xFF0B0F11)
-val SurfaceBrightDark = Color(0xFF2A3338)
-val SurfaceContainerLowestDark = Color(0xFF070A0C)
+val SurfaceBrightDark = Color(0xFF222B2F)
+val SurfaceContainerLowestDark = Color(0xFF0B0F11)
 val SurfaceContainerLowDark = Color(0xFF12181B)
 val SurfaceContainerDark = Color(0xFF161D20)
 val SurfaceContainerHighDark = Color(0xFF1B2327)
 val SurfaceContainerHighestDark = Color(0xFF222B2F)
 val OnSurfaceVariantDark = Color(0xFF9BA6AB)
-val OutlineDark = Color(0xFF5A656B)
+val OutlineDark = Color(0xFF283238)
 val OutlineVariantDark = Color(0xFF283238)
 val InverseSurfaceDark = Color(0xFFE7EDEF)
-val InverseOnSurfaceDark = Color(0xFF2A3338)
-val InversePrimaryDark = Color(0xFF0E9E8E)
+val InverseOnSurfaceDark = Color(0xFF0B0F11)
+val InversePrimaryDark = PrimaryLight
+
+val WarningDark = Color(0xFFFBBF24)
+val TextSoftDark = Color(0xFF7C868B)

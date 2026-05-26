@@ -97,7 +97,7 @@ fun HistoryScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Summary stat cards — matching Stitch design
+            // Summary stat cards for transfer history.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

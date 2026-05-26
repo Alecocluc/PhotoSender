@@ -63,6 +63,7 @@ import com.appharbor.pherry.ui.components.ScreenHeader
 import com.appharbor.pherry.ui.components.SegmentedToggle
 import com.appharbor.pherry.ui.components.StatCard
 import com.appharbor.pherry.ui.components.StatusBadge
+import com.appharbor.pherry.ui.components.TransferProgressRow
 import com.appharbor.pherry.ui.history.HistoryViewModel
 import com.appharbor.pherry.ui.settings.SettingsViewModel
 import com.appharbor.pherry.ui.theme.LocalExtendedColors
@@ -170,7 +171,7 @@ private fun LiveSegment(viewModel: TransferViewModel) {
                 EmptyState(
                     icon = Icons.Filled.CloudUpload,
                     title = "No active transfers",
-                    subtitle = "Select files from Gallery to start",
+                    subtitle = "Select files from Library to start",
                     modifier = Modifier.padding(vertical = 48.dp),
                 )
             }
@@ -390,9 +391,11 @@ private fun TransferRow(
         else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
 
-    MediaListRow(
+    TransferProgressRow(
         title = transfer.fileName,
         subtitle = "${formatBytes(transfer.bytesTransferred)} / ${formatBytes(transfer.fileSize)}",
+        progress = progress,
+        status = transfer.status,
         leadingBoxColor = leadingColor,
         leadingContent = {
             if (transfer.contentUri.isNotEmpty() && canPreviewThumbnail(transfer.fileName)) {
@@ -419,34 +422,14 @@ private fun TransferRow(
                 )
             }
         },
-        trailingContent = { StatusBadge(status = transfer.status) },
-        belowContent = {
-            val extColors = LocalExtendedColors.current
-            val progressBrush = when (transfer.status) {
-                UploadStatus.UPLOADING -> extColors.progressGradient
-                UploadStatus.COMPLETED -> androidx.compose.ui.graphics.Brush.horizontalGradient(
-                    listOf(MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.tertiary)
-                )
-                else -> androidx.compose.ui.graphics.Brush.horizontalGradient(
-                    listOf(MaterialTheme.colorScheme.outlineVariant, MaterialTheme.colorScheme.outlineVariant)
-                )
-            }
-            GradientProgressBar(
-                progress = progress,
-                brush = progressBrush,
-                animated = transfer.status == UploadStatus.UPLOADING,
+        progressBrush = when (transfer.status) {
+            UploadStatus.UPLOADING -> LocalExtendedColors.current.progressGradient
+            UploadStatus.COMPLETED -> androidx.compose.ui.graphics.Brush.horizontalGradient(
+                listOf(MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.tertiary)
             )
-            Spacer(Modifier.height(2.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                Text(
-                    text = "${(progress * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            else -> androidx.compose.ui.graphics.Brush.horizontalGradient(
+                listOf(MaterialTheme.colorScheme.outlineVariant, MaterialTheme.colorScheme.outlineVariant)
+            )
         },
     )
 }

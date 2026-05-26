@@ -90,7 +90,7 @@ import com.appharbor.pherry.data.model.MediaFilter
 import com.appharbor.pherry.data.model.MediaFolder
 import com.appharbor.pherry.data.upload.SyncPlan
 import com.appharbor.pherry.ui.components.EmptyState
-import com.appharbor.pherry.ui.components.GradientButton
+import com.appharbor.pherry.ui.components.PrimaryButton
 import com.appharbor.pherry.ui.components.ScreenHeader
 import com.appharbor.pherry.ui.components.SegmentedToggle
 import com.appharbor.pherry.ui.components.SelectionActionBar
@@ -482,7 +482,7 @@ private fun PairingSetupCard(
             }
         }
         Spacer(Modifier.height(Spacing.md))
-        GradientButton(
+        PrimaryButton(
             onClick = onConnectClick,
             enabled = connectionState != ConnectionState.CONNECTING,
             modifier = Modifier.fillMaxWidth(),
@@ -491,14 +491,12 @@ private fun PairingSetupCard(
                 Icons.Filled.Wifi,
                 contentDescription = null,
                 modifier = Modifier.size(18.dp),
-                tint = Color.White,
             )
             Spacer(Modifier.width(Spacing.sm))
             Text(
                 text = if (connectionState == ConnectionState.CONNECTING) "Connecting…" else "Connect desktop",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = Color.White,
             )
         }
     }

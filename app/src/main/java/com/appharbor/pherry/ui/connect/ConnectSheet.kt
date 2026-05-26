@@ -47,7 +47,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -57,7 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.appharbor.pherry.data.model.ConnectionState
-import com.appharbor.pherry.ui.components.GradientButton
+import com.appharbor.pherry.ui.components.PrimaryButton
 import com.appharbor.pherry.ui.theme.Spacing
 
 @Composable
@@ -166,7 +165,7 @@ fun ConnectSheet(
                 }
             }
             Spacer(Modifier.height(Spacing.md))
-            GradientButton(
+            PrimaryButton(
                 onClick = {
                     focusManager.clearFocus()
                     launchQrScanner()
@@ -177,14 +176,12 @@ fun ConnectSheet(
                     Icons.Filled.QrCodeScanner,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
-                    tint = Color.White,
                 )
                 Spacer(Modifier.width(Spacing.sm))
                 Text(
                     text = "Scan desktop QR",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
                 )
             }
         }
@@ -291,7 +288,7 @@ fun ConnectSheet(
                 Text("Disconnect", color = MaterialTheme.colorScheme.error)
             }
         } else {
-            GradientButton(
+            PrimaryButton(
                 onClick = {
                     focusManager.clearFocus()
                     viewModel.onConnect()
@@ -303,14 +300,12 @@ fun ConnectSheet(
                     Icons.Filled.Bolt,
                     contentDescription = null,
                     modifier = Modifier.size(18.dp),
-                    tint = Color.White,
                 )
                 Spacer(Modifier.width(Spacing.sm))
                 Text(
                     text = if (connectionState == ConnectionState.CONNECTING) "Connecting…" else "Connect",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
                 )
             }
         }

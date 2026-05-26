@@ -15,8 +15,8 @@ function renderSettings() {
   const s = state.settings || {};
   document.querySelector("#view-root").innerHTML = `
     ${state.server.error ? `<div class="banner error"><span class="icon">error</span>Server failed to start: ${escHtml(state.server.error)}</div>` : ""}
-    <div class="settings-grid">
-      <div class="card">
+    <div class="settings-grid view-stack">
+      <section class="card">
         <div class="label-row"><span>Appearance</span></div>
         <div class="form-row">
           <label>Theme</label>
@@ -25,60 +25,92 @@ function renderSettings() {
             ${themeTab("light", "Light", s.theme || "system")}
             ${themeTab("dark", "Dark", s.theme || "system")}
           </div>
+          <div class="help">Pherry uses a fixed teal/slate palette so pairing looks consistent across devices.</div>
         </div>
-      </div>
+      </section>
 
-      <div class="card">
-        <div class="label-row"><span>Server</span></div>
-        <div class="form-row">
-          <label>Download folder</label>
-          <div class="row-flex">
-            <input class="input" id="dl-path" value="${escHtml(s.downloadPath || "")}" readonly />
-            <button class="btn" id="choose-folder"><span class="icon sm">folder_open</span>Browse…</button>
+      <section class="card">
+        <div class="label-row"><span>Receiver</span></div>
+        <div class="setting-list">
+          <div class="setting-item">
+            <div class="setting-item-main">
+              <strong>Download folder</strong>
+              <span>Where incoming originals are saved.</span>
+            </div>
+            <button class="btn" id="choose-folder"><span class="icon sm">folder_open</span>Browse</button>
+          </div>
+          <input class="input" id="dl-path" value="${escHtml(s.downloadPath || "")}" readonly />
+
+          <div class="setting-item">
+            <div class="setting-item-main">
+              <strong>Receiver port</strong>
+              <span>Valid range is 1024-65535. Changing it restarts the receiver.</span>
+            </div>
+            <div class="row-flex">
+              <input class="input" id="port-input" type="number" min="1024" max="65535" value="${escHtml(s.port || 3210)}" style="max-width:150px;" />
+              <button class="btn primary" id="apply-port">Apply</button>
+            </div>
+          </div>
+
+          <div class="form-row" style="margin-bottom:0;">
+            <label>Available addresses</label>
+            <div class="ips" id="settings-ips"></div>
           </div>
         </div>
-        <div class="form-row">
-          <label>Port <span class="help">(1024–65535, restarts server on change)</span></label>
-          <div class="row-flex">
-            <input class="input" id="port-input" type="number" min="1024" max="65535" value="${escHtml(s.port || 3210)}" style="max-width:180px;" />
-            <button class="btn primary" id="apply-port">Apply</button>
-          </div>
-        </div>
-        <div class="form-row" style="margin-bottom:0;">
-          <label>Available addresses</label>
-          <div class="ips" id="settings-ips"></div>
-        </div>
-      </div>
+      </section>
 
-      <div class="card">
+      <section class="card">
         <div class="label-row"><span>Behavior</span></div>
-        <label class="switch" style="display:flex;justify-content:space-between;padding:8px 0;">
-          <span style="font-weight:600;">Auto-open folder on transfer</span>
-          <input type="checkbox" id="opt-auto-open" ${s.autoOpenFolder ? "checked" : ""} /><span class="track"></span>
-        </label>
-        <label class="switch" style="display:flex;justify-content:space-between;padding:8px 0;">
-          <span style="font-weight:600;">Launch at startup</span>
-          <input type="checkbox" id="opt-launch" ${s.launchAtStartup ? "checked" : ""} /><span class="track"></span>
-        </label>
-      </div>
+        <div class="setting-list">
+          <label class="setting-item switch">
+            <span class="setting-item-main"><strong>Auto-open folder on transfer</strong><span>Open the saved folder after each incoming file.</span></span>
+            <input type="checkbox" id="opt-auto-open" ${s.autoOpenFolder ? "checked" : ""} /><span class="track"></span>
+          </label>
+          <label class="setting-item switch">
+            <span class="setting-item-main"><strong>Launch at startup</strong><span>Start Pherry Desktop when you sign in.</span></span>
+            <input type="checkbox" id="opt-launch" ${s.launchAtStartup ? "checked" : ""} /><span class="track"></span>
+          </label>
+        </div>
+      </section>
 
-      <div class="card">
-        <div class="label-row"><span>History Backup</span></div>
-        <div class="form-row">
-          <label>Desktop dedup index <span class="help">Use this when moving the backup to another PC.</span></label>
-          <div class="row-flex">
-            <button class="btn" id="export-history-settings"><span class="icon sm">download</span>Export</button>
-            <button class="btn" id="import-history-settings"><span class="icon sm">upload_file</span>Import</button>
-            <button class="btn" id="rebuild-index-settings"><span class="icon sm">sync</span>Rebuild</button>
+      <section class="card">
+        <div class="label-row"><span>History maintenance</span></div>
+        <div class="setting-list">
+          <div class="setting-item">
+            <div class="setting-item-main">
+              <strong>History backup</strong>
+              <span>Export or import the desktop dedup ledger.</span>
+            </div>
+            <div class="row-flex">
+              <button class="btn" id="export-history-settings"><span class="icon sm">download</span>Export</button>
+              <button class="btn" id="import-history-settings"><span class="icon sm">upload_file</span>Import</button>
+            </div>
+          </div>
+          <div class="setting-item">
+            <div class="setting-item-main">
+              <strong>Dedup index</strong>
+              <span>Rebuild before cleaning duplicates after moving folders or drives.</span>
+            </div>
+            <div class="row-flex">
+              <button class="btn" id="rebuild-index-settings"><span class="icon sm">sync</span>Rebuild</button>
+              <button class="btn danger" id="clean-duplicates-settings"><span class="icon sm">delete_sweep</span>Clean</button>
+            </div>
           </div>
         </div>
-        <div class="form-row">
-          <label>Duplicate files <span class="help">Deletes extra copies of identical files, keeping one each. Run Rebuild first for an accurate scan.</span></label>
-          <div class="row-flex">
-            <button class="btn" id="clean-duplicates-settings"><span class="icon sm">delete_sweep</span>Clean duplicates</button>
-          </div>
+      </section>
+
+      <section class="card about-panel">
+        <div class="about-mark" aria-hidden="true">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 6.5 14.5 12 9 17.5" stroke-width="2.4" />
+            <path d="M4.8 16.7c2.7-2.2 4.7 2.2 7.4 0 2.2-1.8 3.9-.1 5.9.2" stroke-width="1.8" opacity="0.9" />
+          </svg>
         </div>
-      </div>
+        <div>
+          <h3>Pherry</h3>
+          <p>Photos, ferried. Local-network photo and video receiving for the desktop.</p>
+        </div>
+      </section>
     </div>
   `;
 

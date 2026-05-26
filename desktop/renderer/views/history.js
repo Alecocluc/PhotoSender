@@ -19,7 +19,7 @@ function selected(value, current) {
 }
 
 function entryId(entry, idx) {
-  return entry.id || `PS-${String(idx + 1).padStart(4, "0")}-X`;
+  return entry.id || `PH-${String(idx + 1).padStart(4, "0")}`;
 }
 
 function entryKind(entry) {
@@ -81,7 +81,7 @@ function historyRow(entry, idx) {
       <td><span class="type-pill">${kind}</span></td>
       <td>${escHtml(fmtBytes(entry.size))}</td>
       <td><span class="mono" style="font-size:12px;color:var(--text-soft);">${escHtml(fmtFullTime(ts))}</span></td>
-      <td><span class="badge"><span class="icon xs">check_circle</span>Completed</span></td>
+      <td><span class="badge"><span class="icon xs">check_circle</span>Saved</span></td>
     </tr>
   `;
 }
@@ -97,13 +97,13 @@ function historyCard(entry, idx) {
       <div class="activity-thumb${videoCls}"><span class="icon sm">${icon}</span></div>
       <div class="history-card-main">
         <div class="name">${escHtml(name)}</div>
-        <div class="meta">${escHtml(entrySource(entry))} · ${escHtml(fmtFullTime(ts))}</div>
+        <div class="meta">${escHtml(entrySource(entry))} / ${escHtml(fmtFullTime(ts))}</div>
         <div class="history-card-tags">
           <span class="type-pill">${kind}</span>
           <span>${escHtml(fmtBytes(entry.size))}</span>
         </div>
       </div>
-      <span class="badge"><span class="icon xs">check_circle</span>Done</span>
+      <span class="badge"><span class="icon xs">check_circle</span>Saved</span>
     </article>
   `;
 }
@@ -120,63 +120,66 @@ function renderHistory() {
   const nextOffset = Number(state.history.nextOffset ?? items.length);
 
   document.querySelector("#view-root").innerHTML = `
-    <div class="toolbar">
-      <div>
-        <h2>Session History</h2>
-        <div class="count">${items.length.toLocaleString()} loaded of ${total.toLocaleString()} total transfer${total === 1 ? "" : "s"}</div>
-      </div>
-      <div class="row-flex history-actions">
-        <div class="search">
-          <span class="icon sm" style="color:var(--text-muted);">search</span>
-          <input id="history-search" type="text" placeholder="Filter by file, folder, source..." value="${escHtml(historyUi.query)}" aria-label="Filter history" />
+    <div class="view-stack">
+      <div class="toolbar">
+        <div>
+          <h2>Transfer history</h2>
+          <div class="count">${items.length.toLocaleString()} loaded of ${total.toLocaleString()} total transfer${total === 1 ? "" : "s"}</div>
         </div>
-        <select class="input compact" id="history-type" aria-label="Filter by media type">
-          <option value="all" ${selected("all", historyUi.type)}>All types</option>
-          <option value="photo" ${selected("photo", historyUi.type)}>Photos</option>
-          <option value="video" ${selected("video", historyUi.type)}>Videos</option>
-          <option value="other" ${selected("other", historyUi.type)}>Other</option>
-        </select>
-        <select class="input compact" id="history-sort" aria-label="Sort history">
-          <option value="newest" ${selected("newest", historyUi.sort)}>Newest first</option>
-          <option value="oldest" ${selected("oldest", historyUi.sort)}>Oldest first</option>
-          <option value="largest" ${selected("largest", historyUi.sort)}>Largest first</option>
-          <option value="name" ${selected("name", historyUi.sort)}>Name A-Z</option>
-        </select>
-        <button class="btn" id="export-history-table"><span class="icon sm">download</span>Export</button>
-        <button class="btn" id="import-history-table"><span class="icon sm">upload_file</span>Import</button>
-        <button class="btn danger" id="clear-history-table"><span class="icon sm">delete</span>Clear</button>
+        <div class="row-flex history-actions">
+          <div class="search">
+            <span class="icon sm" style="color:var(--text-muted);">search</span>
+            <input id="history-search" type="text" placeholder="Filter by file, folder, source..." value="${escHtml(historyUi.query)}" aria-label="Filter history" />
+          </div>
+          <select class="input compact" id="history-type" aria-label="Filter by media type">
+            <option value="all" ${selected("all", historyUi.type)}>All types</option>
+            <option value="photo" ${selected("photo", historyUi.type)}>Photos</option>
+            <option value="video" ${selected("video", historyUi.type)}>Videos</option>
+            <option value="other" ${selected("other", historyUi.type)}>Other</option>
+          </select>
+          <select class="input compact" id="history-sort" aria-label="Sort history">
+            <option value="newest" ${selected("newest", historyUi.sort)}>Newest first</option>
+            <option value="oldest" ${selected("oldest", historyUi.sort)}>Oldest first</option>
+            <option value="largest" ${selected("largest", historyUi.sort)}>Largest first</option>
+            <option value="name" ${selected("name", historyUi.sort)}>Name A-Z</option>
+          </select>
+          <button class="btn" id="export-history-table"><span class="icon sm">download</span>Export</button>
+          <button class="btn" id="import-history-table"><span class="icon sm">upload_file</span>Import</button>
+          <button class="btn danger" id="clear-history-table"><span class="icon sm">delete</span>Clear</button>
+        </div>
       </div>
+
+      ${items.length === 0 ? `
+        <div class="empty"><span class="icon">history</span><strong>No history yet</strong>Past transfers will appear here.</div>
+      ` : `
+        <div class="history-summary">
+          <span>${visible.length.toLocaleString()} matching loaded transfer${visible.length === 1 ? "" : "s"}</span>
+          ${hasFilters ? `<button class="link-button" id="history-clear-filters" type="button">Clear filters</button>` : ""}
+        </div>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Entry</th><th>Filename</th><th>Source</th><th>Type</th><th>Size</th><th>Saved at</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody">
+              ${visible.map(historyRow).join("") ||
+                `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px;">No matches.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+        <div class="history-cards">
+          ${visible.map(historyCard).join("") ||
+            `<div class="empty compact-empty"><span class="icon">search_off</span><strong>No matches</strong>Try a different filter.</div>`}
+        </div>
+        ${hasMore ? `
+          <div class="pagination-row">
+            <button class="btn" id="load-more-history" data-offset="${nextOffset}"><span class="icon sm">expand_more</span>Load more</button>
+          </div>
+        ` : ""}
+      `}
     </div>
-    ${items.length === 0 ? `
-      <div class="empty"><span class="icon">history</span><strong>No history</strong>Past transfers will appear here.</div>
-    ` : `
-      <div class="history-summary">
-        <span>${visible.length.toLocaleString()} matching loaded transfer${visible.length === 1 ? "" : "s"}</span>
-        ${hasFilters ? `<button class="link-button" id="history-clear-filters" type="button">Clear filters</button>` : ""}
-      </div>
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Entry ID</th><th>Filename</th><th>Source</th><th>Type</th><th>Size</th><th>Timestamp</th><th>Status</th>
-            </tr>
-          </thead>
-          <tbody id="history-tbody">
-            ${visible.map(historyRow).join("") ||
-              `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px;">No matches.</td></tr>`}
-          </tbody>
-        </table>
-      </div>
-      <div class="history-cards">
-        ${visible.map(historyCard).join("") ||
-          `<div class="empty compact-empty"><span class="icon">search_off</span><strong>No matches</strong>Try a different filter.</div>`}
-      </div>
-      ${hasMore ? `
-        <div class="pagination-row">
-          <button class="btn" id="load-more-history" data-offset="${nextOffset}"><span class="icon sm">expand_more</span>Load more</button>
-        </div>
-      ` : ""}
-    `}
   `;
 
   document.querySelector("#export-history-table")?.addEventListener("click", exportHistory);

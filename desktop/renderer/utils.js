@@ -15,7 +15,7 @@ export function fmtSpeed(bps) {
 }
 
 export function fmtTime(ts) {
-  if (!ts) return "—";
+  if (!ts) return "-";
   const diff = (Date.now() - ts) / 1000;
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.floor(diff / 60)} min${Math.floor(diff / 60) === 1 ? "" : "s"} ago`;
@@ -51,7 +51,7 @@ export function fileIcon(name) {
 }
 
 export function primaryIP(ips) {
-  if (!ips || ips.length === 0) return "—";
+  if (!ips || ips.length === 0) return "-";
   const sorted = [...ips].sort((a, b) => {
     const score = (ip) =>
       /^192\.168\./.test(ip) ? 0 : /^10\./.test(ip) ? 1 : /^172\./.test(ip) ? 2 : 3;

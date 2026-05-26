@@ -19,7 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 private val LightColorScheme = lightColorScheme(
     primary = PrimaryLight,
     onPrimary = OnPrimaryLight,
-    primaryContainer = PrimaryContainerLight,
+    primaryContainer = PrimaryTintLight,
     onPrimaryContainer = OnPrimaryContainerLight,
     secondary = SecondaryLight,
     onSecondary = OnSecondaryLight,
@@ -97,12 +97,12 @@ data class ExtendedColors(
 
 val LocalExtendedColors = staticCompositionLocalOf { ExtendedColors() }
 
-// Pherry signature gradient — teal "ferry/flow", consistent across all modes.
-private val PherryButtonGradient = Brush.horizontalGradient(
-    listOf(PrimaryLight, PrimaryContainerLight)  // #0E9E8E → #13B5A6
+private fun pherryButtonGradient(isDark: Boolean) = Brush.linearGradient(
+    if (isDark) listOf(PrimaryDark, PrimaryDeepDark) else listOf(PrimaryBrightLight, PrimaryLight)
 )
-private val PherryProgressGradient = Brush.horizontalGradient(
-    listOf(PrimaryLight, SecondaryLight)  // #0E9E8E → #119EB0
+
+private fun pherryProgressGradient(isDark: Boolean) = Brush.linearGradient(
+    if (isDark) listOf(PrimaryDark, PrimaryDeepDark) else listOf(PrimaryBrightLight, PrimaryDeepLight)
 )
 
 private fun buildExtendedColors(
@@ -110,24 +110,17 @@ private fun buildExtendedColors(
     isDynamic: Boolean,
     isDark: Boolean,
 ): ExtendedColors {
-    // When dynamic (Material You) is enabled, derive gradients from the
-    // dynamic colorScheme so they blend with the wallpaper palette.
-    // When dynamic is off, always use the Pherry signature gradient.
     val buttonGradient = if (isDynamic) {
-        Brush.horizontalGradient(
-            listOf(colorScheme.primary, colorScheme.primaryContainer)
-        )
+        Brush.horizontalGradient(listOf(colorScheme.primary, colorScheme.primaryContainer))
     } else {
-        PherryButtonGradient
+        pherryButtonGradient(isDark)
     }
     val progressGradient = if (isDynamic) {
-        Brush.horizontalGradient(
-            listOf(colorScheme.primary, colorScheme.secondary)
-        )
+        Brush.horizontalGradient(listOf(colorScheme.primary, colorScheme.secondary))
     } else {
-        PherryProgressGradient
+        pherryProgressGradient(isDark)
     }
-    val glowColor = if (isDynamic) colorScheme.primary else PrimaryLight
+    val glowColor = if (isDynamic) colorScheme.primary else if (isDark) PrimaryDark else PrimaryLight
 
     return ExtendedColors(
         primaryFixed = PrimaryFixedLight,

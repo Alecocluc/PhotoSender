@@ -7,7 +7,7 @@
 <title>Pherry Desktop</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800;900&display=swap" rel="stylesheet" />
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="styles.css" />
 </head>
@@ -17,9 +17,9 @@
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
         <div class="brand-logo">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M6 5l7 7-7 7" />
-            <path d="M12.5 5l7 7-7 7" opacity="0.5" />
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 6.5 14.5 12 9 17.5" stroke-width="2.4" />
+            <path d="M4.8 16.7c2.7-2.2 4.7 2.2 7.4 0 2.2-1.8 3.9-.1 5.9.2" stroke-width="1.8" opacity="0.9" />
           </svg>
         </div>
         <div class="brand-text">
@@ -27,8 +27,8 @@
           <div class="brand-sub">Photo ferry</div>
         </div>
       </div>
-      <button class="nav-item active" data-view="dashboard" aria-current="page"><span class="icon sm">dashboard</span>Dashboard</button>
-      <button class="nav-item" data-view="activity"><span class="icon sm">graphic_eq</span>Live Intake</button>
+      <button class="nav-item active" data-view="dashboard" aria-current="page"><span class="icon sm">qr_code_2</span>Receiver</button>
+      <button class="nav-item" data-view="activity"><span class="icon sm">graphic_eq</span>Live</button>
       <button class="nav-item" data-view="history"><span class="icon sm">history</span>History</button>
       <button class="nav-item" data-view="settings"><span class="icon sm">settings</span>Settings</button>
       <div class="nav-spacer"></div>
@@ -42,7 +42,7 @@
 
     <header class="topbar">
       <button class="icon-btn hamburger" id="hamburger" aria-label="Open menu"><span class="icon">menu</span></button>
-      <h1 id="page-title">Dashboard Overview</h1>
+      <h1 id="page-title">Receiver</h1>
       <span class="topbar-tag" id="page-tag" hidden><span class="pulse"></span><span id="page-tag-text">LIVE</span></span>
       <div class="topbar-actions">
         <span class="status-chip" id="server-chip"><span class="dot"></span>Active</span>
@@ -58,13 +58,13 @@
     <footer class="footer">
       <span class="dot" id="server-dot"></span>
       <span class="label-key">Local IP:</span>
-      <span class="value" id="server-ip">—</span>
-      <span class="sep">•</span>
+      <span class="value" id="server-ip">-</span>
+      <span class="sep">/</span>
       <span class="label-key">Status:</span>
       <span class="value" id="server-status-text">CONNECTED</span>
       <div class="right">
         <span class="label-key hide-sm">Port</span>
-        <span class="value" id="server-port">—</span>
+        <span class="value" id="server-port">-</span>
         <span class="pill hide-sm" id="link-pill">All good</span>
       </div>
     </footer>

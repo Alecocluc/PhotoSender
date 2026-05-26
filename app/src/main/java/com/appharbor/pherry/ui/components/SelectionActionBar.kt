@@ -24,15 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.appharbor.pherry.ui.theme.LocalExtendedColors
 import com.appharbor.pherry.ui.theme.Spacing
 
-/**
- * A calm bottom action bar shown when items are selected: a full-width surface with
- * a quiet selection summary on the left and a single teal primary action on the right.
- * Replaces the old floating FAB so the selection→transfer moment feels deliberate.
- * Wrap in AnimatedVisibility (slide-up) at the bottom of the screen.
- */
 @Composable
 fun SelectionActionBar(
     count: Int,
@@ -41,7 +34,6 @@ fun SelectionActionBar(
     actionLabel: String = "Transfer",
     subtitle: String = "Ready to ferry to your desktop",
 ) {
-    val extColors = LocalExtendedColors.current
     Surface(
         color = MaterialTheme.colorScheme.surface,
         shadowElevation = 12.dp,
@@ -70,7 +62,7 @@ fun SelectionActionBar(
             Row(
                 modifier = Modifier
                     .clip(MaterialTheme.shapes.extraLarge)
-                    .background(extColors.buttonGradient)
+                    .background(MaterialTheme.colorScheme.primary)
                     .clickable(role = Role.Button, onClick = onTransfer)
                     .padding(horizontal = Spacing.lg, vertical = Spacing.md),
                 verticalAlignment = Alignment.CenterVertically,

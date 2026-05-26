@@ -30,17 +30,22 @@ fun ConnectionStatusChip(
 ) {
     val dotColor = when (connectionState) {
         ConnectionState.CONNECTED -> MaterialTheme.colorScheme.tertiary
-        ConnectionState.CONNECTING -> MaterialTheme.colorScheme.secondary
+        ConnectionState.CONNECTING -> MaterialTheme.colorScheme.primary
         ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.error
     }
     val label = when (connectionState) {
         ConnectionState.CONNECTED -> serverName.takeIf { it.isNotBlank() } ?: "Linked"
-        ConnectionState.CONNECTING -> "Connecting…"
+        ConnectionState.CONNECTING -> "Connecting..."
         ConnectionState.DISCONNECTED -> "Connect"
     }
     val chipBackground = when (connectionState) {
-        ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)
-        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+        ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primaryContainer
+        ConnectionState.CONNECTING -> MaterialTheme.colorScheme.primaryContainer
+        ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f)
+    }
+    val contentColor = when (connectionState) {
+        ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onPrimaryContainer
     }
 
     Row(
@@ -62,9 +67,7 @@ fun ConnectionStatusChip(
             text = label,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
-            color = if (connectionState == ConnectionState.DISCONNECTED)
-                MaterialTheme.colorScheme.error
-            else MaterialTheme.colorScheme.onSurface,
+            color = contentColor,
         )
     }
 }

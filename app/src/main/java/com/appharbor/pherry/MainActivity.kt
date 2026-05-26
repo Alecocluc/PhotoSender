@@ -56,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,6 +84,7 @@ import com.appharbor.pherry.ui.activity.ActivityScreen
 import com.appharbor.pherry.ui.components.ConnectionStatusChip
 import com.appharbor.pherry.ui.components.PherryWordmark
 import com.appharbor.pherry.ui.connect.ConnectSheet
+import com.appharbor.pherry.ui.connect.PairingScreen
 import com.appharbor.pherry.ui.gallery.FolderDetailScreen
 import com.appharbor.pherry.ui.gallery.GalleryScreen
 import com.appharbor.pherry.ui.onboarding.OnboardingScreen
@@ -158,16 +160,31 @@ fun PherryApp(
     LaunchedEffect(darkTheme) { onThemeResolved(darkTheme) }
 
     PherryTheme(darkTheme = darkTheme, dynamicColor = dynamicColorEnabled) {
+        var showInitialPairing by rememberSaveable { mutableStateOf(false) }
+
         when (onboardingCompleted) {
             null -> {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {}
                 return@PherryTheme
             }
             false -> {
-                OnboardingScreen(onFinish = { mainViewModel.completeOnboarding() })
+                OnboardingScreen(
+                    onFinish = {
+                        showInitialPairing = true
+                        mainViewModel.completeOnboarding()
+                    }
+                )
                 return@PherryTheme
             }
             else -> Unit
+        }
+
+        if (showInitialPairing) {
+            PairingScreen(
+                onContinue = { showInitialPairing = false },
+                onSkip = { showInitialPairing = false },
+            )
+            return@PherryTheme
         }
 
         val navController = rememberNavController()

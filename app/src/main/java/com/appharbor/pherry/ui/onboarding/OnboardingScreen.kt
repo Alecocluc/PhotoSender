@@ -25,13 +25,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.appharbor.pherry.ui.components.GradientButton
 import com.appharbor.pherry.ui.components.PherryMark
+import com.appharbor.pherry.ui.components.PrimaryButton
 import com.appharbor.pherry.ui.theme.Spacing
 
 @Composable
@@ -91,15 +90,14 @@ fun OnboardingScreen(
 
             Spacer(Modifier.weight(1f))
 
-            GradientButton(
+            PrimaryButton(
                 onClick = onFinish,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    text = "Get started",
+                    text = "Pair desktop",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
                 )
             }
             Spacer(Modifier.height(Spacing.xl))

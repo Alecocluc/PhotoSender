@@ -5,34 +5,23 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
@@ -49,19 +38,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.appharbor.pherry.ui.components.SelectableMediaCell
 import com.appharbor.pherry.ui.components.SelectionActionBar
 import com.appharbor.pherry.ui.theme.Spacing
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FolderDetailScreen(
     bucketName: String,
@@ -165,59 +152,17 @@ fun FolderDetailScreen(
 
             items(items, key = { it.id }) { item ->
                 val isSelected = item.id in selectedIds
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(MaterialTheme.shapes.extraSmall)
-                        .combinedClickable(
-                            role = Role.Button,
-                            onClick = {
-                                if (selectedIds.isNotEmpty()) viewModel.toggleSelection(item.id)
-                                else previewItem = item
-                            },
-                            onLongClick = { viewModel.toggleSelection(item.id) },
-                        )
-                        .then(
-                            if (isSelected) Modifier.border(
-                                2.dp,
-                                MaterialTheme.colorScheme.primary,
-                                MaterialTheme.shapes.extraSmall,
-                            ) else Modifier
-                        )
-                ) {
-                    AsyncImage(
-                        model = item.uri,
-                        contentDescription = item.displayName,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(6.dp)
-                            .size(22.dp)
-                            .clip(CircleShape)
-                            .then(
-                                if (isSelected)
-                                    Modifier.background(MaterialTheme.colorScheme.primary)
-                                else
-                                    Modifier
-                                        .background(Color.Black.copy(alpha = 0.22f))
-                                        .border(1.5.dp, Color.White.copy(alpha = 0.6f), CircleShape)
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (isSelected) {
-                            Icon(
-                                Icons.Filled.Check,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        }
-                    }
-                }
+                SelectableMediaCell(
+                    item = item,
+                    selected = isSelected,
+                    selectionActive = selectedIds.isNotEmpty(),
+                    onClick = {
+                        if (selectedIds.isNotEmpty()) viewModel.toggleSelection(item.id)
+                        else previewItem = item
+                    },
+                    onLongClick = { viewModel.toggleSelection(item.id) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
             item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(Spacing.xxl)) }
