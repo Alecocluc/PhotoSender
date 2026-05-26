@@ -22,6 +22,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PhotoSender"
+rootProject.name = "Pherry"
 include(":app")
  
