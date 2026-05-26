@@ -337,7 +337,7 @@ private fun LiveProgressHeader(
         }
 
         Spacer(Modifier.height(Spacing.sm))
-        GradientProgressBar(progress = progressPercent, height = 6.dp)
+        GradientProgressBar(progress = progressPercent, height = 6.dp, animated = isTransferring)
         Spacer(Modifier.height(Spacing.sm))
 
         Text(
@@ -431,7 +431,11 @@ private fun TransferRow(
                     listOf(MaterialTheme.colorScheme.outlineVariant, MaterialTheme.colorScheme.outlineVariant)
                 )
             }
-            GradientProgressBar(progress = progress, brush = progressBrush)
+            GradientProgressBar(
+                progress = progress,
+                brush = progressBrush,
+                animated = transfer.status == UploadStatus.UPLOADING,
+            )
             Spacer(Modifier.height(2.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),

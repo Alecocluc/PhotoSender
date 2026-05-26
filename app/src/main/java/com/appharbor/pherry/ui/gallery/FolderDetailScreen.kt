@@ -1,5 +1,10 @@
 package com.appharbor.pherry.ui.gallery
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -31,7 +36,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,7 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import com.appharbor.pherry.ui.theme.LocalExtendedColors
+import com.appharbor.pherry.ui.components.SelectionActionBar
 import com.appharbor.pherry.ui.theme.Spacing
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -219,36 +223,22 @@ fun FolderDetailScreen(
             item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(Spacing.xxl)) }
         }
 
-        if (selectedIds.isNotEmpty()) {
-            val extColors = LocalExtendedColors.current
-            ExtendedFloatingActionButton(
-                onClick = {
+        var lastSelectedCount by remember { mutableStateOf(0) }
+        if (selectedIds.isNotEmpty()) lastSelectedCount = selectedIds.size
+
+        AnimatedVisibility(
+            visible = selectedIds.isNotEmpty(),
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            SelectionActionBar(
+                count = lastSelectedCount,
+                onTransfer = {
                     onBeforeTransfer()
                     viewModel.startTransfer()
                     onTransferClick()
                 },
-                icon = {
-                    Icon(
-                        Icons.Filled.CheckCircle,
-                        contentDescription = null,
-                        tint = Color.White,
-                    )
-                },
-                text = {
-                    Text(
-                        "Transfer ${selectedIds.size}",
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                },
-                containerColor = Color.Transparent,
-                contentColor = Color.White,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(end = Spacing.lg, bottom = Spacing.lg)
-                    .background(extColors.buttonGradient, MaterialTheme.shapes.extraLarge),
             )
         }
     }

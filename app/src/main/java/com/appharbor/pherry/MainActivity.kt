@@ -60,10 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -90,7 +87,6 @@ import com.appharbor.pherry.ui.gallery.FolderDetailScreen
 import com.appharbor.pherry.ui.gallery.GalleryScreen
 import com.appharbor.pherry.ui.onboarding.OnboardingScreen
 import com.appharbor.pherry.ui.settings.SettingsScreen
-import com.appharbor.pherry.ui.theme.LocalExtendedColors
 import com.appharbor.pherry.ui.theme.PherryTheme
 import com.appharbor.pherry.ui.theme.Spacing
 import dagger.hilt.android.AndroidEntryPoint
@@ -347,21 +343,11 @@ private fun PherryBottomNav(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val navGradient = LocalExtendedColors.current.buttonGradient
                 items.forEach { item ->
                     val selected = currentDestination?.hierarchy?.any { it.route == item.route } == true
                     val bg = if (selected) {
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.14f)
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.16f)
                     } else Color.Transparent
-
-                    val gradientMod = if (selected) {
-                        Modifier
-                            .graphicsLayer(alpha = 0.99f)
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(brush = navGradient, blendMode = BlendMode.SrcAtop)
-                            }
-                    } else Modifier
 
                     Column(
                         modifier = Modifier
@@ -373,8 +359,7 @@ private fun PherryBottomNav(
                                 role = Role.Tab,
                                 onClick = { onItemSelected(item.route) },
                             )
-                            .padding(vertical = Spacing.sm)
-                            .then(gradientMod),
+                            .padding(vertical = Spacing.sm),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Icon(

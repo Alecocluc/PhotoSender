@@ -1,5 +1,6 @@
 package com.appharbor.pherry.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +15,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -23,12 +25,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.appharbor.pherry.ui.theme.LocalExtendedColors
 import com.appharbor.pherry.ui.theme.Spacing
 
 /**
- * @param fillWidth  true = full-width pill container (ModeToggle style);
- *                   false = loose chip row (filter/theme chips).
+ * Calm-minimalist segmented control: a flat single-accent design. The selected
+ * segment is a solid primary pill with on-primary content (correct in light & dark);
+ * unselected segments are quiet. No gradients.
+ *
+ * @param fillWidth  true = full-width pill container (mode toggle);
+ *                   false = loose chip row (filters).
  * @param leadingIcons  optional per-value icons drawn before the label.
  */
 @Composable
@@ -40,50 +45,35 @@ fun <T> SegmentedToggle(
     fillWidth: Boolean = false,
     leadingIcons: Map<T, ImageVector> = emptyMap(),
 ) {
-    val extColors = LocalExtendedColors.current
-
     if (fillWidth) {
         Row(
             modifier = modifier
                 .fillMaxWidth()
-                .clip(MaterialTheme.shapes.extraLarge)
+                .clip(MaterialTheme.shapes.large)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                 .padding(Spacing.xs),
             horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
         ) {
             options.forEach { (value, label) ->
                 val isSelected = selected == value
-                val icon = leadingIcons[value]
+                val bg by animateColorAsState(
+                    if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    label = "segBg",
+                )
                 Box(
                     modifier = Modifier
                         .weight(1f)
-                        .clip(MaterialTheme.shapes.large)
-                        .then(
-                            if (isSelected) Modifier.background(extColors.buttonGradient)
-                            else Modifier
-                        )
+                        .clip(MaterialTheme.shapes.medium)
+                        .background(bg)
                         .selectable(
                             selected = isSelected,
                             role = Role.Tab,
                             onClick = { onSelect(value) },
                         )
-                        .padding(vertical = Spacing.md),
+                        .padding(vertical = Spacing.md - 1.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (icon != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                            )
-                            Spacer(Modifier.width(Spacing.sm - 2.dp))
-                            SegmentLabel(label, isSelected)
-                        }
-                    } else {
-                        SegmentLabel(label, isSelected)
-                    }
+                    SegmentContent(label, leadingIcons[value], isSelected)
                 }
             }
         }
@@ -94,15 +84,14 @@ fun <T> SegmentedToggle(
         ) {
             options.forEach { (value, label) ->
                 val isSelected = selected == value
-                val icon = leadingIcons[value]
                 Box(
                     modifier = Modifier
                         .clip(MaterialTheme.shapes.extraLarge)
                         .then(
-                            if (isSelected) Modifier.background(extColors.buttonGradient)
+                            if (isSelected) Modifier.background(MaterialTheme.colorScheme.primary)
                             else Modifier.border(
                                 1.dp,
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f),
+                                MaterialTheme.colorScheme.outlineVariant,
                                 MaterialTheme.shapes.extraLarge,
                             )
                         )
@@ -114,20 +103,7 @@ fun <T> SegmentedToggle(
                         .padding(horizontal = Spacing.md, vertical = Spacing.sm),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (icon != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                icon,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
-                            )
-                            Spacer(Modifier.width(Spacing.sm - 2.dp))
-                            SegmentLabel(label, isSelected)
-                        }
-                    } else {
-                        SegmentLabel(label, isSelected)
-                    }
+                    SegmentContent(label, leadingIcons[value], isSelected)
                 }
             }
         }
@@ -135,11 +111,25 @@ fun <T> SegmentedToggle(
 }
 
 @Composable
-private fun SegmentLabel(label: String, selected: Boolean) {
-    Text(
-        text = label,
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-        color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
-    )
+private fun SegmentContent(label: String, icon: ImageVector?, selected: Boolean) {
+    val contentColor =
+        if (selected) MaterialTheme.colorScheme.onPrimary
+        else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (icon != null) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = contentColor,
+            )
+            Spacer(Modifier.width(Spacing.sm - 2.dp))
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            color = contentColor,
+        )
+    }
 }

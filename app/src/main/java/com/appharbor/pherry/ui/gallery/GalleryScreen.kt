@@ -11,6 +11,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -29,7 +31,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -50,7 +51,6 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -93,7 +93,7 @@ import com.appharbor.pherry.ui.components.EmptyState
 import com.appharbor.pherry.ui.components.GradientButton
 import com.appharbor.pherry.ui.components.ScreenHeader
 import com.appharbor.pherry.ui.components.SegmentedToggle
-import com.appharbor.pherry.ui.theme.LocalExtendedColors
+import com.appharbor.pherry.ui.components.SelectionActionBar
 import com.appharbor.pherry.ui.theme.Spacing
 
 @Composable
@@ -422,37 +422,23 @@ fun GalleryScreen(
             item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(Spacing.xxl)) }
         }
 
-        // Transfer FAB — Add mode only
-        if (uploadMode == UploadMode.ADD && selectedIds.isNotEmpty()) {
-            val extColors = LocalExtendedColors.current
-            ExtendedFloatingActionButton(
-                onClick = {
+        // Selection action bar — Add mode only
+        var lastSelectedCount by remember { mutableStateOf(0) }
+        if (selectedIds.isNotEmpty()) lastSelectedCount = selectedIds.size
+
+        AnimatedVisibility(
+            visible = uploadMode == UploadMode.ADD && selectedIds.isNotEmpty(),
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            SelectionActionBar(
+                count = lastSelectedCount,
+                onTransfer = {
                     onBeforeTransfer()
                     viewModel.startTransfer()
                     onTransferClick()
                 },
-                icon = {
-                    Icon(
-                        Icons.Filled.CheckCircle,
-                        contentDescription = null,
-                        tint = Color.White,
-                    )
-                },
-                text = {
-                    Text(
-                        "Transfer ${selectedIds.size}",
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                },
-                containerColor = Color.Transparent,
-                contentColor = Color.White,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .navigationBarsPadding()
-                    .padding(end = Spacing.lg, bottom = Spacing.lg)
-                    .background(extColors.buttonGradient, MaterialTheme.shapes.extraLarge),
             )
         }
     }
