@@ -1,11 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Pherry">
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 108 108" role="img" aria-label="Pherry">
   <defs>
-    <linearGradient id="g" x1="42" y1="36" x2="214" y2="220" gradientUnits="userSpaceOnUse">
+    <linearGradient id="g" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">
       <stop stop-color="#13B5A6"/>
-      <stop offset="1" stop-color="#0E9E8E"/>
+      <stop offset="1" stop-color="#0B7E72"/>
     </linearGradient>
   </defs>
-  <rect width="256" height="256" rx="64" fill="url(#g)"/>
-  <path d="M94 66 152 124 94 182" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M48 176c29-24 51 24 80 0 25-21 45-2 68 2" fill="none" stroke="#fff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity=".92"/>
+  <rect width="108" height="108" rx="24" fill="url(#g)"/>
+  <!-- water / wave (the "ferry" crosses) -->
+  <path d="M32,75 C38,69 44,81 50,75 C56,69 62,81 68,75 C71,72 74,73 76,75"
+        fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".92"/>
+  <!-- forward chevrons (motion / send) -->
+  <path d="M41,33 L57,49 L41,65"
+        fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M57,33 L73,49 L57,65"
+        fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".5"/>
 </svg>
