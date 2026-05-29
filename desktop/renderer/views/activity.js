@@ -24,7 +24,7 @@ function activityItem(entry) {
 }
 
 function renderActivityLog() {
-  document.querySelector("#page-title").textContent = "Live";
+  document.querySelector("#page-title").textContent = "Transfers";
   document.querySelector("#page-tag-text").textContent = "Receiver";
   document.querySelector("#page-tag").hidden = false;
 
