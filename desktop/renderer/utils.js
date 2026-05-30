@@ -50,6 +50,14 @@ export function fileIcon(name) {
   return "draft";
 }
 
+// Compact, scheme-less QR payload the phone scans: "ip:port?t=token". Kept short so it fits the
+// tiny built-in QR encoder's byte budget. Token gates destructive (delete) operations on the PC.
+export function qrPayloadFor(ip, port, token) {
+  if (!ip || ip === "-") return "";
+  const base = `${ip}:${port}`;
+  return token ? `${base}?t=${token}` : base;
+}
+
 export function primaryIP(ips) {
   if (!ips || ips.length === 0) return "-";
   const sorted = [...ips].sort((a, b) => {

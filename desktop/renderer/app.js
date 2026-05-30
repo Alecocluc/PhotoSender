@@ -4,6 +4,7 @@ import { applyTheme, renderFooter, renderDevices } from './shell.js';
 import { navigate, initSidebarHelper, rerender } from './router.js';
 import './views/dashboard.js';
 import './views/activity.js';
+import './views/gallery.js';
 import './views/history.js';
 import './views/settings.js';
 
@@ -47,7 +48,7 @@ window.api.onFileReceived((entry) => {
     state.status.recentActivity = [entry, ...(state.status.recentActivity || [])].slice(0, 50);
   }
   renderDevices();
-  if (["dashboard", "activity", "history"].includes(state.view)) rerender();
+  if (["dashboard", "activity", "gallery", "history"].includes(state.view)) rerender();
 });
 
 window.api.onServerState((s) => {

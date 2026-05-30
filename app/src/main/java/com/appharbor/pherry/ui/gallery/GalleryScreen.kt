@@ -39,17 +39,21 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Deselect
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -349,6 +353,31 @@ fun GalleryScreen(
                                     Text(
                                         text = if (allSelected) "Deselect All ($totalAssets)" else "Select All ($totalAssets)",
                                         fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                                Spacer(Modifier.height(Spacing.sm))
+                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                    AssistChip(
+                                        onClick = { viewModel.selectRecent(30) },
+                                        label = { Text("Last 30 days") },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Filled.CalendarMonth,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(AssistChipDefaults.IconSize),
+                                            )
+                                        },
+                                    )
+                                    AssistChip(
+                                        onClick = { viewModel.selectNewSinceBackup() },
+                                        label = { Text("New") },
+                                        leadingIcon = {
+                                            Icon(
+                                                Icons.Filled.NewReleases,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(AssistChipDefaults.IconSize),
+                                            )
+                                        },
                                     )
                                 }
                             }

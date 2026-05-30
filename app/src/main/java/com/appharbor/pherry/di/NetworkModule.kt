@@ -1,5 +1,6 @@
 package com.appharbor.pherry.data.network
 
+import com.appharbor.pherry.data.network.PherryHeaderInterceptor
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -14,8 +15,9 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(): OkHttpClient {
+    fun provideOkHttpClient(headerInterceptor: PherryHeaderInterceptor): OkHttpClient {
         return OkHttpClient.Builder()
+            .addInterceptor(headerInterceptor)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)

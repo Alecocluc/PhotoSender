@@ -1,7 +1,20 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const {
+  app, BrowserWindow, ipcMain, dialog, shell,
+  Tray, Menu, Notification, nativeImage,
+} = require("electron");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
+const os = require("os");
 const { createServer, getLocalIPs } = require("./server");
+
+let Bonjour = null;
+try {
+  // Optional dependency: enables zero-config (mDNS) discovery from the phone.
+  Bonjour = require("bonjour-service").Bonjour;
+} catch {
+  Bonjour = null;
+}
 
 const DEFAULT_PORT = 3210;
 const MIN_PORT = 1024;
@@ -11,6 +24,9 @@ let mainWindow;
 let serverInstance;
 let historyStatePath;
 let settingsPath;
+let tray = null;
+let bonjourInstance = null;
+let bonjourService = null;
 
 let settings = {
   downloadPath: "",
@@ -18,7 +34,19 @@ let settings = {
   theme: "system", // 'system' | 'light' | 'dark'
   autoOpenFolder: false,
   launchAtStartup: false,
+  minimizeToTray: true,
+  notifyOnArrival: true,
+  pairingToken: "",
 };
+
+/** Short, human-typeable pairing token. Kept compact so it fits the QR encoder budget. */
+function generatePairingToken() {
+  const alphabet = "abcdefghijkmnpqrstuvwxyz23456789"; // no look-alikes (l, o, 0, 1)
+  const bytes = crypto.randomBytes(6);
+  let out = "";
+  for (let i = 0; i < 6; i++) out += alphabet[bytes[i] % alphabet.length];
+  return out;
+}
 
 function loadSettings() {
   try {
@@ -43,6 +71,12 @@ function loadSettings() {
   }
   if (!["system", "light", "dark"].includes(settings.theme)) {
     settings.theme = "system";
+  }
+  if (typeof settings.minimizeToTray !== "boolean") settings.minimizeToTray = true;
+  if (typeof settings.notifyOnArrival !== "boolean") settings.notifyOnArrival = true;
+  if (!settings.pairingToken || typeof settings.pairingToken !== "string") {
+    settings.pairingToken = generatePairingToken();
+    saveSettings();
   }
 }
 
@@ -77,7 +111,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
-    icon: path.join(__dirname, "renderer", "pherry-icon.svg"),
+    icon: path.join(__dirname, "renderer", "pherry-icon.png"),
     show: false,
     backgroundColor: settings.theme === "dark" ? "#0B0F11" : "#F6F8F9",
   });
@@ -85,6 +119,15 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
 
   mainWindow.once("ready-to-show", () => mainWindow.show());
+
+  // Closing the window hides it to the tray (the receiver keeps running) unless the user
+  // explicitly quit or disabled the tray behavior.
+  mainWindow.on("close", (event) => {
+    if (!app.isQuitting && settings.minimizeToTray && tray) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -96,8 +139,40 @@ function broadcastToRenderer(channel, payload) {
   }
 }
 
+// ── mDNS / DNS-SD advertising ────────────────────────────────────────────────
+// Publishes "_pherry._tcp" so the phone can discover this receiver with no QR/typing,
+// and survive the PC's IP changing on DHCP renewal.
+function stopBonjour() {
+  try {
+    if (bonjourService) bonjourService.stop();
+  } catch { /* ignore */ }
+  bonjourService = null;
+  try {
+    if (bonjourInstance) bonjourInstance.destroy();
+  } catch { /* ignore */ }
+  bonjourInstance = null;
+}
+
+function startBonjour() {
+  if (!Bonjour) return;
+  stopBonjour();
+  try {
+    bonjourInstance = new Bonjour();
+    bonjourService = bonjourInstance.publish({
+      name: `Pherry on ${os.hostname()}`.slice(0, 63),
+      type: "pherry",
+      protocol: "tcp",
+      port: settings.port,
+      txt: { host: os.hostname(), v: "1" },
+    });
+  } catch (err) {
+    console.error("mDNS publish failed:", err.message);
+  }
+}
+
 function stopServer() {
   return new Promise((resolve) => {
+    stopBonjour();
     if (!serverInstance) return resolve();
     const ref = serverInstance;
     serverInstance = null;
@@ -114,8 +189,10 @@ async function startServer() {
   fs.mkdirSync(settings.downloadPath, { recursive: true });
   const expressApp = createServer(settings.downloadPath, {
     historyStatePath,
+    pairingToken: settings.pairingToken,
     onFileReceived: (entry) => {
       broadcastToRenderer("file-received", entry);
+      notifyArrival(entry);
       if (settings.autoOpenFolder) {
         const bucket = entry?.bucketName || "Unsorted";
         const target = path.join(settings.downloadPath, bucket);
@@ -128,6 +205,8 @@ async function startServer() {
     const server = expressApp.listen(settings.port, "0.0.0.0", () => {
       serverInstance = server;
       console.log(`Pherry server listening on port ${settings.port}`);
+      startBonjour();
+      refreshTray();
       broadcastToRenderer("server-state", { running: true, port: settings.port, error: null });
       resolve();
     });
@@ -137,6 +216,36 @@ async function startServer() {
       reject(err);
     });
   });
+}
+
+/** Native OS notification when a file lands (unless the window is focused). */
+function notifyArrival(entry) {
+  try {
+    if (!settings.notifyOnArrival) return;
+    if (!Notification.isSupported()) return;
+    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) return;
+    const name = entry?.fileName || "A file";
+    const from = entry?.deviceName ? ` from ${entry.deviceName}` : "";
+    const n = new Notification({
+      title: "Photo received",
+      body: `${name}${from}`,
+      silent: false,
+      icon: trayImage() || undefined,
+    });
+    n.on("click", () => {
+      showMainWindow();
+      const bucket = entry?.bucketName || "Unsorted";
+      const target = path.join(settings.downloadPath, bucket);
+      if (fs.existsSync(target)) shell.openPath(target);
+    });
+    n.show();
+  } catch { /* best effort */ }
+}
+
+/** fetch() against our own server with the pairing token attached (for desktop-side actions). */
+function localFetch(pathname, options = {}) {
+  const headers = { ...(options.headers || {}), "X-Pherry-Token": settings.pairingToken };
+  return fetch(`http://127.0.0.1:${settings.port}${pathname}`, { ...options, headers });
 }
 
 // ── IPC handlers ───────────────────────────────────────────────────────────
@@ -178,7 +287,7 @@ ipcMain.handle("get-history", async (_e, options = {}) => {
 
 ipcMain.handle("clear-history", async () => {
   try {
-    const res = await fetch(`http://127.0.0.1:${settings.port}/history/clear`, {
+    const res = await localFetch(`/history/clear`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: "{}",
@@ -277,7 +386,7 @@ ipcMain.handle("rebuild-history-progress", async () => {
 
 ipcMain.handle("remove-duplicates", async (_e, opts = {}) => {
   try {
-    const res = await fetch(`http://127.0.0.1:${settings.port}/history/remove-duplicates`, {
+    const res = await localFetch(`/history/remove-duplicates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dryRun: !!opts.dryRun }),
@@ -303,6 +412,8 @@ ipcMain.handle("update-settings", async (_e, patch = {}) => {
   }
   if (typeof patch.autoOpenFolder === "boolean") next.autoOpenFolder = patch.autoOpenFolder;
   if (typeof patch.launchAtStartup === "boolean") next.launchAtStartup = patch.launchAtStartup;
+  if (typeof patch.minimizeToTray === "boolean") next.minimizeToTray = patch.minimizeToTray;
+  if (typeof patch.notifyOnArrival === "boolean") next.notifyOnArrival = patch.notifyOnArrival;
   if (typeof patch.port === "number" || typeof patch.port === "string") {
     const p = Math.floor(Number(patch.port));
     if (Number.isFinite(p) && p >= MIN_PORT && p <= MAX_PORT && p !== prev.port) {
@@ -374,6 +485,115 @@ ipcMain.handle("open-external", async (_e, url) => {
   }
 });
 
+// ── Files: thumbnails + open/reveal ──────────────────────────────────────────
+
+/** Resolve a {bucket,name} pair to an absolute path strictly inside the download folder. */
+function resolveDownloadFile(bucket, name) {
+  const safeBucket = String(bucket || "Unsorted").replace(/\.\./g, "").replace(/^[\\/]+/, "");
+  const safeName = path.basename(String(name || ""));
+  if (!safeName) return null;
+  const root = path.resolve(settings.downloadPath);
+  const full = path.resolve(path.join(root, safeBucket, safeName));
+  if (full !== root && !full.startsWith(root + path.sep)) return null; // path-traversal guard
+  return full;
+}
+
+const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"]);
+const thumbnailCache = new Map(); // key `path:mtime` -> dataURL
+
+ipcMain.handle("get-thumbnail", async (_e, opts = {}) => {
+  try {
+    const full = resolveDownloadFile(opts.bucket, opts.name);
+    if (!full || !fs.existsSync(full)) return null;
+    if (!IMAGE_EXTS.has(path.extname(full).toLowerCase())) return null;
+    const stat = fs.statSync(full);
+    const key = `${full}:${stat.mtimeMs}`;
+    if (thumbnailCache.has(key)) return thumbnailCache.get(key);
+    const img = await nativeImage.createThumbnailFromPath(full, { width: 128, height: 128 });
+    const dataUrl = img.isEmpty() ? null : img.toDataURL();
+    if (dataUrl) {
+      if (thumbnailCache.size > 600) thumbnailCache.clear();
+      thumbnailCache.set(key, dataUrl);
+    }
+    return dataUrl;
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle("reveal-file", async (_e, opts = {}) => {
+  const full = resolveDownloadFile(opts.bucket, opts.name);
+  if (full && fs.existsSync(full)) {
+    shell.showItemInFolder(full);
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle("open-file", async (_e, opts = {}) => {
+  const full = resolveDownloadFile(opts.bucket, opts.name);
+  if (full && fs.existsSync(full)) {
+    await shell.openPath(full);
+    return true;
+  }
+  return false;
+});
+
+// ── Tray ─────────────────────────────────────────────────────────────────────
+
+function trayImage() {
+  try {
+    const img = nativeImage.createFromPath(path.join(__dirname, "renderer", "tray-icon.png"));
+    return img.isEmpty() ? null : img;
+  } catch {
+    return null;
+  }
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function buildTrayMenu() {
+  const ip = (getLocalIPs() || [])[0];
+  const address = ip ? `${ip}:${settings.port}` : "No network";
+  return Menu.buildFromTemplate([
+    { label: "Open Pherry", click: () => showMainWindow() },
+    { label: `Pairing: ${address}`, enabled: false },
+    { label: `Code: ${settings.pairingToken}`, enabled: false },
+    { type: "separator" },
+    { label: "Open download folder", click: () => fs.existsSync(settings.downloadPath) && shell.openPath(settings.downloadPath) },
+    { type: "separator" },
+    {
+      label: "Quit Pherry",
+      click: () => {
+        app.isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+}
+
+function createTray() {
+  if (tray) return;
+  const img = trayImage();
+  tray = img ? new Tray(img) : new Tray(nativeImage.createEmpty());
+  tray.setToolTip("Pherry Desktop — receiving");
+  tray.setContextMenu(buildTrayMenu());
+  tray.on("click", () => showMainWindow());
+  tray.on("double-click", () => showMainWindow());
+}
+
+function refreshTray() {
+  if (tray) tray.setContextMenu(buildTrayMenu());
+}
+
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -386,14 +606,26 @@ app.whenReady().then(async () => {
   } catch {
     /* surfaced via server-state event */
   }
+  createTray();
+  refreshTray();
   createWindow();
 });
 
+app.on("before-quit", () => {
+  app.isQuitting = true;
+});
+
+// The receiver is meant to keep running in the tray. Only actually quit when the user
+// chose Quit (app.isQuitting) or the platform has no tray to fall back to.
 app.on("window-all-closed", async () => {
-  await stopServer();
-  app.quit();
+  // Keep running in the tray only if we actually have a tray to restore from.
+  if (app.isQuitting || !settings.minimizeToTray || !tray) {
+    await stopServer();
+    app.quit();
+  }
 });
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  else showMainWindow();
 });

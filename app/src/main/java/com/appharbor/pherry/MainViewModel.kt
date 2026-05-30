@@ -17,8 +17,13 @@ import javax.inject.Inject
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val appPreferences: AppPreferences,
-    connectionManager: ConnectionManager,
+    private val connectionManager: ConnectionManager,
 ) : ViewModel() {
+
+    init {
+        // Restore the last desktop on launch so a WiFi blip / app restart doesn't force re-pairing.
+        connectionManager.autoReconnect()
+    }
 
     val themeMode: StateFlow<ThemeMode> = appPreferences.themeMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)

@@ -60,11 +60,32 @@ function renderSettings() {
       </section>
 
       <section class="card">
+        <div class="label-row"><span>Pairing & security</span></div>
+        <div class="setting-list">
+          <div class="setting-item">
+            <div class="setting-item-main">
+              <strong>Pairing code</strong>
+              <span>Required on the phone to remove files from this PC. Embedded in the QR code; share manually only if you trust the device.</span>
+            </div>
+            <span class="pairing-code">${escHtml(s.pairingToken || "—")}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
         <div class="label-row"><span>Behavior</span></div>
         <div class="setting-list">
           <label class="setting-item switch">
             <span class="setting-item-main"><strong>Auto-open folder on transfer</strong><span>Open the saved folder after each incoming file.</span></span>
             <input type="checkbox" id="opt-auto-open" ${s.autoOpenFolder ? "checked" : ""} /><span class="track"></span>
+          </label>
+          <label class="setting-item switch">
+            <span class="setting-item-main"><strong>Notify on arrival</strong><span>Show a desktop notification when a new file is received.</span></span>
+            <input type="checkbox" id="opt-notify" ${s.notifyOnArrival !== false ? "checked" : ""} /><span class="track"></span>
+          </label>
+          <label class="setting-item switch">
+            <span class="setting-item-main"><strong>Keep running in tray</strong><span>Closing the window keeps the receiver running in the system tray.</span></span>
+            <input type="checkbox" id="opt-tray" ${s.minimizeToTray !== false ? "checked" : ""} /><span class="track"></span>
           </label>
           <label class="setting-item switch">
             <span class="setting-item-main"><strong>Launch at startup</strong><span>Start Pherry Desktop when you sign in.</span></span>
@@ -160,6 +181,16 @@ function renderSettings() {
 
   document.querySelector("#opt-auto-open")?.addEventListener("change", async (e) => {
     await window.api.updateSettings({ autoOpenFolder: e.target.checked });
+    await refreshSettings();
+  });
+
+  document.querySelector("#opt-notify")?.addEventListener("change", async (e) => {
+    await window.api.updateSettings({ notifyOnArrival: e.target.checked });
+    await refreshSettings();
+  });
+
+  document.querySelector("#opt-tray")?.addEventListener("change", async (e) => {
+    await window.api.updateSettings({ minimizeToTray: e.target.checked });
     await refreshSettings();
   });
 

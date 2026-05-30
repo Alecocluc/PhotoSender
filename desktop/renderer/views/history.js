@@ -7,6 +7,13 @@ import {
 import { register } from '../router.js';
 import { clearHistoryConfirm, exportHistory, importHistory } from '../actions.js';
 import { showToast } from '../shell.js';
+import { attachThumbs, canThumbnail } from '../thumbs.js';
+
+function thumbAttrs(entry, name) {
+  return canThumbnail(name)
+    ? ` data-thumb-bucket="${escHtml(entry.bucketName || "")}" data-thumb-name="${escHtml(name)}"`
+    : "";
+}
 
 const historyUi = {
   query: "",
@@ -66,11 +73,11 @@ function historyRow(entry, idx) {
   const kind = entryKind(entry);
   const source = entrySource(entry);
   return `
-    <tr>
+    <tr class="history-tr" data-bucket="${escHtml(entry.bucketName || "")}" data-name="${escHtml(name)}" title="Double-click to open">
       <td><span class="id-mono">${escHtml(id)}</span></td>
       <td>
         <div class="file-cell">
-          <div class="activity-thumb${videoCls}"><span class="icon sm">${icon}</span></div>
+          <div class="activity-thumb${videoCls}"${thumbAttrs(entry, name)}><span class="icon sm">${icon}</span></div>
           <div style="min-width:0;">
             <div class="name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:320px;">${escHtml(name)}</div>
             <div class="sub">${escHtml(entry.bucketName || "")}</div>
@@ -81,7 +88,12 @@ function historyRow(entry, idx) {
       <td><span class="type-pill">${kind}</span></td>
       <td>${escHtml(fmtBytes(entry.size))}</td>
       <td><span class="mono" style="font-size:12px;color:var(--text-soft);">${escHtml(fmtFullTime(ts))}</span></td>
-      <td><span class="badge"><span class="icon xs">check_circle</span>Saved</span></td>
+      <td>
+        <div class="row-actions">
+          <button class="icon-btn xs row-open" data-act="open" title="Open file" aria-label="Open file"><span class="icon sm">open_in_new</span></button>
+          <button class="icon-btn xs row-reveal" data-act="reveal" title="Show in folder" aria-label="Show in folder"><span class="icon sm">folder_open</span></button>
+        </div>
+      </td>
     </tr>
   `;
 }
@@ -93,8 +105,8 @@ function historyCard(entry, idx) {
   const videoCls = isVideo(name) ? " video" : "";
   const kind = entryKind(entry);
   return `
-    <article class="history-card">
-      <div class="activity-thumb${videoCls}"><span class="icon sm">${icon}</span></div>
+    <article class="history-card history-tr" data-bucket="${escHtml(entry.bucketName || "")}" data-name="${escHtml(name)}" title="Tap to open">
+      <div class="activity-thumb${videoCls}"${thumbAttrs(entry, name)}><span class="icon sm">${icon}</span></div>
       <div class="history-card-main">
         <div class="name">${escHtml(name)}</div>
         <div class="meta">${escHtml(entrySource(entry))} / ${escHtml(fmtFullTime(ts))}</div>
@@ -160,7 +172,7 @@ function renderHistory() {
           <table class="table">
             <thead>
               <tr>
-                <th>Entry</th><th>Filename</th><th>Source</th><th>Type</th><th>Size</th><th>Saved at</th><th>Status</th>
+                <th>Entry</th><th>Filename</th><th>Source</th><th>Type</th><th>Size</th><th>Saved at</th><th></th>
               </tr>
             </thead>
             <tbody id="history-tbody">
@@ -207,6 +219,43 @@ function renderHistory() {
     renderHistory();
   });
   document.querySelector("#load-more-history")?.addEventListener("click", loadMoreHistory);
+
+  wireRowActions();
+  attachThumbs(document.querySelector("#view-root"));
+}
+
+function wireRowActions() {
+  const root = document.querySelector("#view-root");
+  if (!root) return;
+
+  // Per-row open/reveal buttons (delegated so it survives re-renders).
+  root.querySelectorAll(".history-tr").forEach((row) => {
+    const bucket = row.dataset.bucket;
+    const name = row.dataset.name;
+    if (!name) return;
+    row.addEventListener("dblclick", () => openEntryFile(bucket, name));
+    row.querySelectorAll("[data-act]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (btn.dataset.act === "reveal") revealEntryFile(bucket, name);
+        else openEntryFile(bucket, name);
+      });
+    });
+    // Card layout: single tap opens.
+    if (row.classList.contains("history-card")) {
+      row.addEventListener("click", () => openEntryFile(bucket, name));
+    }
+  });
+}
+
+async function openEntryFile(bucket, name) {
+  const ok = await window.api.openFile({ bucket, name });
+  if (!ok) showToast("That file is no longer in the download folder.", "error");
+}
+
+async function revealEntryFile(bucket, name) {
+  const ok = await window.api.revealFile({ bucket, name });
+  if (!ok) showToast("That file is no longer in the download folder.", "error");
 }
 
 async function loadMoreHistory(e) {

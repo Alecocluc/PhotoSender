@@ -62,6 +62,7 @@ class UploadWorker @AssistedInject constructor(
                     notifier.cancel()
                 }
             }
+            postSummaryNotification(uploadManager.transferState.value)
             Result.success()
         } catch (e: CancellationException) {
             throw e
@@ -128,6 +129,49 @@ class UploadWorker @AssistedInject constructor(
             .build()
     }
 
+    /** One-shot summary shown after a batch finishes, e.g. "142 files · 2.3 GB backed up". */
+    @Suppress("MissingPermission")
+    private fun postSummaryNotification(state: TransferState) {
+        val backedUp = state.completedFiles
+        if (backedUp <= 0 && state.failedFiles <= 0) return
+        ensureChannel()
+
+        val sent = (backedUp - state.skippedFiles).coerceAtLeast(0)
+        val title = if (state.failedFiles > 0) "Backup finished with issues" else "Backup complete"
+        val text = buildString {
+            append("$sent file${if (sent == 1) "" else "s"} · ${formatBytes(state.transferredBytes)} backed up")
+            if (state.skippedFiles > 0) append(" · ${state.skippedFiles} already on PC")
+            if (state.failedFiles > 0) append(" · ${state.failedFiles} failed")
+        }
+
+        val openIntent = androidx.core.app.PendingIntentCompat.getActivity(
+            appContext,
+            1,
+            Intent(appContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            0,
+            false,
+        )
+
+        val notification = NotificationCompat.Builder(appContext, CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setSmallIcon(android.R.drawable.stat_sys_upload_done)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .setContentIntent(openIntent)
+            .build()
+
+        NotificationManagerCompat.from(appContext).notify(SUMMARY_NOTIFICATION_ID, notification)
+    }
+
+    private fun formatBytes(bytes: Long): String = when {
+        bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
+        bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
+        bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
+        else -> "$bytes B"
+    }
+
     private fun ensureChannel() {
         val manager = appContext.getSystemService(NotificationManager::class.java)
         if (manager.getNotificationChannel(CHANNEL_ID) == null) {
@@ -148,6 +192,7 @@ class UploadWorker @AssistedInject constructor(
         const val WORK_NAME = "photo_upload_transfer"
         private const val CHANNEL_ID = "photo_transfer"
         private const val NOTIFICATION_ID = 1001
+        private const val SUMMARY_NOTIFICATION_ID = 1002
         private const val NOTIFICATION_INTERVAL_MS = 1000L
     }
 }

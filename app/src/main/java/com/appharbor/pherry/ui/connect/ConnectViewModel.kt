@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.network.ConnectionManager
+import com.appharbor.pherry.data.network.DiscoveredDesktop
+import com.appharbor.pherry.data.network.NsdDiscovery
 import com.appharbor.pherry.data.network.parseConnectionTarget
 import com.appharbor.pherry.data.preferences.AppPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -19,11 +21,15 @@ import javax.inject.Inject
 class ConnectViewModel @Inject constructor(
     private val connectionManager: ConnectionManager,
     private val appPreferences: AppPreferences,
+    private val nsdDiscovery: NsdDiscovery,
 ) : ViewModel() {
 
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val serverName: StateFlow<String> = connectionManager.serverName
     val connectionError: StateFlow<String?> = connectionManager.connectionError
+
+    /** Live list of "_pherry._tcp" desktops found on the LAN while the sheet is open. */
+    val nearbyDesktops: StateFlow<List<DiscoveredDesktop>> = nsdDiscovery.desktops
 
     private val _ipAddress = MutableStateFlow("")
     val ipAddress: StateFlow<String> = _ipAddress.asStateFlow()
@@ -54,6 +60,15 @@ class ConnectViewModel @Inject constructor(
         onConnect()
     }
 
+    fun startDiscovery() = nsdDiscovery.start()
+
+    fun stopDiscovery() = nsdDiscovery.stop()
+
+    fun onDiscoveredSelected(desktop: DiscoveredDesktop) {
+        _ipAddress.value = desktop.endpoint
+        onConnect()
+    }
+
     fun onQrScanError(message: String?) {
         _ipError.value = message ?: "QR scan failed. Enter the desktop address manually."
     }
@@ -66,7 +81,13 @@ class ConnectViewModel @Inject constructor(
             return
         }
         _ipAddress.value = parsed.endpoint
-        onConnect()
+        _ipError.value = null
+        viewModelScope.launch {
+            appPreferences.rememberDesktopTarget(parsed.endpoint)
+        }
+        // Pass the raw payload so the pairing token in the QR is captured (the displayed address
+        // only shows the endpoint).
+        connectionManager.connect(payload)
     }
 
     fun onConnect() {

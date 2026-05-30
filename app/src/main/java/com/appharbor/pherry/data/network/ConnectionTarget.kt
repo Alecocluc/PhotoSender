@@ -7,6 +7,8 @@ private const val MAX_PORT = 65535
 data class ConnectionTarget(
     val host: String,
     val port: Int = DEFAULT_SERVER_PORT,
+    /** Pairing token from the desktop QR (gates destructive ops). Empty for manual/discovered. */
+    val token: String = "",
 ) {
     val endpoint: String
         get() = "$host:$port"
@@ -22,7 +24,9 @@ fun parseConnectionTarget(input: String): ConnectionTarget? {
     val withoutScheme = trimmed
         .removePrefix("http://")
         .removePrefix("https://")
-    val hostPort = withoutScheme.substringBefore('/').substringBefore('?').trim()
+    val hostPortAndQuery = withoutScheme.substringBefore('/')
+    val query = hostPortAndQuery.substringAfter('?', "")
+    val hostPort = hostPortAndQuery.substringBefore('?').trim()
     if (hostPort.isEmpty()) return null
 
     val host = hostPort.substringBefore(':').trim()
@@ -30,7 +34,17 @@ fun parseConnectionTarget(input: String): ConnectionTarget? {
         ?: return null
 
     if (!isValidIpv4(host) || port !in MIN_PORT..MAX_PORT) return null
-    return ConnectionTarget(host = host, port = port)
+    return ConnectionTarget(host = host, port = port, token = parseTokenParam(query))
+}
+
+/** Pull the `t` query param out of a "k=v&k=v" string; sanitized to the token alphabet. */
+private fun parseTokenParam(query: String): String {
+    if (query.isEmpty()) return ""
+    val raw = query.split('&')
+        .firstOrNull { it.startsWith("t=") }
+        ?.removePrefix("t=")
+        ?: return ""
+    return raw.filter { it.isLetterOrDigit() }.take(16)
 }
 
 fun baseUrlForConnectionTarget(input: String): String? = parseConnectionTarget(input)?.baseUrl

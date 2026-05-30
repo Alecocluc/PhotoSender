@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.appharbor.pherry.data.preferences.AppPreferences
 import com.appharbor.pherry.data.preferences.ThemeMode
+import com.appharbor.pherry.data.upload.BackupScheduler
 import com.appharbor.pherry.ui.gallery.UploadMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -15,6 +17,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val appPreferences: AppPreferences,
+    private val backupScheduler: BackupScheduler,
 ) : ViewModel() {
 
     val themeMode: StateFlow<ThemeMode> = appPreferences.themeMode
@@ -26,10 +29,6 @@ class SettingsViewModel @Inject constructor(
     val highSpeedTransferEnabled: StateFlow<Boolean> = appPreferences.highSpeedTransferEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
-    // TODO: Wire this flag into an actual archive/cleanup worker; currently only persisted via settings.
-    val autoArchiveEnabled: StateFlow<Boolean> = appPreferences.autoArchiveEnabled
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
     val confirmDestructiveSync: StateFlow<Boolean> = appPreferences.confirmDestructiveSync
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
@@ -37,6 +36,12 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val keepScreenAwake: StateFlow<Boolean> = appPreferences.keepScreenAwake
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val autoBackupEnabled: StateFlow<Boolean> = appPreferences.autoBackupEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val autoBackupRequiresCharging: StateFlow<Boolean> = appPreferences.autoBackupRequiresCharging
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
     val defaultUploadMode: StateFlow<String> = appPreferences.defaultUploadMode
@@ -60,12 +65,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun onAutoArchiveChanged(enabled: Boolean) {
-        viewModelScope.launch {
-            appPreferences.saveAutoArchiveEnabled(enabled)
-        }
-    }
-
     fun onConfirmDestructiveSyncChanged(enabled: Boolean) {
         viewModelScope.launch {
             appPreferences.saveConfirmDestructiveSync(enabled)
@@ -81,6 +80,28 @@ class SettingsViewModel @Inject constructor(
     fun onKeepScreenAwakeChanged(enabled: Boolean) {
         viewModelScope.launch {
             appPreferences.saveKeepScreenAwake(enabled)
+        }
+    }
+
+    fun onAutoBackupChanged(enabled: Boolean) {
+        viewModelScope.launch {
+            appPreferences.setAutoBackupEnabled(enabled)
+            if (enabled) {
+                // Only back up photos taken from now on, not the whole existing library.
+                appPreferences.setLastAutoBackupAt(System.currentTimeMillis())
+                backupScheduler.schedule(appPreferences.autoBackupRequiresCharging.first())
+            } else {
+                backupScheduler.cancel()
+            }
+        }
+    }
+
+    fun onAutoBackupChargingChanged(requiresCharging: Boolean) {
+        viewModelScope.launch {
+            appPreferences.setAutoBackupRequiresCharging(requiresCharging)
+            if (appPreferences.autoBackupEnabled.first()) {
+                backupScheduler.schedule(requiresCharging)
+            }
         }
     }
 

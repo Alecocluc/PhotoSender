@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld("api", {
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   updateSettings: (patch) => ipcRenderer.invoke("update-settings", patch),
 
+  // Files (thumbnails + reveal/open in OS file manager)
+  getThumbnail: (opts) => ipcRenderer.invoke("get-thumbnail", opts),
+  revealFile: (opts) => ipcRenderer.invoke("reveal-file", opts),
+  openFile: (opts) => ipcRenderer.invoke("open-file", opts),
+
   // Push events (from main → renderer)
   onFileReceived: (cb) => {
     const handler = (_e, data) => cb(data);

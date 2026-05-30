@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Sync
@@ -46,7 +48,8 @@ fun SettingsScreen(
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
     val highSpeedTransferEnabled by viewModel.highSpeedTransferEnabled.collectAsStateWithLifecycle()
-    val autoArchiveEnabled by viewModel.autoArchiveEnabled.collectAsStateWithLifecycle()
+    val autoBackupEnabled by viewModel.autoBackupEnabled.collectAsStateWithLifecycle()
+    val autoBackupRequiresCharging by viewModel.autoBackupRequiresCharging.collectAsStateWithLifecycle()
     val confirmDestructiveSync by viewModel.confirmDestructiveSync.collectAsStateWithLifecycle()
     val wifiOnlyTransfer by viewModel.wifiOnlyTransfer.collectAsStateWithLifecycle()
     val keepScreenAwake by viewModel.keepScreenAwake.collectAsStateWithLifecycle()
@@ -157,14 +160,22 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 ToggleRow(
-                    icon = Icons.Filled.Storage,
-                    title = "Auto-Archive",
-                    subtitle = "Archive transferred files after 30 days",
-                    checked = autoArchiveEnabled,
-                    onCheckedChange = viewModel::onAutoArchiveChanged,
-                    enabled = false,
-                    badge = "SOON",
+                    icon = Icons.Filled.CloudSync,
+                    title = "Auto-backup",
+                    subtitle = "Send new photos to your desktop automatically over Wi-Fi",
+                    checked = autoBackupEnabled,
+                    onCheckedChange = viewModel::onAutoBackupChanged,
                 )
+                if (autoBackupEnabled) {
+                    Spacer(Modifier.height(Spacing.sm))
+                    ToggleRow(
+                        icon = Icons.Filled.Bolt,
+                        title = "Only while charging",
+                        subtitle = "Wait until the phone is plugged in before backing up",
+                        checked = autoBackupRequiresCharging,
+                        onCheckedChange = viewModel::onAutoBackupChargingChanged,
+                    )
+                }
             }
         }
 

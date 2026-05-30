@@ -157,8 +157,24 @@ function normalizeMd5(value) {
   return String(value || "").toLowerCase().replace(/[^a-f0-9]/g, "");
 }
 
+function sanitizeDeviceName(value) {
+  // Keep it human-readable; drop control chars and HTML-significant characters,
+  // but preserve spaces, digits and hyphens (e.g. "Pixel 7", "Galaxy-S23").
+  const banned = new Set(["<", ">", '"', "'", "`"]);
+  return String(value || "")
+    .split("")
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 0x20 && code !== 0x7f && !banned.has(ch);
+    })
+    .join("")
+    .trim()
+    .slice(0, 60);
+}
+
 function normalizeHistoryEntry(item) {
   const md5 = normalizeMd5(item?.md5);
+  const deviceName = sanitizeDeviceName(item?.deviceName);
   return {
     fileName: String(item?.fileName || ""),
     bucketName: String(item?.bucketName || "Unsorted"),
@@ -166,6 +182,7 @@ function normalizeHistoryEntry(item) {
     time: Number(item?.time || Date.now()),
     status: String(item?.status || "saved"),
     md5,
+    ...(deviceName ? { deviceName } : {}),
   };
 }
 
@@ -454,6 +471,9 @@ function deleteSyncedFiles(downloadPath, files) {
 function createServer(downloadPath, options = {}) {
   historyStatePath = options.historyStatePath || null;
   const onFileReceived = typeof options.onFileReceived === "function" ? options.onFileReceived : null;
+  // Pairing token: when set, gates the destructive endpoints (deleting/clearing) so a random
+  // device on the LAN can't wipe the user's files. Empty token = open (back-compat).
+  const pairingToken = String(options.pairingToken || "").trim();
   loadHistoryState();
   saveHistoryState();
 
@@ -463,9 +483,23 @@ function createServer(downloadPath, options = {}) {
     cors({
       origin: (origin, cb) => cb(null, true),
       methods: ["GET", "POST", "DELETE"],
+      allowedHeaders: ["Content-Type", "X-Pherry-Token", "X-Device-Name"],
     })
   );
   app.use(express.json());
+
+  // Require the pairing token on destructive routes. Sending files stays open so QR-less /
+  // discovery-based pairing can still back up photos; only operations that remove data from the
+  // PC need the token (which the phone gets by scanning the desktop QR).
+  function requireToken(req, res, next) {
+    if (!pairingToken) return next();
+    const provided = String(req.headers["x-pherry-token"] || "").trim();
+    if (provided && provided === pairingToken) return next();
+    return res.status(401).json({
+      success: false,
+      error: "Pairing required. Scan the desktop QR code to allow removing files.",
+    });
+  }
 
   // Health check
   app.get("/health", (_req, res) => {
@@ -517,7 +551,7 @@ function createServer(downloadPath, options = {}) {
     });
   });
 
-  app.post("/history/clear", (_req, res) => {
+  app.post("/history/clear", requireToken, (_req, res) => {
     totalReceived = 0;
     totalBytes = 0;
     activityLog.length = 0;
@@ -537,7 +571,7 @@ function createServer(downloadPath, options = {}) {
     res.json({ ...rebuildProgress });
   });
 
-  app.post("/history/remove-duplicates", (req, res) => {
+  app.post("/history/remove-duplicates", requireToken, (req, res) => {
     try {
       const dryRun = !!(req.body && req.body.dryRun);
       const result = removeDuplicateFiles(downloadPath, { dryRun });
@@ -549,7 +583,7 @@ function createServer(downloadPath, options = {}) {
 
   // Sync mode: delete files the phone has removed. Matches by md5 (the dedup key) and only
   // touches content the server actually holds, so manually-added files are never deleted.
-  app.post("/sync/delete", (req, res) => {
+  app.post("/sync/delete", requireToken, (req, res) => {
     try {
       const files = Array.isArray(req.body && req.body.files) ? req.body.files : [];
       const result = deleteSyncedFiles(downloadPath, files);
@@ -664,6 +698,7 @@ function createServer(downloadPath, options = {}) {
 
       const md5 = normalizeMd5(md5Hash);
       const savedBucket = sanitizePath(bucketName || "Unsorted");
+      const deviceName = sanitizeDeviceName(req.headers["x-device-name"]);
 
       totalReceived++;
       totalBytes += fileSize;
@@ -676,6 +711,7 @@ function createServer(downloadPath, options = {}) {
         time: Date.now(),
         status: "saved",
         md5,
+        ...(deviceName ? { deviceName } : {}),
       };
       addKnownFile(entry);
       activityLog.push(entry);

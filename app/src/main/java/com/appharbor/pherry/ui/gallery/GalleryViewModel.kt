@@ -123,6 +123,27 @@ class GalleryViewModel @Inject constructor(
         }
     }
 
+    /** Quick-select everything modified within the last [days] days (Add mode). */
+    fun selectRecent(days: Int) {
+        viewModelScope.launch {
+            // MediaStore DATE_MODIFIED is in seconds.
+            val cutoffSeconds = (System.currentTimeMillis() - days * 86_400_000L) / 1000L
+            val recent = mediaRepository.loadAllMedia(_filter.value)
+                .filter { it.dateModified >= cutoffSeconds }
+            _selectedIds.update { current -> current + recent.map { it.id }.toSet() }
+        }
+    }
+
+    /** Quick-select every item not yet backed up to the desktop (Add mode). */
+    fun selectNewSinceBackup() {
+        viewModelScope.launch {
+            val completed = uploadManager.completedMediaStoreIds()
+            val unsent = mediaRepository.loadAllMedia(_filter.value)
+                .filter { it.id !in completed }
+            _selectedIds.update { current -> current + unsent.map { it.id }.toSet() }
+        }
+    }
+
     fun isAllMediaSelected(): Boolean {
         val allIds = _allMediaIds.value
         return allIds.isNotEmpty() && allIds.all { it in _selectedIds.value }

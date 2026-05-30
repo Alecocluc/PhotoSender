@@ -154,6 +154,8 @@ private data class SyncDeleteResult(
     val deleted: Int = 0,
     val bytesFreed: Long = 0,
     val notFound: Int = 0,
+    /** Server rejected the delete because we lack the pairing token (need a QR pairing). */
+    val unauthorized: Boolean = false,
 )
 
 @Singleton
@@ -347,7 +349,11 @@ class UploadManager @Inject constructor(
             } else {
                 _syncState.value = SyncState(
                     isSyncing = false,
-                    summary = "Couldn't reach the desktop to remove files — try again when connected.",
+                    summary = if (result.unauthorized) {
+                        "Scan the desktop QR code to allow removing files from your PC."
+                    } else {
+                        "Couldn't reach the desktop to remove files — try again when connected."
+                    },
                 )
             }
         }
@@ -376,7 +382,9 @@ class UploadManager @Inject constructor(
                 .post(payload.toRequestBody("application/json".toMediaType()))
                 .build()
             okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@runCatching SyncDeleteResult(ok = false)
+                if (!response.isSuccessful) {
+                    return@runCatching SyncDeleteResult(ok = false, unauthorized = response.code == 401)
+                }
                 val json = JSONObject(response.body?.string().orEmpty())
                 SyncDeleteResult(
                     ok = json.optBoolean("success", false),
@@ -392,6 +400,10 @@ class UploadManager @Inject constructor(
     fun clearSyncSummary() {
         _syncState.update { it.copy(summary = null) }
     }
+
+    /** MediaStore ids already backed up — used by the "New since last backup" quick selection. */
+    suspend fun completedMediaStoreIds(): Set<Long> =
+        uploadRecordDao.getCompletedMediaStoreIds().toHashSet()
 
     fun cancelTransfer() {
         WorkManager.getInstance(context).cancelUniqueWork(UploadWorker.WORK_NAME)

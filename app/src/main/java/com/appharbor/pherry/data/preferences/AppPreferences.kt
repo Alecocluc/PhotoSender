@@ -5,9 +5,11 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.first
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -28,7 +30,11 @@ class AppPreferences @Inject constructor(
 ) {
     private val lastIpKey = stringPreferencesKey("last_ip_address")
     private val recentDesktopTargetsKey = stringPreferencesKey("recent_desktop_targets")
+    private val desktopTokensKey = stringPreferencesKey("desktop_tokens")
     private val downloadPathKey = stringPreferencesKey("download_path")
+    private val autoBackupEnabledKey = booleanPreferencesKey("auto_backup_enabled")
+    private val autoBackupRequiresChargingKey = booleanPreferencesKey("auto_backup_requires_charging")
+    private val lastAutoBackupAtKey = longPreferencesKey("last_auto_backup_at")
     private val uploadedHashesKey = stringSetPreferencesKey("uploaded_hashes")
     private val themeModeKey = stringPreferencesKey("theme_mode")
     private val dynamicColorEnabledKey = booleanPreferencesKey("dynamic_color_enabled")
@@ -54,6 +60,49 @@ class AppPreferences @Inject constructor(
 
     val downloadPath: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[downloadPathKey] ?: ""
+    }
+
+    /** Per-desktop pairing tokens, keyed by "host:port". Persisted so reconnects keep delete rights. */
+    private val desktopTokens: Flow<Map<String, String>> = context.dataStore.data.map { prefs ->
+        decodeTokens(prefs[desktopTokensKey])
+    }
+
+    val autoBackupEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[autoBackupEnabledKey] ?: false
+    }
+
+    val autoBackupRequiresCharging: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[autoBackupRequiresChargingKey] ?: true
+    }
+
+    val lastAutoBackupAt: Flow<Long> = context.dataStore.data.map { prefs ->
+        prefs[lastAutoBackupAtKey] ?: 0L
+    }
+
+    suspend fun rememberDesktopToken(endpoint: String, token: String) {
+        val key = endpoint.trim()
+        val value = token.trim()
+        if (key.isEmpty() || value.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val current = decodeTokens(prefs[desktopTokensKey]).toMutableMap()
+            current[key] = value
+            prefs[desktopTokensKey] = encodeTokens(current)
+        }
+    }
+
+    suspend fun tokenForEndpoint(endpoint: String): String =
+        desktopTokens.first()[endpoint.trim()] ?: ""
+
+    suspend fun setAutoBackupEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[autoBackupEnabledKey] = enabled }
+    }
+
+    suspend fun setAutoBackupRequiresCharging(enabled: Boolean) {
+        context.dataStore.edit { prefs -> prefs[autoBackupRequiresChargingKey] = enabled }
+    }
+
+    suspend fun setLastAutoBackupAt(timestampMs: Long) {
+        context.dataStore.edit { prefs -> prefs[lastAutoBackupAtKey] = timestampMs }
     }
 
     val themeMode: Flow<ThemeMode> = context.dataStore.data.map { prefs ->
@@ -190,4 +239,22 @@ class AppPreferences @Inject constructor(
             prefs[uploadedHashesKey] = emptySet()
         }
     }
+
+    // Tokens are stored as "endpoint=token" entries joined by "|". Endpoints/tokens never contain
+    // these separators (IPv4:port + alphanumeric token), so a flat string keeps DataStore simple.
+    private fun decodeTokens(raw: String?): Map<String, String> {
+        if (raw.isNullOrEmpty()) return emptyMap()
+        return raw.split('|')
+            .mapNotNull { entry ->
+                val idx = entry.indexOf('=')
+                if (idx <= 0) return@mapNotNull null
+                val key = entry.substring(0, idx).trim()
+                val value = entry.substring(idx + 1).trim()
+                if (key.isEmpty() || value.isEmpty()) null else key to value
+            }
+            .toMap()
+    }
+
+    private fun encodeTokens(map: Map<String, String>): String =
+        map.entries.joinToString("|") { "${it.key}=${it.value}" }
 }

@@ -2,19 +2,23 @@ import { state, refreshSettings } from '../state.js';
 import {
   fmtBytes, fmtSpeed, fmtUptime, escHtml,
   entryName, entryTime, fmtTime, fmtFullTime,
-  fileIcon, isVideo, primaryIP,
+  fileIcon, isVideo, primaryIP, qrPayloadFor,
 } from '../utils.js';
 import { register, rerender } from '../router.js';
 import { renderQrCode } from '../qr.js';
+import { attachThumbs, canThumbnail } from '../thumbs.js';
 
 function activityItem(entry) {
   const name = entryName(entry);
   const icon = fileIcon(name);
   const videoCls = isVideo(name) ? " video" : "";
   const ts = entryTime(entry);
+  const thumbAttrs = canThumbnail(name)
+    ? ` data-thumb-bucket="${escHtml(entry.bucketName || "")}" data-thumb-name="${escHtml(name)}"`
+    : "";
   return `
     <div class="activity-item" title="${escHtml(fmtFullTime(ts))}">
-      <div class="activity-thumb${videoCls}"><span class="icon">${icon}</span></div>
+      <div class="activity-thumb${videoCls}"${thumbAttrs}><span class="icon">${icon}</span></div>
       <div style="min-width:0;">
         <div class="name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</div>
         <div class="meta">${escHtml(fmtTime(ts))}${entry.size ? ` / ${escHtml(fmtBytes(entry.size))}` : ""}</div>
@@ -35,6 +39,8 @@ function renderDashboard() {
   const ip = loading ? "-" : primaryIP(state.ips);
   const port = state.server.port || state.settings?.port || 3210;
   const address = ip !== "-" ? `http://${ip}:${port}` : "";
+  const token = state.settings?.pairingToken || "";
+  const qrPayload = qrPayloadFor(ip, port, token);
   const speed = fmtSpeed(s.currentSpeedBytesPerSec);
   const dlPath = state.settings?.downloadPath || "";
   const railItems = recent.slice(0, 5);
@@ -60,6 +66,11 @@ function renderDashboard() {
             <button class="btn-copy" id="copy-ip-btn" ${loading || !address ? "disabled" : ""} aria-label="Copy pairing address"><span class="icon xs">content_copy</span><span>Copy address</span></button>
           </div>
           <p class="copy-note">Scan the code from Pherry on Android. Transfers stay on this local network and arrive in the folder below.</p>
+          ${token ? `<div class="pairing-code-row" title="Required on the phone to allow removing files from this PC">
+            <span class="icon xs">vpn_key</span>
+            <span class="pairing-code-label">Pairing code</span>
+            <span class="pairing-code">${escHtml(token)}</span>
+          </div>` : ""}
           <div class="pair-steps" aria-label="Pairing steps">
             <div class="pair-step"><span class="icon sm">desktop_windows</span><span>Keep this receiver open</span></div>
             <div class="pair-step"><span class="icon sm">qr_code_scanner</span><span>Scan from Android</span></div>
@@ -133,10 +144,12 @@ function renderDashboard() {
     </div>
   `;
 
-  if (address) {
+  if (qrPayload) {
     const canvas = document.querySelector("#pair-qr");
-    if (canvas) renderQrCode(canvas, address);
+    if (canvas) renderQrCode(canvas, qrPayload);
   }
+
+  attachThumbs(document.querySelector("#view-root"));
 
   document.querySelector("#copy-ip-btn")?.addEventListener("click", async (e) => {
     const btn = e.currentTarget;
