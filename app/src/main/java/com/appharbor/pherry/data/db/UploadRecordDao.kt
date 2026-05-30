@@ -51,6 +51,9 @@ interface UploadRecordDao {
     @Query("SELECT COUNT(*) FROM upload_records WHERE status = 'COMPLETED'")
     fun getCompletedCount(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM upload_records WHERE status IN ('PENDING', 'UPLOADING')")
+    fun getQueuedCount(): Flow<Int>
+
     @Query("SELECT COALESCE(SUM(fileSize), 0) FROM upload_records WHERE status = 'COMPLETED'")
     fun getTotalTransferredBytes(): Flow<Long>
 

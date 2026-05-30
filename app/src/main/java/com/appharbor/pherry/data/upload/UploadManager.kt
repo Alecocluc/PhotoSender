@@ -413,6 +413,17 @@ class UploadManager @Inject constructor(
     suspend fun completedMediaStoreIds(): Set<Long> =
         uploadRecordDao.getCompletedMediaStoreIds().toHashSet()
 
+    /**
+     * The subset of [liveItems] that isn't on the desktop yet — not already completed and not already
+     * queued. This is exactly what "Back up new" sends; it mirrors the filter [enqueueRecords] applies,
+     * so the count the Home screen shows matches what actually gets queued.
+     */
+    suspend fun filterUnsent(liveItems: List<MediaItem>): List<MediaItem> {
+        val completedIds = uploadRecordDao.getCompletedMediaStoreIds().toHashSet()
+        val queuedIds = uploadRecordDao.getPendingAndUploading().mapTo(HashSet()) { it.mediaStoreId }
+        return liveItems.filter { it.id !in completedIds && it.id !in queuedIds }
+    }
+
     fun cancelTransfer() {
         WorkManager.getInstance(context).cancelUniqueWork(UploadWorker.WORK_NAME)
         _transferState.update {

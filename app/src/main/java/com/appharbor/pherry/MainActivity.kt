@@ -35,10 +35,12 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHorizontalCircle
 import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SwapHorizontalCircle
@@ -91,6 +93,7 @@ import com.appharbor.pherry.ui.connect.ConnectSheet
 import com.appharbor.pherry.ui.connect.PairingScreen
 import com.appharbor.pherry.ui.gallery.FolderDetailScreen
 import com.appharbor.pherry.ui.gallery.GalleryScreen
+import com.appharbor.pherry.ui.home.HomeScreen
 import com.appharbor.pherry.ui.onboarding.OnboardingScreen
 import com.appharbor.pherry.ui.settings.SettingsScreen
 import com.appharbor.pherry.ui.share.ShareImportSheet
@@ -229,8 +232,17 @@ fun PherryApp(
         val navBackStackEntry by navController.currentBackStackEntryAsState()
         val currentDestination = navBackStackEntry?.destination
 
+        val openTab: (String) -> Unit = { route ->
+            navController.navigate(route) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+        }
+
         val bottomNavItems = remember {
             listOf(
+                BottomNavItem(Screen.Home.route, "Home", Icons.Filled.Home, Icons.Outlined.Home),
                 BottomNavItem(Screen.Gallery.route, "Library", Icons.Filled.PhotoLibrary, Icons.Outlined.PhotoLibrary),
                 BottomNavItem(Screen.Activity.route, "Transfers", Icons.Filled.SwapHorizontalCircle, Icons.Outlined.SwapHorizontalCircle),
                 BottomNavItem(Screen.Settings.route, "Settings", Icons.Filled.Settings, Icons.Outlined.Settings),
@@ -333,9 +345,18 @@ fun PherryApp(
             ) {
             NavHost(
                 navController = navController,
-                startDestination = Screen.Gallery.route,
+                startDestination = Screen.Home.route,
                 modifier = Modifier.fillMaxSize(),
             ) {
+                composable(Screen.Home.route) {
+                    HomeScreen(
+                        onConnectClick = { showConnectSheet = true },
+                        onOpenLibrary = { openTab(Screen.Gallery.route) },
+                        onOpenTransfers = { openTab(Screen.Activity.route) },
+                        onOpenSettings = { openTab(Screen.Settings.route) },
+                        onBeforeTransfer = onBeforeTransfer,
+                    )
+                }
                 composable(Screen.Gallery.route) { backStackEntry ->
                     val galleryViewModel: com.appharbor.pherry.ui.gallery.GalleryViewModel =
                         hiltViewModel(backStackEntry)

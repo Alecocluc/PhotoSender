@@ -1,11 +1,7 @@
 package com.appharbor.pherry.ui.gallery
 
-import android.Manifest
-import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -82,7 +78,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -98,6 +93,8 @@ import com.appharbor.pherry.ui.components.PrimaryButton
 import com.appharbor.pherry.ui.components.ScreenHeader
 import com.appharbor.pherry.ui.components.SegmentedToggle
 import com.appharbor.pherry.ui.components.SelectionActionBar
+import com.appharbor.pherry.ui.permissions.hasMediaPermission
+import com.appharbor.pherry.ui.permissions.requiredMediaPermissions
 import com.appharbor.pherry.ui.theme.Spacing
 
 @Composable
@@ -688,18 +685,4 @@ private fun formatBytes(bytes: Long): String = when {
     bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
     bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
     else -> "$bytes B"
-}
-
-private fun requiredMediaPermissions(): Array<String> {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
-    } else {
-        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-    }
-}
-
-private fun hasMediaPermission(context: Context): Boolean {
-    return requiredMediaPermissions().all { permission ->
-        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-    }
 }
