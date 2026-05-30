@@ -47,7 +47,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ButtonDefaults
@@ -87,12 +86,12 @@ import coil.compose.AsyncImage
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.model.MediaFilter
 import com.appharbor.pherry.data.model.MediaFolder
-import com.appharbor.pherry.data.upload.SyncPlan
 import com.appharbor.pherry.ui.components.EmptyState
 import com.appharbor.pherry.ui.components.PrimaryButton
 import com.appharbor.pherry.ui.components.ScreenHeader
 import com.appharbor.pherry.ui.components.SegmentedToggle
 import com.appharbor.pherry.ui.components.SelectionActionBar
+import com.appharbor.pherry.ui.components.SyncConfirmDialog
 import com.appharbor.pherry.ui.permissions.hasMediaPermission
 import com.appharbor.pherry.ui.permissions.requiredMediaPermissions
 import com.appharbor.pherry.ui.theme.Spacing
@@ -628,61 +627,3 @@ private fun FolderCard(
     }
 }
 
-@Composable
-private fun SyncConfirmDialog(
-    plan: SyncPlan,
-    confirmDestructive: Boolean,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    LaunchedEffect(plan, confirmDestructive) {
-        if (!confirmDestructive && plan.deleteCount == 0 && !plan.isNoOp) {
-            onConfirm()
-        }
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (plan.isNoOp) "Already in sync" else "Sync to desktop") },
-        text = {
-            if (plan.isNoOp) {
-                Text("Your desktop already matches this phone — nothing to upload or remove.")
-            } else {
-                Column {
-                    if (plan.uploadCount > 0) {
-                        Text("• Upload ${plan.uploadCount} new file(s) (${formatBytes(plan.uploadBytes)}).")
-                    }
-                    if (plan.deleteCount > 0) {
-                        Spacer(Modifier.height(Spacing.xs))
-                        Text(
-                            "• Delete ${plan.deleteCount} file(s) from the desktop that you removed from this phone.",
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            when {
-                plan.isNoOp -> TextButton(onClick = onConfirm) { Text("OK") }
-                plan.deleteCount > 0 -> FilledTonalButton(
-                    onClick = onConfirm,
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
-                ) { Text("Sync & Delete") }
-                else -> TextButton(onClick = onConfirm) { Text("Sync") }
-            }
-        },
-        dismissButton = if (plan.isNoOp) null else {
-            { TextButton(onClick = onDismiss) { Text("Cancel") } }
-        },
-    )
-}
-
-private fun formatBytes(bytes: Long): String = when {
-    bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
-    bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
-    bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
-    else -> "$bytes B"
-}

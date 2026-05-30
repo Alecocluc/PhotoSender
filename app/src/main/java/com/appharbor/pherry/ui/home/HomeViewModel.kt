@@ -8,8 +8,10 @@ import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.model.MediaFilter
 import com.appharbor.pherry.data.network.ConnectionManager
 import com.appharbor.pherry.data.preferences.AppPreferences
+import com.appharbor.pherry.data.upload.SyncPlan
 import com.appharbor.pherry.data.upload.TransferState
 import com.appharbor.pherry.data.upload.UploadManager
+import com.appharbor.pherry.ui.gallery.UploadMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -27,6 +30,14 @@ import javax.inject.Inject
 data class UnsentState(
     val count: Int = 0,
     val bytes: Long = 0,
+    /**
+     * Files on the desktop that you've since removed from this phone — what a Sync would delete.
+     * Always 0 in Add mode (Add never deletes); only computed when the default mode is Sync, so the
+     * Home tile can offer a sync instead of falsely claiming "all caught up".
+     */
+    val deleteCount: Int = 0,
+    /** The mode this snapshot was computed under, so the tile picks "Sync" vs "Back up" consistently. */
+    val syncMode: Boolean = false,
     val isLoading: Boolean = false,
     /** False until the first real scan completes, so the UI can tell "unknown" from "zero". */
     val computed: Boolean = false,
@@ -45,7 +56,7 @@ class HomeViewModel @Inject constructor(
     private val mediaRepository: MediaRepository,
     uploadRecordDao: UploadRecordDao,
     connectionManager: ConnectionManager,
-    appPreferences: AppPreferences,
+    private val appPreferences: AppPreferences,
 ) : ViewModel() {
 
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
@@ -79,17 +90,38 @@ class HomeViewModel @Inject constructor(
     val wifiOnly: StateFlow<Boolean> = appPreferences.wifiOnlyTransfer
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 
+    val confirmDestructiveSync: StateFlow<Boolean> = appPreferences.confirmDestructiveSync
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    /** Result/summary of the most recent sync's desktop-deletion step (surfaced as a toast). */
+    val syncState = uploadManager.syncState
+
     private val _unsent = MutableStateFlow(UnsentState())
     val unsent: StateFlow<UnsentState> = _unsent.asStateFlow()
 
+    /** Non-null while the Sync confirmation dialog is showing the computed plan. */
+    private val _pendingSyncPlan = MutableStateFlow<SyncPlan?>(null)
+    val pendingSyncPlan: StateFlow<SyncPlan?> = _pendingSyncPlan.asStateFlow()
+
+    private val _isPreparingSync = MutableStateFlow(false)
+    val isPreparingSync: StateFlow<Boolean> = _isPreparingSync.asStateFlow()
+
     private var unsentJob: Job? = null
     private var lastComputedAt = 0L
+    // The plan from the last Sync-mode refresh, reused by prepareSync so tapping the tile doesn't
+    // trigger a second full library scan.
+    private var latestSyncPlan: SyncPlan? = null
 
     init {
         // A new completion (or a record going away) means the unsent set changed — invalidate so the
         // next refresh recomputes. drop(1) skips the flow's initial replay value.
         viewModelScope.launch {
             uploadRecordDao.getCompletedCount().drop(1).collect { lastComputedAt = 0L }
+        }
+        // Switching Add⇄Sync changes what the tile should show (deletions only matter in Sync), so
+        // invalidate too — otherwise a just-changed mode would keep showing the old snapshot.
+        viewModelScope.launch {
+            appPreferences.defaultUploadMode.drop(1).collect { lastComputedAt = 0L }
         }
     }
 
@@ -104,16 +136,66 @@ class HomeViewModel @Inject constructor(
         if (unsentJob?.isActive == true) return
         unsentJob = viewModelScope.launch {
             _unsent.update { it.copy(isLoading = true) }
-            val items = uploadManager.filterUnsent(mediaRepository.loadAllMedia(MediaFilter.ALL))
+            val liveItems = mediaRepository.loadAllMedia(MediaFilter.ALL)
             lastComputedAt = System.currentTimeMillis()
-            _unsent.value = UnsentState(
-                count = items.size,
-                bytes = items.sumOf { it.size },
-                isLoading = false,
-                computed = true,
-            )
+            _unsent.value = if (appPreferences.defaultUploadMode.first() == UploadMode.SYNC.name) {
+                // Sync mode: the full plan also tells us what's been removed from the phone, so the
+                // tile can surface pending desktop deletions instead of "all caught up".
+                val plan = uploadManager.computeSyncPlan(liveItems)
+                latestSyncPlan = plan
+                UnsentState(
+                    count = plan.uploadCount,
+                    bytes = plan.uploadBytes,
+                    deleteCount = plan.deleteCount,
+                    syncMode = true,
+                    isLoading = false,
+                    computed = true,
+                )
+            } else {
+                latestSyncPlan = null
+                val items = uploadManager.filterUnsent(liveItems)
+                UnsentState(
+                    count = items.size,
+                    bytes = items.sumOf { it.size },
+                    syncMode = false,
+                    isLoading = false,
+                    computed = true,
+                )
+            }
         }
     }
+
+    /**
+     * Open the Sync confirmation dialog. Reuses the plan computed by the last [refreshUnsent] (the
+     * tile is only shown once that plan exists); falls back to a fresh scan if the cache was cleared.
+     */
+    fun prepareSync() {
+        if (_isPreparingSync.value) return
+        latestSyncPlan?.let { _pendingSyncPlan.value = it; return }
+        viewModelScope.launch {
+            _isPreparingSync.value = true
+            val plan = uploadManager.computeSyncPlan(mediaRepository.loadAllMedia(MediaFilter.ALL))
+            latestSyncPlan = plan
+            _pendingSyncPlan.value = plan
+            _isPreparingSync.value = false
+        }
+    }
+
+    /** Execute the confirmed plan. Returns true if it queued uploads, so the caller can navigate. */
+    fun confirmSync(): Boolean {
+        val plan = _pendingSyncPlan.value ?: return false
+        _pendingSyncPlan.value = null
+        latestSyncPlan = null
+        lastComputedAt = 0L
+        uploadManager.executeSync(plan)
+        return plan.uploadCount > 0
+    }
+
+    fun cancelSync() {
+        _pendingSyncPlan.value = null
+    }
+
+    fun clearSyncSummary() = uploadManager.clearSyncSummary()
 
     /**
      * Queue everything not yet on the desktop. Recomputes from a fresh scan so just-taken photos are

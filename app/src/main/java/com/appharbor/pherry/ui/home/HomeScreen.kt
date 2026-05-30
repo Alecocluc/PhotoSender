@@ -1,5 +1,6 @@
 package com.appharbor.pherry.ui.home
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.PermMedia
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,6 +65,7 @@ import com.appharbor.pherry.ui.components.GradientProgressBar
 import com.appharbor.pherry.ui.components.PrimaryButton
 import com.appharbor.pherry.ui.components.SectionCard
 import com.appharbor.pherry.ui.components.StatCard
+import com.appharbor.pherry.ui.components.SyncConfirmDialog
 import com.appharbor.pherry.ui.permissions.hasMediaPermission
 import com.appharbor.pherry.ui.permissions.requiredMediaPermissions
 import com.appharbor.pherry.ui.theme.Spacing
@@ -90,6 +93,10 @@ fun HomeScreen(
     val autoBackupRequiresCharging by viewModel.autoBackupRequiresCharging.collectAsStateWithLifecycle()
     val wifiOnly by viewModel.wifiOnly.collectAsStateWithLifecycle()
     val unsent by viewModel.unsent.collectAsStateWithLifecycle()
+    val confirmDestructiveSync by viewModel.confirmDestructiveSync.collectAsStateWithLifecycle()
+    val pendingSyncPlan by viewModel.pendingSyncPlan.collectAsStateWithLifecycle()
+    val isPreparingSync by viewModel.isPreparingSync.collectAsStateWithLifecycle()
+    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -115,6 +122,29 @@ fun HomeScreen(
         if (connected && hasPermission && !transferState.isTransferring) {
             viewModel.refreshUnsent()
         }
+    }
+
+    // Toast the result of a sync's desktop-deletion step, then force a recompute so the tile reflects
+    // the now-matching state (the delete step doesn't go through transferState's refresh trigger).
+    LaunchedEffect(syncState.summary) {
+        syncState.summary?.let { summary ->
+            Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
+            viewModel.clearSyncSummary()
+            if (connected && hasPermission) viewModel.refreshUnsent(force = true)
+        }
+    }
+
+    pendingSyncPlan?.let { plan ->
+        SyncConfirmDialog(
+            plan = plan,
+            confirmDestructive = confirmDestructiveSync,
+            onConfirm = {
+                if (!plan.isNoOp) onBeforeTransfer()
+                val hasUploads = viewModel.confirmSync()
+                if (hasUploads) onOpenTransfers()
+            },
+            onDismiss = { viewModel.cancelSync() },
+        )
     }
 
     val headerSubtitle = when {
@@ -211,6 +241,19 @@ fun HomeScreen(
                     actionIcon = null,
                     onAction = {},
                     showSpinner = true,
+                )
+
+                // Sync mode: route through a full sync (uploads + desktop deletes) so files removed
+                // from the phone don't get silently treated as "all caught up". The confirm dialog
+                // gates the destructive half.
+                unsent.syncMode && (unsent.count > 0 || unsent.deleteCount > 0) -> ActionHero(
+                    icon = Icons.Filled.CloudSync,
+                    iconTint = MaterialTheme.colorScheme.primary,
+                    title = "Sync needed",
+                    subtitle = syncTileSubtitle(unsent, viewModel::formatBytes),
+                    actionLabel = if (isPreparingSync) "Checking…" else "Sync now",
+                    actionIcon = Icons.Filled.Sync,
+                    onAction = { viewModel.prepareSync() },
                 )
 
                 unsent.count > 0 -> ActionHero(
@@ -498,6 +541,17 @@ private fun LiveProgressCard(
             Text("View transfers", style = MaterialTheme.typography.labelMedium)
         }
     }
+}
+
+private fun syncTileSubtitle(unsent: UnsentState, formatBytes: (Long) -> String): String = when {
+    unsent.count > 0 && unsent.deleteCount > 0 ->
+        "${unsent.count} to upload · ${unsent.deleteCount} to remove from your desktop."
+    unsent.deleteCount > 0 -> {
+        val n = unsent.deleteCount
+        "$n item${if (n == 1) "" else "s"} removed from this phone — sync to delete " +
+            "${if (n == 1) "it" else "them"} from your desktop."
+    }
+    else -> "${formatBytes(unsent.bytes)} to upload to your desktop."
 }
 
 private fun autoBackupConditions(wifiOnly: Boolean, requiresCharging: Boolean): String {
