@@ -718,12 +718,14 @@ class UploadManager @Inject constructor(
             md5Hash = md5,
             matchedOnPhone = localMatch != null,
         )
+        // updateActiveTransfer already adds record.fileSize to transferredBytes (delta from 0),
+        // so do NOT add it again here — doing so double-counts every dedup-skipped file and makes
+        // the byte-based progress bar race to 100% long before the file count finishes.
         updateActiveTransfer(record.id, record.fileName, record.contentUri, record.fileSize, record.fileSize, UploadStatus.COMPLETED)
         _transferState.update { st ->
             st.copy(
                 completedFiles = st.completedFiles + 1,
                 skippedFiles = st.skippedFiles + 1,
-                transferredBytes = (st.transferredBytes + record.fileSize).coerceAtMost(st.totalBytes),
                 skippedDuplicates = (listOf(skip) + st.skippedDuplicates).take(MAX_SKIPPED_BATCH),
             )
         }
