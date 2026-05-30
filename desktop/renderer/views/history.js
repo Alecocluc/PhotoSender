@@ -1,4 +1,4 @@
-import { state } from '../state.js';
+import { state, loadMoreHistory } from '../state.js';
 import {
   escHtml, entryName, entryTime,
   fmtBytes, fmtFullTime,
@@ -129,7 +129,6 @@ function renderHistory() {
   const visible = applyHistoryFilters(items);
   const hasFilters = historyUi.query.trim() || historyUi.type !== "all";
   const hasMore = !!state.history.hasMore || items.length < total;
-  const nextOffset = Number(state.history.nextOffset ?? items.length);
 
   document.querySelector("#view-root").innerHTML = `
     <div class="view-stack">
@@ -187,7 +186,7 @@ function renderHistory() {
         </div>
         ${hasMore ? `
           <div class="pagination-row">
-            <button class="btn" id="load-more-history" data-offset="${nextOffset}"><span class="icon sm">expand_more</span>Load more</button>
+            <button class="btn" id="load-more-history"><span class="icon sm">expand_more</span>Load more</button>
           </div>
         ` : ""}
       `}
@@ -218,7 +217,7 @@ function renderHistory() {
     historyUi.type = "all";
     renderHistory();
   });
-  document.querySelector("#load-more-history")?.addEventListener("click", loadMoreHistory);
+  document.querySelector("#load-more-history")?.addEventListener("click", onLoadMoreHistory);
 
   wireRowActions();
   attachThumbs(document.querySelector("#view-root"));
@@ -258,23 +257,12 @@ async function revealEntryFile(bucket, name) {
   if (!ok) showToast("That file is no longer in the download folder.", "error");
 }
 
-async function loadMoreHistory(e) {
+async function onLoadMoreHistory(e) {
   const btn = e.currentTarget;
   btn.disabled = true;
   btn.innerHTML = `<span class="icon sm">hourglass_top</span>Loading`;
   try {
-    const page = await window.api.getHistory({
-      limit: 100,
-      offset: Number(btn.dataset.offset || state.history.nextOffset || state.history.items?.length || 0),
-    });
-    const current = state.history.items || [];
-    state.history = {
-      ...page,
-      items: [...current, ...(page.items || [])],
-      totalCount: page.totalCount ?? state.history.totalCount ?? current.length,
-      nextOffset: page.nextOffset ?? (current.length + (page.items || []).length),
-      hasMore: !!page.hasMore,
-    };
+    await loadMoreHistory();
     renderHistory();
   } catch (err) {
     showToast("Could not load more history.", "error");

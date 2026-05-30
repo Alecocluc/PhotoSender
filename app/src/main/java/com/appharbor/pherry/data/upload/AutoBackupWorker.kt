@@ -48,8 +48,12 @@ class AutoBackupWorker @AssistedInject constructor(
             modifiedMs >= since && item.id !in completedIds && item.id !in queuedIds
         }
 
+        // Await the enqueue/schedule so the checkpoint only advances once these records are
+        // persisted and the worker is queued. start() would fire-and-forget on UploadManager's own
+        // scope, letting us return success — and move the checkpoint past these items — before they
+        // were durable, so a process kill at the wrong moment would skip them forever.
         if (fresh.isNotEmpty()) {
-            uploadManager.start(fresh)
+            uploadManager.enqueueAndSchedule(fresh)
         }
         appPreferences.setLastAutoBackupAt(now)
         return Result.success()

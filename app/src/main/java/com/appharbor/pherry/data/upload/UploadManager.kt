@@ -195,10 +195,18 @@ class UploadManager @Inject constructor(
             _transferState.value = TransferState(isTransferring = true, totalFiles = items.size)
         }
 
-        scope.launch {
-            enqueueRecords(items)
-            scheduleWork(ExistingWorkPolicy.APPEND_OR_REPLACE)
-        }
+        scope.launch { enqueueAndSchedule(items) }
+    }
+
+    /**
+     * Persist [items] as PENDING records and enqueue the worker, suspending until both are durable.
+     * Background callers (auto-backup) await this so they only advance their checkpoint once the
+     * work can survive process death — unlike [start], which fires-and-forgets on an internal scope.
+     */
+    suspend fun enqueueAndSchedule(items: List<MediaItem>) {
+        if (items.isEmpty()) return
+        enqueueRecords(items)
+        scheduleWork(ExistingWorkPolicy.APPEND_OR_REPLACE)
     }
 
     /** Re-arm the worker on app launch if a transfer was interrupted (process death, reboot). */

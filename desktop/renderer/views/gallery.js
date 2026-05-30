@@ -1,4 +1,4 @@
-import { state } from '../state.js';
+import { state, loadMoreHistory } from '../state.js';
 import {
   escHtml, entryName, entryTime,
   fmtBytes, fmtFullTime, fileIcon, isVideo,
@@ -53,8 +53,12 @@ function renderGallery() {
   document.querySelector("#page-title").textContent = "Gallery";
   document.querySelector("#page-tag").hidden = true;
 
-  const all = (state.history.items || []).filter((e) => isMedia(entryName(e)));
-  const total = state.history.totalCount || all.length;
+  const loaded = state.history.items || [];
+  const all = loaded.filter((e) => isMedia(entryName(e)));
+  const total = state.history.totalCount || loaded.length;
+  // Media is filtered from the paged history, which loads 100 transfers at a time. Without paging
+  // here, libraries with >100 transfers would only ever show media from the first page.
+  const hasMore = !!state.history.hasMore || loaded.length < total;
   const groups = groupByDay(all);
 
   document.querySelector("#view-root").innerHTML = `
@@ -80,10 +84,17 @@ function renderGallery() {
           </div>
         </section>
       `).join("")}
+
+      ${hasMore ? `
+        <div class="pagination-row">
+          <button class="btn" id="gallery-load-more"><span class="icon sm">expand_more</span>Load more</button>
+        </div>
+      ` : ""}
     </div>
   `;
 
   document.querySelector("#gallery-open-folder")?.addEventListener("click", () => window.api.openFolder());
+  document.querySelector("#gallery-load-more")?.addEventListener("click", onLoadMore);
 
   document.querySelectorAll(".gallery-cell").forEach((el) => {
     el.addEventListener("click", async () => {
@@ -97,6 +108,20 @@ function renderGallery() {
   });
 
   attachThumbs(document.querySelector("#view-root"));
+}
+
+async function onLoadMore(e) {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="icon sm">hourglass_top</span>Loading`;
+  try {
+    await loadMoreHistory();
+    renderGallery();
+  } catch (err) {
+    showToast("Could not load more media.", "error");
+    btn.disabled = false;
+    btn.innerHTML = `<span class="icon sm">expand_more</span>Load more`;
+  }
 }
 
 register("gallery", renderGallery);
