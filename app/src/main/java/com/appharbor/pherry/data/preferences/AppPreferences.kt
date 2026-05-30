@@ -62,7 +62,11 @@ class AppPreferences @Inject constructor(
         prefs[downloadPathKey] ?: ""
     }
 
-    /** Per-desktop pairing tokens, keyed by "host:port". Persisted so reconnects keep delete rights. */
+    /**
+     * Per-desktop pairing tokens, persisted so reconnects keep delete rights. Keyed by the desktop's
+     * stable device id so the token survives the PC's IP changing; legacy entries keyed by "host:port"
+     * are migrated onto the id on the next reconnect (see [ConnectionManager]).
+     */
     private val desktopTokens: Flow<Map<String, String>> = context.dataStore.data.map { prefs ->
         decodeTokens(prefs[desktopTokensKey])
     }
@@ -79,17 +83,33 @@ class AppPreferences @Inject constructor(
         prefs[lastAutoBackupAtKey] ?: 0L
     }
 
-    suspend fun rememberDesktopToken(endpoint: String, token: String) {
-        val key = endpoint.trim()
+    /** Store a pairing [token] under [key] (a stable device id, or an endpoint for legacy entries). */
+    suspend fun rememberDesktopToken(key: String, token: String) {
+        val k = key.trim()
         val value = token.trim()
-        if (key.isEmpty() || value.isEmpty()) return
+        if (k.isEmpty() || value.isEmpty()) return
         context.dataStore.edit { prefs ->
             val current = decodeTokens(prefs[desktopTokensKey]).toMutableMap()
-            current[key] = value
+            current[k] = value
             prefs[desktopTokensKey] = encodeTokens(current)
         }
     }
 
+    /** Drop a stored token (used to remove a stale endpoint-keyed entry once migrated to a device id). */
+    suspend fun forgetDesktopToken(key: String) {
+        val k = key.trim()
+        if (k.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val current = decodeTokens(prefs[desktopTokensKey]).toMutableMap()
+            if (current.remove(k) != null) prefs[desktopTokensKey] = encodeTokens(current)
+        }
+    }
+
+    /** Pairing token bound to a desktop's stable device id. */
+    suspend fun tokenForDevice(deviceId: String): String =
+        desktopTokens.first()[deviceId.trim()] ?: ""
+
+    /** Legacy lookup: tokens stored by "host:port" before stable-id keying. Kept for migration. */
     suspend fun tokenForEndpoint(endpoint: String): String =
         desktopTokens.first()[endpoint.trim()] ?: ""
 

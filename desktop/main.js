@@ -37,6 +37,7 @@ let settings = {
   minimizeToTray: true,
   notifyOnArrival: true,
   pairingToken: "",
+  deviceId: "",
 };
 
 /** Short, human-typeable pairing token. Kept compact so it fits the QR encoder budget. */
@@ -46,6 +47,15 @@ function generatePairingToken() {
   let out = "";
   for (let i = 0; i < 6; i++) out += alphabet[bytes[i] % alphabet.length];
   return out;
+}
+
+/**
+ * Stable, non-secret identifier for this desktop. Advertised over mDNS and returned from /health so
+ * the phone can keep its pairing token bound to the *machine* rather than its current LAN address —
+ * delete rights then survive the PC's IP changing (DHCP). Generated once and persisted.
+ */
+function generateDeviceId() {
+  return crypto.randomBytes(16).toString("hex");
 }
 
 function loadSettings() {
@@ -74,10 +84,16 @@ function loadSettings() {
   }
   if (typeof settings.minimizeToTray !== "boolean") settings.minimizeToTray = true;
   if (typeof settings.notifyOnArrival !== "boolean") settings.notifyOnArrival = true;
+  let needsSave = false;
   if (!settings.pairingToken || typeof settings.pairingToken !== "string") {
     settings.pairingToken = generatePairingToken();
-    saveSettings();
+    needsSave = true;
   }
+  if (!settings.deviceId || typeof settings.deviceId !== "string") {
+    settings.deviceId = generateDeviceId();
+    needsSave = true;
+  }
+  if (needsSave) saveSettings();
 }
 
 function saveSettings() {
@@ -163,7 +179,7 @@ function startBonjour() {
       type: "pherry",
       protocol: "tcp",
       port: settings.port,
-      txt: { host: os.hostname(), v: "1" },
+      txt: { host: os.hostname(), v: "1", id: settings.deviceId },
     });
   } catch (err) {
     console.error("mDNS publish failed:", err.message);
@@ -190,6 +206,7 @@ async function startServer() {
   const expressApp = createServer(settings.downloadPath, {
     historyStatePath,
     pairingToken: settings.pairingToken,
+    deviceId: settings.deviceId,
     onFileReceived: (entry) => {
       broadcastToRenderer("file-received", entry);
       notifyArrival(entry);

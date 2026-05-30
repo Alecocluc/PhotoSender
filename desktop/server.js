@@ -474,6 +474,9 @@ function createServer(downloadPath, options = {}) {
   // Pairing token: when set, gates the destructive endpoints (deleting/clearing) so a random
   // device on the LAN can't wipe the user's files. Empty token = open (back-compat).
   const pairingToken = String(options.pairingToken || "").trim();
+  // Stable, non-secret machine id. Returned from /health so the phone can key its pairing token by
+  // identity rather than IP, keeping delete rights across DHCP address changes.
+  const deviceId = String(options.deviceId || "").trim();
   loadHistoryState();
   saveHistoryState();
 
@@ -503,7 +506,7 @@ function createServer(downloadPath, options = {}) {
 
   // Health check
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", serverName: os.hostname() });
+    res.json({ status: "ok", serverName: os.hostname(), deviceId });
   });
 
   // Server status / stats

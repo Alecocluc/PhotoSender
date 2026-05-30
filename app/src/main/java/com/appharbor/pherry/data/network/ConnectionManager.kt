@@ -75,23 +75,44 @@ class ConnectionManager @Inject constructor(
         _connectedEndpoint.value = target.endpoint
 
         scope.launch {
-            // Resolve a token: prefer one carried in the (QR) payload, otherwise a previously
-            // stored one for this endpoint. Persist QR tokens so future reconnects keep delete rights.
-            val token = target.token.ifBlank { appPreferences.tokenForEndpoint(target.endpoint) }
-            session.token = token
-            if (target.token.isNotBlank()) {
-                appPreferences.rememberDesktopToken(target.endpoint, target.token)
-            }
-
-            if (performHealthCheck(target, silent)) {
+            // The health check is token-less, so probe first to learn the desktop's stable id, then
+            // resolve the pairing token by that id. This keeps delete rights working after the PC's
+            // IP changes — a token stored under the old endpoint would otherwise be missed.
+            val health = performHealthCheck(target, silent)
+            if (health != null) {
+                session.token = resolveToken(target, health.deviceId)
                 _connectionState.value = ConnectionState.CONNECTED
                 startMonitor(target)
             } else {
+                session.token = ""
                 _connectionState.value = ConnectionState.DISCONNECTED
                 _connectedIp.value = ""
                 _connectedEndpoint.value = ""
             }
         }
+    }
+
+    /**
+     * Pick the pairing token for this connection and bind it to the desktop's stable [deviceId] so
+     * it survives the PC's IP changing. Priority: a token from the (QR) payload, then one already
+     * stored for this id, then a legacy token keyed by the endpoint — which is migrated onto the id
+     * and the stale endpoint entry dropped. Old desktops that report no id fall back to endpoint keying.
+     */
+    private suspend fun resolveToken(target: ConnectionTarget, deviceId: String): String {
+        if (target.token.isNotBlank()) {
+            appPreferences.rememberDesktopToken(deviceId.ifBlank { target.endpoint }, target.token)
+            return target.token
+        }
+        if (deviceId.isBlank()) return appPreferences.tokenForEndpoint(target.endpoint)
+
+        appPreferences.tokenForDevice(deviceId).takeIf { it.isNotBlank() }?.let { return it }
+
+        val legacy = appPreferences.tokenForEndpoint(target.endpoint)
+        if (legacy.isNotBlank()) {
+            appPreferences.rememberDesktopToken(deviceId, legacy)
+            appPreferences.forgetDesktopToken(target.endpoint)
+        }
+        return legacy
     }
 
     fun disconnect() {
@@ -121,7 +142,7 @@ class ConnectionManager @Inject constructor(
                 delay(interval)
                 if (userDisconnected) break
 
-                if (performHealthCheck(target, silent = true)) {
+                if (performHealthCheck(target, silent = true) != null) {
                     failures = 0
                     backoff = INITIAL_BACKOFF_MS
                     _connectionError.value = null
@@ -147,7 +168,10 @@ class ConnectionManager @Inject constructor(
         }
     }
 
-    private fun performHealthCheck(target: ConnectionTarget, silent: Boolean): Boolean {
+    /** Successful /health response: the desktop's display name and its stable device id (may be blank). */
+    private data class HealthResult(val serverName: String, val deviceId: String)
+
+    private fun performHealthCheck(target: ConnectionTarget, silent: Boolean): HealthResult? {
         return try {
             val request = Request.Builder()
                 .url("${target.baseUrl}/health")
@@ -156,21 +180,20 @@ class ConnectionManager @Inject constructor(
             okHttpClient.newCall(request).execute().use { response ->
                 if (response.isSuccessful) {
                     val body = response.body?.string() ?: ""
-                    _serverName.value = try {
-                        JSONObject(body).optString("serverName", "Desktop")
-                    } catch (_: Exception) {
-                        "Desktop"
-                    }
-                    true
+                    val json = runCatching { JSONObject(body) }.getOrNull()
+                    val name = json?.optString("serverName", "Desktop")?.takeIf { it.isNotBlank() } ?: "Desktop"
+                    val deviceId = json?.optString("deviceId", "")?.trim().orEmpty()
+                    _serverName.value = name
+                    HealthResult(name, deviceId)
                 } else {
-                    false
+                    null
                 }
             }
         } catch (e: Exception) {
             if (!silent) {
                 _connectionError.value = "Could not reach server: ${e.localizedMessage ?: "unknown error"}"
             }
-            false
+            null
         }
     }
 
@@ -185,8 +208,8 @@ class ConnectionManager @Inject constructor(
         }
         val last = appPreferences.lastIpAddress.first()
         val target = parseConnectionTarget(last) ?: return false
-        session.token = appPreferences.tokenForEndpoint(target.endpoint)
-        if (!performHealthCheck(target, silent = true)) return false
+        val health = performHealthCheck(target, silent = true) ?: return false
+        session.token = resolveToken(target, health.deviceId)
         userDisconnected = false
         _connectedIp.value = target.host
         _connectedEndpoint.value = target.endpoint
