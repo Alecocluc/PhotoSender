@@ -419,6 +419,21 @@ ipcMain.handle("get-local-ips", () => getLocalIPs());
 
 ipcMain.handle("get-settings", () => ({ ...settings }));
 
+// Generate a fresh pairing code and restart the receiver so the new token immediately gates
+// destructive routes. Paired phones keep working for uploads but must re-scan the QR to regain
+// delete/clean rights — that's the point of rotating (e.g. after sharing the code with a guest).
+ipcMain.handle("rotate-pairing-token", async () => {
+  settings.pairingToken = generatePairingToken();
+  saveSettings();
+  try {
+    await startServer();
+  } catch (err) {
+    return { success: false, error: err.message, pairingToken: settings.pairingToken };
+  }
+  refreshTray();
+  return { success: true, pairingToken: settings.pairingToken };
+});
+
 ipcMain.handle("update-settings", async (_e, patch = {}) => {
   const prev = { ...settings };
   const next = { ...settings };

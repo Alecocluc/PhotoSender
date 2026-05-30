@@ -1,8 +1,10 @@
 package com.appharbor.pherry
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -67,6 +69,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -79,6 +82,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.preferences.ThemeMode
+import com.appharbor.pherry.data.share.ShareIntakeBus
 import com.appharbor.pherry.navigation.Screen
 import com.appharbor.pherry.ui.activity.ActivityScreen
 import com.appharbor.pherry.ui.components.ConnectionStatusChip
@@ -89,9 +93,12 @@ import com.appharbor.pherry.ui.gallery.FolderDetailScreen
 import com.appharbor.pherry.ui.gallery.GalleryScreen
 import com.appharbor.pherry.ui.onboarding.OnboardingScreen
 import com.appharbor.pherry.ui.settings.SettingsScreen
+import com.appharbor.pherry.ui.share.ShareImportSheet
+import com.appharbor.pherry.ui.share.ShareImportViewModel
 import com.appharbor.pherry.ui.theme.PherryTheme
 import com.appharbor.pherry.ui.theme.Spacing
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 import kotlinx.coroutines.launch
 
 data class BottomNavItem(
@@ -104,12 +111,17 @@ data class BottomNavItem(
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
+    @Inject lateinit var shareIntakeBus: ShareIntakeBus
+
     private val requestNotificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* best-effort */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Only read the launch intent on a fresh start — a config-change recreation would otherwise
+        // re-surface the same share. Warm shares come through onNewIntent.
+        if (savedInstanceState == null) handleIncomingShare(intent)
         setContent {
             PherryApp(
                 onBeforeTransfer = ::maybeRequestNotificationPermission,
@@ -123,6 +135,29 @@ class MainActivity : ComponentActivity() {
                 }
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingShare(intent)
+    }
+
+    /** Pull shared media out of an ACTION_SEND(_MULTIPLE) intent and hand it to the review sheet. */
+    private fun handleIncomingShare(intent: Intent?) {
+        if (intent == null) return
+        val uris: List<Uri> = when (intent.action) {
+            Intent.ACTION_SEND ->
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                    ?.let { listOf(it) }
+                    .orEmpty()
+            Intent.ACTION_SEND_MULTIPLE ->
+                IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                    ?.filterNotNull()
+                    .orEmpty()
+            else -> emptyList()
+        }
+        if (uris.isNotEmpty()) shareIntakeBus.submit(uris)
     }
 
     private fun maybeRequestNotificationPermission() {
@@ -149,6 +184,9 @@ fun PherryApp(
     val connectionState by mainViewModel.connectionState.collectAsStateWithLifecycle()
     val serverName by mainViewModel.serverName.collectAsStateWithLifecycle()
     val onboardingCompleted by mainViewModel.onboardingCompleted.collectAsStateWithLifecycle()
+
+    val shareViewModel: ShareImportViewModel = hiltViewModel()
+    val pendingShare by shareViewModel.pendingUris.collectAsStateWithLifecycle()
 
     val isSystemDark = isSystemInDarkTheme()
     val darkTheme = when (themeMode) {
@@ -218,6 +256,31 @@ fun PherryApp(
                             showConnectSheet = false
                         }
                     }
+                )
+            }
+        }
+
+        // Media shared into Pherry from another app. Hidden while the connect sheet is open so the
+        // user can pair first; the request persists, so this re-appears (now connected) afterwards.
+        val shareSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        if (pendingShare.isNotEmpty() && !showConnectSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { shareViewModel.cancel() },
+                sheetState = shareSheetState,
+                containerColor = MaterialTheme.colorScheme.surface,
+            ) {
+                ShareImportSheet(
+                    onConnect = { showConnectSheet = true },
+                    onSent = {
+                        navController.navigate(Screen.Activity.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    onBeforeTransfer = onBeforeTransfer,
+                    onDismiss = { shareViewModel.cancel() },
+                    viewModel = shareViewModel,
                 )
             }
         }

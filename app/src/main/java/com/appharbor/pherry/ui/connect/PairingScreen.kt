@@ -1,6 +1,7 @@
 package com.appharbor.pherry.ui.connect
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Link
@@ -35,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.appharbor.pherry.data.model.ConnectionState
+import com.appharbor.pherry.data.network.DiscoveredDesktop
 import com.appharbor.pherry.ui.components.PherryWordmark
 import com.appharbor.pherry.ui.components.PrimaryButton
 import com.appharbor.pherry.ui.theme.Spacing
@@ -70,8 +74,15 @@ fun PairingScreen(
     val ipError by viewModel.ipError.collectAsStateWithLifecycle()
     val connectionError by viewModel.connectionError.collectAsStateWithLifecycle()
     val recentTargets by viewModel.recentDesktopTargets.collectAsStateWithLifecycle()
+    val nearbyDesktops by viewModel.nearbyDesktops.collectAsStateWithLifecycle()
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
+
+    // Discover "_pherry._tcp" desktops on the LAN while this first-run screen is open.
+    DisposableEffect(Unit) {
+        viewModel.startDiscovery()
+        onDispose { viewModel.stopDiscovery() }
+    }
 
     fun launchQrScanner() {
         val options = GmsBarcodeScannerOptions.Builder()
@@ -136,6 +147,36 @@ fun PairingScreen(
                     Text("Continue to Library", fontWeight = FontWeight.SemiBold)
                 }
             } else {
+                if (nearbyDesktops.isNotEmpty()) {
+                    Spacer(Modifier.height(Spacing.lg))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.Wifi,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(Modifier.width(Spacing.xs))
+                        Text(
+                            text = "Nearby desktops",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                    Spacer(Modifier.height(Spacing.sm))
+                    nearbyDesktops.forEach { desktop ->
+                        NearbyDesktopRow(
+                            desktop = desktop,
+                            onClick = {
+                                focusManager.clearFocus()
+                                viewModel.onDiscoveredSelected(desktop)
+                            },
+                        )
+                        Spacer(Modifier.height(Spacing.xs))
+                    }
+                }
+
                 Spacer(Modifier.height(Spacing.lg))
                 val addressError = ipError ?: connectionError
                 OutlinedTextField(
@@ -233,6 +274,52 @@ fun PairingScreen(
 
             Spacer(Modifier.height(Spacing.xxl))
         }
+    }
+}
+
+@Composable
+private fun NearbyDesktopRow(
+    desktop: DiscoveredDesktop,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .clickable(onClick = onClick)
+            .padding(Spacing.md),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Computer,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .size(36.dp)
+                .clip(MaterialTheme.shapes.small)
+                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f))
+                .padding(8.dp),
+        )
+        Spacer(Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = desktop.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = desktop.endpoint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }
 

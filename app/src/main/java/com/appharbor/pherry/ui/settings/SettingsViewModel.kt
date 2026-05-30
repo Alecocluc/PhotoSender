@@ -83,16 +83,23 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun onAutoBackupChanged(enabled: Boolean) {
+    /**
+     * Turn on auto-backup. [includeExisting] decides the starting point: when true the checkpoint is
+     * reset to the epoch so the next run sweeps the whole existing library; when false it starts from
+     * "now", so only media added afterwards is sent.
+     */
+    fun enableAutoBackup(includeExisting: Boolean) {
         viewModelScope.launch {
-            appPreferences.setAutoBackupEnabled(enabled)
-            if (enabled) {
-                // Only back up photos taken from now on, not the whole existing library.
-                appPreferences.setLastAutoBackupAt(System.currentTimeMillis())
-                backupScheduler.schedule(appPreferences.autoBackupRequiresCharging.first())
-            } else {
-                backupScheduler.cancel()
-            }
+            appPreferences.setAutoBackupEnabled(true)
+            appPreferences.setLastAutoBackupAt(if (includeExisting) 0L else System.currentTimeMillis())
+            backupScheduler.schedule(appPreferences.autoBackupRequiresCharging.first())
+        }
+    }
+
+    fun disableAutoBackup() {
+        viewModelScope.launch {
+            appPreferences.setAutoBackupEnabled(false)
+            backupScheduler.cancel()
         }
     }
 

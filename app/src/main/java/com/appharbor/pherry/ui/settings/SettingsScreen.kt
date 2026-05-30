@@ -22,10 +22,15 @@ import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.outlined.Brightness4
 import androidx.compose.material.icons.outlined.Brightness6
 import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +60,33 @@ fun SettingsScreen(
     val keepScreenAwake by viewModel.keepScreenAwake.collectAsStateWithLifecycle()
     val defaultUploadModeName by viewModel.defaultUploadMode.collectAsStateWithLifecycle()
     val defaultUploadMode = UploadMode.entries.firstOrNull { it.name == defaultUploadModeName } ?: UploadMode.ADD
+
+    var showAutoBackupDialog by remember { mutableStateOf(false) }
+
+    if (showAutoBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { showAutoBackupDialog = false },
+            title = { Text("Turn on auto-backup") },
+            text = {
+                Text(
+                    "New photos and videos will be sent to your desktop automatically over Wi-Fi. " +
+                        "Should Pherry also back up your existing library, or only media added from now on?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.enableAutoBackup(includeExisting = true)
+                    showAutoBackupDialog = false
+                }) { Text("Back up everything") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.enableAutoBackup(includeExisting = false)
+                    showAutoBackupDialog = false
+                }) { Text("Only new media") }
+            },
+        )
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -164,7 +196,9 @@ fun SettingsScreen(
                     title = "Auto-backup",
                     subtitle = "Send new photos to your desktop automatically over Wi-Fi",
                     checked = autoBackupEnabled,
-                    onCheckedChange = viewModel::onAutoBackupChanged,
+                    onCheckedChange = { enabled ->
+                        if (enabled) showAutoBackupDialog = true else viewModel.disableAutoBackup()
+                    },
                 )
                 if (autoBackupEnabled) {
                     Spacer(Modifier.height(Spacing.sm))

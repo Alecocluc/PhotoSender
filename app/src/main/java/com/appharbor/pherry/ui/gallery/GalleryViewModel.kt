@@ -155,11 +155,18 @@ class GalleryViewModel @Inject constructor(
             if (selectedItems.isNotEmpty()) {
                 uploadManager.start(selectedItems)
             }
+            // Clear the selection once it's queued so it doesn't linger across folders/filters and
+            // get accidentally re-sent on the next transfer.
+            _selectedIds.value = emptySet()
         }
     }
 
     fun setMode(mode: UploadMode) {
+        if (_uploadMode.value == mode) return
         _uploadMode.value = mode
+        // The two modes don't share a selection model (Sync diffs the whole library), so drop any
+        // pending Add-mode selection when switching to avoid a stale action bar.
+        _selectedIds.value = emptySet()
     }
 
     /** Compute the whole-library sync diff and surface it for confirmation. */

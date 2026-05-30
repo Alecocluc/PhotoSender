@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("api", {
   openFolder: (p) => ipcRenderer.invoke("open-folder", p),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   updateSettings: (patch) => ipcRenderer.invoke("update-settings", patch),
+  rotatePairingToken: () => ipcRenderer.invoke("rotate-pairing-token"),
 
   // Files (thumbnails + reveal/open in OS file manager)
   getThumbnail: (opts) => ipcRenderer.invoke("get-thumbnail", opts),

@@ -67,7 +67,10 @@ function renderSettings() {
               <strong>Pairing code</strong>
               <span>Required on the phone to remove files from this PC. Embedded in the QR code; share manually only if you trust the device.</span>
             </div>
-            <span class="pairing-code">${escHtml(s.pairingToken || "—")}</span>
+            <div class="row-flex">
+              <span class="pairing-code">${escHtml(s.pairingToken || "—")}</span>
+              <button class="btn" id="rotate-token" title="Generate a new code and revoke the old one"><span class="icon sm">autorenew</span>Rotate</button>
+            </div>
           </div>
         </div>
       </section>
@@ -197,6 +200,17 @@ function renderSettings() {
   document.querySelector("#opt-launch")?.addEventListener("change", async (e) => {
     await window.api.updateSettings({ launchAtStartup: e.target.checked });
     await refreshSettings();
+  });
+
+  document.querySelector("#rotate-token")?.addEventListener("click", async () => {
+    const res = await window.api.rotatePairingToken();
+    await refreshSettings();
+    if (res?.success) {
+      showToast("New pairing code generated. Re-scan the QR on your phone to keep delete access.");
+    } else {
+      showToast("Couldn't rotate the pairing code: " + (res?.error || "unknown error"), "error");
+    }
+    rerender();
   });
 
   document.querySelector("#export-history-settings")?.addEventListener("click", exportHistory);
