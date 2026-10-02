@@ -8,11 +8,14 @@ import com.appharbor.pherry.data.upload.TransferState
 import com.appharbor.pherry.data.upload.UploadManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class TransferViewModel @Inject constructor(
     private val uploadManager: UploadManager,
@@ -29,12 +32,14 @@ class TransferViewModel @Inject constructor(
     val serverName: StateFlow<String> = connectionManager.serverName
 
     /** Files queued in the database (pending or mid-upload), including ones left by a stopped run. */
-    val queuedCount: StateFlow<Int> = uploadRecordDao.getQueuedCount()
+    val queuedCount: StateFlow<Int> = connectionManager.receiverIdentity.flatMapLatest { target ->
+        if (target == null) flowOf(0) else uploadRecordDao.getQueuedCount(target.deviceId, target.libraryId)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     /** Stop the running transfer. Unsent files stay queued. */
     fun cancelTransfer() = uploadManager.cancelTransfer()
 
     /** Restart a queue that was stopped or interrupted. */
-    fun resumeQueued() = uploadManager.resumeIfPending()
+    fun resumeQueued() = uploadManager.resumeTransfer()
 }

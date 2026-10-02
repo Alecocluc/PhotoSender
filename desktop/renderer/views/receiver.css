@@ -5,6 +5,29 @@
   gap: 32px;
   align-items: start;
 }
+.receiver.ticket-collapsed { grid-template-columns: minmax(0, 1fr); }
+#pairing-panel[hidden] { display: none; }
+.receiver-jobs, .receiver-receipts { display: grid; gap: 14px; }
+.receiver-jobs:empty, .receiver-receipts:empty { display: none; }
+.job.receiver-job { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.receiver-job .job-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.receiver-job .job-top .mono { font-size: 13px; overflow-wrap: anywhere; }
+.receiver-job .job-top .label { color: var(--on-yellow-2); }
+.receiver-job .job-count .unit { white-space: nowrap; }
+.receiver-job .job-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.receiver-job .job-facts dd { white-space: normal; overflow-wrap: anywhere; }
+.receiver-job .job-facts .wide { max-width: none; }
+.job-warning { margin: 0; font-size: 13px; line-height: 1.5; border-top: 1px solid rgba(21,20,18,.25); padding-top: 12px; }
+.capacity-note { color: var(--ink-3); font-size: 12.5px; }
+.receipt { border: 1px solid var(--rule); border-radius: var(--r); background: var(--sheet); }
+.receipt summary { display: flex; gap: 12px; align-items: center; padding: 15px 18px; cursor: pointer; list-style: none; }
+.receipt summary > span:nth-child(2) { flex: 1; display: grid; gap: 3px; min-width: 0; }
+.receipt summary strong { font-size: 14px; }.receipt summary span span { color: var(--ink-3); font-size: 12px; }
+.receipt-icon { color: var(--ink-2); }.receipt.needs-attention .receipt-icon { color: var(--red); }.receipt-body { border-top: 1px dashed var(--rule); padding: 16px 18px; }
+.receipt-body dl { display: grid; gap: 9px; margin: 0 0 16px; }.receipt-body dl div { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; font-size: 12px; }
+.receipt-body dt { color: var(--ink-3); }.receipt-body dd { margin: 0; overflow-wrap: anywhere; }
+.stream-note { display: flex; gap: 12px; align-items: center; padding: 16px; border: 1px solid var(--rule); }
+.stream-note > span { display: grid; gap: 4px; font-size: 13px; }.stream-note .mono { color: var(--ink-3); font-size: 12px; }
 .receiver .notice { margin-bottom: 20px; }
 .view-head + .notice { margin-bottom: 22px; }
 

@@ -10,4 +10,10 @@ data class MediaItem(
     val dateModified: Long,
     val mimeType: String,
     val bucketName: String,
+    val generationModified: Long = 0,
+    val mediaStoreVersion: String = "",
 )
+
+/** An ID identifies a row, not the contents of that row. */
+val MediaItem.sourceVersion: String
+    get() = "$mediaStoreVersion:$generationModified:$dateModified:$size"

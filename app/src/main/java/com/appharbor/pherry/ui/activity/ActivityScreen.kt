@@ -46,6 +46,7 @@ fun ActivityScreen(
     onOpenLibrary: () -> Unit,
     onConnectClick: () -> Unit,
     onBeforeTransfer: () -> Unit = {},
+    showHistory: Boolean = false,
 ) {
     val transferViewModel: TransferViewModel = hiltViewModel()
     val historyViewModel: HistoryViewModel = hiltViewModel()
@@ -56,6 +57,7 @@ fun ActivityScreen(
     val queuedCount by transferViewModel.queuedCount.collectAsStateWithLifecycle()
     val connectionState by historyViewModel.connectionState.collectAsStateWithLifecycle()
     val completedCount by historyViewModel.completedCount.collectAsStateWithLifecycle()
+    val historyCount by historyViewModel.historyCount.collectAsStateWithLifecycle()
     val failedCount by historyViewModel.failedCount.collectAsStateWithLifecycle()
     val totalBytes by historyViewModel.totalTransferredBytes.collectAsStateWithLifecycle()
     val lastSentAt by historyViewModel.lastSyncTimestamp.collectAsStateWithLifecycle()
@@ -73,8 +75,11 @@ fun ActivityScreen(
     var tab by rememberSaveable { mutableStateOf(TransfersTab.Now) }
     // The tab is restored on every visit; a running job always brings Now forward, so "Back up", "Send",
     // "Resume" and "See transfer" land on the job they started even if History was open last time.
+    LaunchedEffect(showHistory) {
+        tab = if (showHistory) TransfersTab.History else TransfersTab.Now
+    }
     LaunchedEffect(transfer.isTransferring) {
-        if (transfer.isTransferring) tab = TransfersTab.Now
+        if (transfer.isTransferring && !showHistory) tab = TransfersTab.Now
     }
     val nowListState = rememberLazyListState()
     val historyListState = rememberLazyListState()
@@ -94,7 +99,7 @@ fun ActivityScreen(
                 transfer = transfer,
                 queuedCount = queuedCount,
                 failedCount = failedCount,
-                computer = computer,
+                computer = transfer.destinationName.ifBlank { computer },
                 connected = connected,
                 listState = nowListState,
                 onStop = transferViewModel::cancelTransfer,
@@ -114,6 +119,7 @@ fun ActivityScreen(
             TransfersTab.History -> TransfersHistory(
                 records = records,
                 completedCount = completedCount,
+                historyCount = historyCount,
                 failedCount = failedCount,
                 totalBytes = totalBytes,
                 lastSentAt = lastSentAt,
@@ -126,6 +132,10 @@ fun ActivityScreen(
                 onCheck = {
                     onBeforeTransfer()
                     historyViewModel.verifyBackup()
+                },
+                onAudit = {
+                    onBeforeTransfer()
+                    historyViewModel.auditBackup()
                 },
                 onRetry = {
                     onBeforeTransfer()

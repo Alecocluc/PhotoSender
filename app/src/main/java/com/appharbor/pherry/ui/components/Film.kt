@@ -166,8 +166,8 @@ fun BoxScope.GreaseRing(visible: Boolean, number: Int?) {
                 // Built once per size and pick. Per frame only the stretch drawn so far is cut again.
                 val measure = PathMeasure().apply { setPath(greaseRingPath(size, seed), false) }
                 val length = measure.length
-                val width = 3.5.dp.toPx()
-                val halo = 2.4.dp.toPx()
+                val width = 1.75.dp.toPx()
+                val halo = 1.dp.toPx()
                 val whole = Array(PenPasses.size) { k ->
                     Path().also { measure.getSegment(length * PenPasses[k].from, length * PenPasses[k].to, it, true) }
                 }
@@ -259,8 +259,8 @@ private fun greaseRingPath(size: Size, seed: Int): Path {
     val p3 = pick(0f, Tau)
     val a4 = pick(0.008f, 0.014f)
     val p4 = pick(0f, Tau)
-    val rx = size.width * 0.39f
-    val ry = size.height * pick(0.355f, 0.375f)
+    val rx = size.width * 0.435f
+    val ry = size.height * pick(0.405f, 0.425f)
     val cx = size.width / 2f
     val cy = size.height / 2f
     val cosTilt = cos(tilt)

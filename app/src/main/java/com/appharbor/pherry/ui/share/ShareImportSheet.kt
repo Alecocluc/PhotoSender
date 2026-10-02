@@ -47,7 +47,6 @@ import com.appharbor.pherry.ui.theme.Spacing
 @Composable
 fun ShareImportSheet(
     onConnect: () -> Unit,
-    onSent: () -> Unit,
     onBeforeTransfer: () -> Unit,
     onDismiss: () -> Unit,
     viewModel: ShareImportViewModel = hiltViewModel(),
@@ -57,6 +56,8 @@ fun ShareImportSheet(
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val serverName by viewModel.serverName.collectAsStateWithLifecycle()
     val isSending by viewModel.isSending.collectAsStateWithLifecycle()
+    val failures by viewModel.failures.collectAsStateWithLifecycle()
+    val queuedCount by viewModel.queuedCount.collectAsStateWithLifecycle()
 
     val c = PherryTheme.colors
     val connected = connectionState == ConnectionState.CONNECTED
@@ -89,6 +90,18 @@ fun ShareImportSheet(
         )
 
         Spacer(Modifier.height(Spacing.lg))
+
+        if (failures.isNotEmpty()) {
+            Notice(
+                title = "${Fmt.plural(failures.size, "file")} could not be prepared",
+                detail = buildString {
+                    if (queuedCount > 0) append("$queuedCount files were queued successfully. ")
+                    append(failures.take(3).joinToString("\n") { "${it.name}: ${it.reason}" })
+                    if (failures.size > 3) append("\nAnd ${failures.size - 3} more. Retry keeps the successful files queued.")
+                },
+            )
+            Spacer(Modifier.height(Spacing.lg))
+        }
 
         when {
             loading -> PlaceholderStrip(count = pendingUris.size.coerceIn(1, 6))
@@ -142,12 +155,13 @@ fun ShareImportSheet(
             PrintButton(
                 text = when {
                     isSending -> "Preparing…"
+                    failures.isNotEmpty() -> "Retry ${Fmt.count(failures.size)}"
                     preview.count > 0 -> "Send ${Fmt.count(preview.count)}"
                     else -> "Send"
                 },
                 onClick = {
                     onBeforeTransfer()
-                    viewModel.confirmSend(onQueued = onSent)
+                    viewModel.confirmSend()
                 },
                 icon = Ph.Send,
                 enabled = connected && preview.count > 0 && !loading && !isSending,
@@ -166,7 +180,7 @@ fun ShareImportSheet(
         if (!nothingToSend) {
             Spacer(Modifier.height(Spacing.md))
             Text(
-                text = "They land in the Shared folder on your computer. Anything already there is skipped.",
+                text = "They land in this phone's Shared folder on your computer. Anything already there is skipped.",
                 style = MaterialTheme.typography.bodySmall,
                 color = c.ink2,
             )

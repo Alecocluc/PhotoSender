@@ -42,6 +42,7 @@ import com.appharbor.pherry.data.db.UploadStatus
 import com.appharbor.pherry.data.upload.DedupSkip
 import com.appharbor.pherry.data.upload.FileTransferProgress
 import com.appharbor.pherry.data.upload.TransferState
+import com.appharbor.pherry.data.upload.TransferPhase
 import com.appharbor.pherry.ui.components.EdgeText
 import com.appharbor.pherry.ui.components.EmptyStrip
 import com.appharbor.pherry.ui.components.Envelope
@@ -72,7 +73,7 @@ private const val SHOWN_SKIPS = 3
  * (stopped, or interrupted); [Queued] is queued work with no batch in memory (after a restart).
  * [Disconnected] is either of those while the computer is unreachable: resuming can't work yet.
  */
-private enum class JobPhase { Starting, Sending, Paused, Disconnected, Finished, Queued }
+internal enum class JobPhase { Starting, Sending, Verifying, Waiting, Paused, Disconnected, Finished, Failed, Queued }
 
 /** The in-memory batch split by status in one pass (a batch can hold 20,000+ files). */
 private class BatchBreakdown(
@@ -97,14 +98,18 @@ private fun breakdown(active: List<FileTransferProgress>): BatchBreakdown {
 }
 
 /** Null when there is nothing to show at all. */
-private fun jobPhase(transfer: TransferState, queuedCount: Int, connected: Boolean): JobPhase? = when {
-    transfer.isTransferring && transfer.activeTransfers.isEmpty() -> JobPhase.Starting
-    transfer.isTransferring -> JobPhase.Sending
-    transfer.totalFiles > 0 && transfer.completedFiles + transfer.failedFiles < transfer.totalFiles ->
-        if (connected) JobPhase.Paused else JobPhase.Disconnected
-    transfer.totalFiles > 0 -> JobPhase.Finished
-    queuedCount > 0 -> if (connected) JobPhase.Queued else JobPhase.Disconnected
-    else -> null
+internal fun jobPhase(transfer: TransferState, queuedCount: Int, connected: Boolean): JobPhase? = when (transfer.phase) {
+    TransferPhase.PREPARING -> JobPhase.Starting
+    TransferPhase.UPLOADING -> JobPhase.Sending
+    TransferPhase.VERIFYING -> JobPhase.Verifying
+    TransferPhase.WAITING_FOR_NETWORK -> JobPhase.Waiting
+    TransferPhase.WAITING_FOR_COMPUTER -> JobPhase.Disconnected
+    TransferPhase.PAUSED -> JobPhase.Paused
+    TransferPhase.COMPLETE -> JobPhase.Finished
+    TransferPhase.FAILED -> JobPhase.Failed
+    TransferPhase.IDLE -> if (queuedCount > 0) {
+        if (connected) JobPhase.Queued else JobPhase.Disconnected
+    } else null
 }
 
 /** Queued work with no batch in memory: the envelope shows the queued count, not batch progress. */
@@ -157,7 +162,7 @@ internal fun TransfersNow(
                     connected = connected,
                     onStop = {
                         onStop()
-                        scope.launch { snackbar.showSnackbar("Stopped. The rest stay queued until you resume.") }
+                        scope.launch { snackbar.showSnackbar("Paused. The remaining files stay queued until you resume.") }
                     },
                     onResume = {
                         onBeforeTransfer()
@@ -167,7 +172,7 @@ internal fun TransfersNow(
                 )
             }
 
-            if (batch.uploading.isNotEmpty()) {
+            if (batch.uploading.isNotEmpty() && phase in setOf(JobPhase.Starting, JobPhase.Sending, JobPhase.Verifying)) {
                 item(key = "line-head") {
                     SectionHeading("On the line now", modifier = Modifier.padding(top = Spacing.xl))
                 }
@@ -179,8 +184,8 @@ internal fun TransfersNow(
             if (!showsQueueOnly(phase, transfer)) {
                 item(key = "ledger") {
                     BatchLedger(
-                        waiting = if (transfer.activeTransfers.isNotEmpty()) batch.pending else queuedCount,
-                        sendingNow = batch.uploading.size,
+                        waiting = (transfer.pendingFiles - if (transfer.isTransferring) batch.uploading.size else 0).coerceAtLeast(0),
+                        sendingNow = if (transfer.isTransferring) batch.uploading.size else 0,
                         sent = (transfer.completedFiles - transfer.skippedFiles).coerceAtLeast(0),
                         alreadyThere = transfer.skippedFiles,
                         failed = transfer.failedFiles,
@@ -199,9 +204,9 @@ internal fun TransfersNow(
                 FailedRow(file)
                 Hairline()
             }
-            if (batch.failed.size > MAX_FAILED_ROWS) {
+            if (transfer.failedFiles > MAX_FAILED_ROWS) {
                 item(key = "failed-more") {
-                    MoreLine("and ${Fmt.count(batch.failed.size - MAX_FAILED_ROWS)} more")
+                    MoreLine("and ${Fmt.count(transfer.failedFiles - MAX_FAILED_ROWS)} more")
                 }
             }
         }
@@ -251,7 +256,7 @@ private fun JobEnvelope(
 ) {
     val c = PherryTheme.colors
     val progress by animateFloatAsState(transfer.progressPercent.coerceIn(0f, 1f), tween(300), label = "job-progress")
-    val busy = phase == JobPhase.Starting || phase == JobPhase.Sending
+    val busy = phase in setOf(JobPhase.Starting, JobPhase.Sending, JobPhase.Verifying)
     val queueOnly = showsQueueOnly(phase, transfer)
 
     // Worked out first so the lamp can announce how the job ended. A queue with no batch has no outcome yet.
@@ -259,7 +264,7 @@ private fun JobEnvelope(
         if (transfer.failedFiles > 0) add("${Fmt.count(transfer.failedFiles)} failed")
         if (transfer.skippedFiles > 0) add("${Fmt.count(transfer.skippedFiles)} already on $computer")
     }
-    val note = when {
+    val note = transfer.message?.takeIf { it.isNotBlank() } ?: when {
         // Only this batch is known to be done: other queued or failed files may still exist.
         phase == JobPhase.Finished && transfer.failedFiles == 0 -> "Everything in this batch is on $computer."
         phase == JobPhase.Paused && queuedCount > 0 -> "${Fmt.plural(queuedCount, "file")} still to send."
@@ -269,7 +274,11 @@ private fun JobEnvelope(
         else -> null
     }
     val label = when (phase) {
-        JobPhase.Starting, JobPhase.Sending -> "Sending to $computer"
+        JobPhase.Starting -> "Preparing backup to $computer"
+        JobPhase.Sending -> "Sending to $computer"
+        JobPhase.Verifying -> "Verifying files on $computer"
+        JobPhase.Waiting -> "Waiting for an unmetered network"
+        JobPhase.Failed -> "Backup needs attention"
         JobPhase.Paused -> "Paused"
         JobPhase.Disconnected -> "Not connected to $computer"
         JobPhase.Finished -> "Finished"
@@ -277,14 +286,17 @@ private fun JobEnvelope(
     }
     // The only live region on this screen: it speaks when the job changes phase, never on each tick.
     val announcement = when (phase) {
-        JobPhase.Starting, JobPhase.Sending, JobPhase.Queued -> label
+        JobPhase.Starting, JobPhase.Sending, JobPhase.Verifying, JobPhase.Waiting, JobPhase.Failed, JobPhase.Queued -> listOfNotNull(label, note).joinToString(". ")
         JobPhase.Paused, JobPhase.Disconnected -> listOfNotNull(label, note).joinToString(". ")
         JobPhase.Finished -> listOfNotNull(label, outcome.joinToString(", ").ifEmpty { null }, note).joinToString(". ")
     }
     // The data line under the count: state and destination first, then the numbers.
     val data = buildList {
         when (phase) {
-            JobPhase.Starting -> add("Starting…")
+            JobPhase.Starting -> add("Preparing…")
+            JobPhase.Verifying -> add("Verifying")
+            JobPhase.Waiting -> add("Waiting for network")
+            JobPhase.Failed -> add("Needs attention")
             JobPhase.Paused -> add("Paused")
             JobPhase.Finished -> add("Finished")
             else -> Unit
@@ -373,9 +385,16 @@ private fun JobEnvelope(
         }
 
         when {
-            busy -> {
+            phase == JobPhase.Disconnected && transfer.phase == TransferPhase.WAITING_FOR_COMPUTER -> {
                 Spacer(Modifier.height(Spacing.lg))
-                PrintButton("Stop", onClick = onStop, style = PrintButtonStyle.Outline, icon = Ph.Stop, onEnvelope = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                    PrintButton("Pause", onClick = onStop, style = PrintButtonStyle.Outline, icon = Ph.Pause, onEnvelope = true)
+                    PrintButton("Reconnect", onClick = onConnect, style = PrintButtonStyle.Outline, icon = Ph.Desktop, onEnvelope = true)
+                }
+            }
+            busy || phase == JobPhase.Waiting || phase == JobPhase.Queued -> {
+                Spacer(Modifier.height(Spacing.lg))
+                PrintButton("Pause", onClick = onStop, style = PrintButtonStyle.Outline, icon = Ph.Pause, onEnvelope = true)
             }
             // Resuming can't reach the computer from here: offer the way back to it instead (as Home does).
             !connected && (queuedCount > 0 || phase == JobPhase.Disconnected) -> {
@@ -414,7 +433,7 @@ private fun sentFraction(file: FileTransferProgress): Float =
  */
 @Composable
 private fun DevelopingStrip(files: List<FileTransferProgress>, modifier: Modifier = Modifier) {
-    // Pherry sends 3 files at once, or 6 with faster transfers on: one slot per frame.
+    // Keep the active sample compact as adaptive concurrency changes.
     val columns = if (files.size > 3) 6 else 3
     val shown = files.take(columns)
     FilmRow(

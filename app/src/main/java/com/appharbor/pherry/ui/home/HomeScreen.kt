@@ -59,6 +59,7 @@ import com.appharbor.pherry.data.db.UploadRecord
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.network.RememberedComputer
 import com.appharbor.pherry.data.upload.TransferState
+import com.appharbor.pherry.data.upload.TransferPhase
 import com.appharbor.pherry.ui.components.DateStamp
 import com.appharbor.pherry.ui.components.Envelope
 import com.appharbor.pherry.ui.components.EnvelopeCheck
@@ -82,6 +83,8 @@ import com.appharbor.pherry.ui.components.SyncConfirmDialog
 import com.appharbor.pherry.ui.gallery.rememberFrameModel
 import com.appharbor.pherry.ui.permissions.LocalNetworkAccess
 import com.appharbor.pherry.ui.permissions.hasMediaPermission
+import com.appharbor.pherry.ui.permissions.MediaAccess
+import com.appharbor.pherry.ui.permissions.mediaAccess
 import com.appharbor.pherry.ui.permissions.rememberPermissionAsk
 import com.appharbor.pherry.ui.permissions.rememberLocalNetworkAccess
 import com.appharbor.pherry.ui.permissions.requiredMediaPermissions
@@ -96,10 +99,10 @@ fun HomeScreen(
     onConnectClick: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenTransfers: () -> Unit,
+    onOpenHistory: () -> Unit = onOpenTransfers,
     onOpenSettings: () -> Unit,
     onBeforeTransfer: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
-    settingsViewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val serverName by viewModel.serverName.collectAsStateWithLifecycle()
@@ -109,8 +112,6 @@ fun HomeScreen(
     val queuedCount by viewModel.queuedCount.collectAsStateWithLifecycle()
     val lastBackupAt by viewModel.lastBackupAt.collectAsStateWithLifecycle()
     val autoBackupEnabled by viewModel.autoBackupEnabled.collectAsStateWithLifecycle()
-    val autoBackupRequiresCharging by viewModel.autoBackupRequiresCharging.collectAsStateWithLifecycle()
-    val wifiOnly by viewModel.wifiOnly.collectAsStateWithLifecycle()
     val unsent by viewModel.unsent.collectAsStateWithLifecycle()
     val confirmDestructiveSync by viewModel.confirmDestructiveSync.collectAsStateWithLifecycle()
     val pendingSyncPlan by viewModel.pendingSyncPlan.collectAsStateWithLifecycle()
@@ -126,15 +127,16 @@ fun HomeScreen(
     val snackbar = LocalSnackbarHost.current
     val scope = rememberCoroutineScope()
     var hasPermission by remember { mutableStateOf(hasMediaPermission(context)) }
+    var access by remember { mutableStateOf(mediaAccess(context)) }
     var permissionBlocked by rememberSaveable { mutableStateOf(false) }
-    var askAutoBackup by remember { mutableStateOf(false) }
     val network = rememberLocalNetworkAccess(onGranted = { viewModel.reconnect() })
     val mediaAsk = rememberPermissionAsk(*requiredMediaPermissions())
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
-        hasPermission = results.values.all { it }
+        hasPermission = hasMediaPermission(context)
+        access = mediaAccess(context)
         // Only a real "don't ask again" swaps Allow for app settings; a dismissed dialog asks again.
         permissionBlocked = !hasPermission && mediaAsk.blockedAfterDenial()
     }
@@ -143,7 +145,11 @@ fun HomeScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasPermission = hasMediaPermission(context)
-                if (hasPermission) permissionBlocked = false
+                access = mediaAccess(context)
+                if (hasPermission) {
+                    permissionBlocked = false
+                    viewModel.refreshUnsent(force = true)
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -195,37 +201,6 @@ fun HomeScreen(
         )
     }
 
-    if (askAutoBackup) {
-        AlertDialog(
-            onDismissRequest = { askAutoBackup = false },
-            containerColor = PherryTheme.colors.sheet,
-            title = { Text("Turn on auto-backup") },
-            text = {
-                Text(
-                    "Pherry will send new photos and videos to $computer by itself, about every 15 minutes " +
-                        "when the phone is on Wi-Fi. Start with everything already on this phone, or only what you take from now on?"
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        settingsViewModel.enableAutoBackup(includeExisting = true)
-                        askAutoBackup = false
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = PherryTheme.colors.ink),
-                ) { Text("Everything") }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        settingsViewModel.enableAutoBackup(includeExisting = false)
-                        askAutoBackup = false
-                    },
-                    colors = ButtonDefaults.textButtonColors(contentColor = PherryTheme.colors.ink),
-                ) { Text("Only new") }
-            },
-        )
-    }
 
     val state = envelopeState(
         networkGranted = network.granted,
@@ -245,6 +220,7 @@ fun HomeScreen(
         item(key = "envelope") {
             HomeEnvelope(
                 state = state,
+                limitedAccess = access == MediaAccess.SELECTED,
                 network = network,
                 permissionBlocked = permissionBlocked,
                 computer = computer,
@@ -258,8 +234,6 @@ fun HomeScreen(
                 lastBackupAt = lastBackupAt,
                 isPreparingSync = isPreparingSync,
                 autoBackupEnabled = autoBackupEnabled,
-                wifiOnly = wifiOnly,
-                requiresCharging = autoBackupRequiresCharging,
                 onConnect = onConnectClick,
                 onRetryConnect = viewModel::reconnect,
                 onAllowAccess = {
@@ -280,17 +254,31 @@ fun HomeScreen(
                 onViewTransfer = onOpenTransfers,
                 onStop = {
                     viewModel.stopTransfer()
-                    scope.launch { snackbar.showSnackbar("Stopped. The rest stay queued until you resume.") }
+                    scope.launch { snackbar.showSnackbar("Paused. The remaining files stay queued until you resume.") }
                 },
                 onResume = {
                     onBeforeTransfer()
                     viewModel.resumeQueued()
                     onOpenTransfers()
                 },
-                onAutoBackupChange = { on -> if (on) askAutoBackup = true else settingsViewModel.disableAutoBackup() },
-                onWifiOnlyChange = settingsViewModel::onWifiOnlyTransferChanged,
-                onChargingChange = settingsViewModel::onAutoBackupChargingChanged,
             )
+        }
+
+        if (access == MediaAccess.SELECTED) {
+            item(key = "limited-access") {
+                Notice(
+                    title = "Only selected photos are visible",
+                    detail = "Backup counts cover the photos you allowed. Mirror deletions is unavailable with limited access.",
+                    actionLabel = "Manage",
+                    onAction = { mediaAsk.beforeLaunch(); permissionLauncher.launch(requiredMediaPermissions()) },
+                    error = false,
+                )
+            }
+        }
+        unsent.error?.let { message ->
+            item(key = "library-error") {
+                Notice(title = message, actionLabel = "Retry", onAction = { viewModel.refreshUnsent(force = true) })
+            }
         }
 
         // First steps only for a phone that has never paired; a saved computer that isn't
@@ -321,7 +309,7 @@ fun HomeScreen(
                 SectionHeading(
                     text = "Recently sent",
                     trailing = {
-                        TextButton(onClick = onOpenTransfers) {
+                        TextButton(onClick = onOpenHistory) {
                             Text("History", style = MaterialTheme.typography.labelLarge, color = PherryTheme.colors.ink)
                         }
                     },
@@ -358,14 +346,14 @@ private fun envelopeState(
     queuedCount: Int,
     unsent: UnsentState,
 ): HomeState = when {
-    transfer.isTransferring -> HomeState.Sending
+    transfer.phase in setOf(TransferPhase.PREPARING, TransferPhase.UPLOADING, TransferPhase.VERIFYING, TransferPhase.WAITING_FOR_NETWORK, TransferPhase.WAITING_FOR_COMPUTER) -> HomeState.Sending
     !networkGranted -> HomeState.NoNetwork
     connectionState == ConnectionState.CONNECTING -> HomeState.Connecting
     connectionState != ConnectionState.CONNECTED && remembered != null -> HomeState.Unreachable
     connectionState != ConnectionState.CONNECTED -> HomeState.NoComputer
     !hasPermission -> HomeState.NoAccess
     queuedCount > 0 -> HomeState.Paused
-    unsent.isLoading && !unsent.computed -> HomeState.Counting
+    (unsent.isLoading || unsent.error != null) && !unsent.computed -> HomeState.Counting
     unsent.count > 0 || unsent.deleteCount > 0 -> HomeState.Backlog
     unsent.computed -> HomeState.Idle
     else -> HomeState.Counting
@@ -374,6 +362,7 @@ private fun envelopeState(
 @Composable
 private fun HomeEnvelope(
     state: HomeState,
+    limitedAccess: Boolean,
     network: LocalNetworkAccess,
     permissionBlocked: Boolean,
     computer: String,
@@ -387,8 +376,6 @@ private fun HomeEnvelope(
     lastBackupAt: Long,
     isPreparingSync: Boolean,
     autoBackupEnabled: Boolean,
-    wifiOnly: Boolean,
-    requiresCharging: Boolean,
     onConnect: () -> Unit,
     onRetryConnect: () -> Unit,
     onAllowAccess: () -> Unit,
@@ -399,9 +386,6 @@ private fun HomeEnvelope(
     onViewTransfer: () -> Unit,
     onStop: () -> Unit,
     onResume: () -> Unit,
-    onAutoBackupChange: (Boolean) -> Unit,
-    onWifiOnlyChange: (Boolean) -> Unit,
-    onChargingChange: (Boolean) -> Unit,
 ) {
     val c = PherryTheme.colors
     val byUser = remembered?.disconnectedByUser == true
@@ -414,14 +398,24 @@ private fun HomeEnvelope(
         HomeState.Connecting -> "Connecting to $computer"
         HomeState.NoAccess -> if (permissionBlocked) "Photo access is off" else "Allow photo access"
         HomeState.Counting -> "Checking your library"
-        HomeState.Sending -> "Sending to $computer"
+        HomeState.Sending -> transfer.message ?: when (transfer.phase) {
+            TransferPhase.PREPARING -> "Preparing your backup"
+            TransferPhase.WAITING_FOR_NETWORK -> "Waiting for an unmetered network"
+            TransferPhase.WAITING_FOR_COMPUTER -> "Waiting for $computer"
+            TransferPhase.VERIFYING -> "Verifying files on $computer"
+            else -> "Sending to $computer"
+        }
         HomeState.Paused -> "Sending paused"
         HomeState.Backlog -> if (unsent.count > 0) {
             "${Fmt.count(unsent.count)} new to back up to $computer"
         } else {
             "${Fmt.count(unsent.deleteCount)} to sync with $computer"
         }
-        HomeState.Idle -> "Everything is on $computer"
+        HomeState.Idle -> when {
+            unsent.libraryCount == 0 -> if (limitedAccess) "Choose photos to back up" else "No photos or videos yet"
+            limitedAccess -> "Selected photos are backed up to $computer"
+            else -> "Visible library is backed up to $computer"
+        }
     }
     Envelope {
         // The announcement's leaf: no caption, nothing drawn. A thin full-width strip that never moves or
@@ -517,20 +511,21 @@ private fun HomeEnvelope(
                         }
 
                         HomeState.Counting -> {
-                            Fields(library = null, backedUp = backedUp(unsent, completedCount), computer = computer, link = link)
+                            Fields(library = null, backedUp = backedUp(unsent), computer = computer, link = link, limitedAccess = limitedAccess)
                             Spacer(Modifier.height(Spacing.lg))
                             // The link is live (TO stays green); this lamp blinks for the scan.
                             EnvelopeMessage(title = "Checking your library…", body = "Looking for photos that aren't on $computer yet.", lamp = LampState.Busy)
                         }
 
-                        HomeState.Sending -> SendingBody(transfer = transfer, computer = computer, onView = onViewTransfer, onStop = onStop)
+                        HomeState.Sending -> SendingBody(transfer = transfer, computer = transfer.destinationName.ifBlank { computer }, onView = onViewTransfer, onStop = onStop)
 
                         HomeState.Paused -> {
                             Fields(
                                 library = unsent.libraryCount.takeIf { unsent.computed },
-                                backedUp = backedUp(unsent, completedCount, pending = queuedCount),
+                                backedUp = backedUp(unsent),
                                 computer = computer,
                                 link = link,
+                                limitedAccess = limitedAccess,
                             )
                             BigCount(value = queuedCount, caption = "${if (queuedCount == 1) "file is" else "files are"} queued, waiting to send")
                             Spacer(Modifier.height(Spacing.lg))
@@ -538,7 +533,7 @@ private fun HomeEnvelope(
                         }
 
                         HomeState.Backlog -> {
-                            Fields(library = unsent.libraryCount, backedUp = backedUp(unsent, completedCount), computer = computer, link = link)
+                            Fields(library = unsent.libraryCount, backedUp = backedUp(unsent), computer = computer, link = link, limitedAccess = limitedAccess)
                             if (unsent.count > 0) {
                                 BigCount(
                                     value = unsent.count,
@@ -552,7 +547,7 @@ private fun HomeEnvelope(
                             Spacer(Modifier.height(Spacing.lg))
                             if (unsent.syncMode) {
                                 PrintButton(
-                                    text = if (isPreparingSync) "Checking…" else "Sync now",
+                                    text = if (isPreparingSync) "Checking…" else "Review mirror",
                                     onClick = onSync,
                                     enabled = !isPreparingSync,
                                     icon = Ph.Refresh,
@@ -572,13 +567,17 @@ private fun HomeEnvelope(
                         }
 
                         HomeState.Idle -> {
-                            Fields(library = unsent.libraryCount, backedUp = backedUp(unsent, completedCount), computer = computer, link = link)
+                            Fields(library = unsent.libraryCount, backedUp = backedUp(unsent), computer = computer, link = link, limitedAccess = limitedAccess)
                             Spacer(Modifier.height(Spacing.lg))
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                PhIcon(Ph.SealCheck, contentDescription = null, tint = c.onEnvelope, size = 34.dp)
+                                PhIcon(if (unsent.libraryCount > 0) Ph.SealCheck else Ph.Images, contentDescription = null, tint = c.onEnvelope, size = 34.dp)
                                 Spacer(Modifier.width(Spacing.md))
                                 Text(
-                                    "Everything is on $computer",
+                                    when {
+                                        unsent.libraryCount == 0 -> if (limitedAccess) "Choose photos to back up" else "No photos or videos yet"
+                                        limitedAccess -> "Selected photos are backed up"
+                                        else -> "Your library is backed up"
+                                    },
                                     style = MaterialTheme.typography.headlineMedium,
                                     color = c.onEnvelope,
                                 )
@@ -597,46 +596,25 @@ private fun HomeEnvelope(
             }
         }
 
-        // The order form: how Pherry works by itself. Only once there's a computer to send to.
-        if (state !in setOf(HomeState.NoNetwork, HomeState.NoComputer, HomeState.Unreachable, HomeState.Connecting, HomeState.NoAccess)) {
+        if (state in setOf(HomeState.Idle, HomeState.Backlog, HomeState.Paused)) {
             Spacer(Modifier.height(Spacing.lg))
             Perforation(color = c.onEnvelope.copy(alpha = 0.3f))
-            Spacer(Modifier.height(Spacing.xs))
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                verticalArrangement = Arrangement.Center,
-            ) {
-                EnvelopeCheck("Auto-backup", checked = autoBackupEnabled, onCheckedChange = onAutoBackupChange)
-                EnvelopeCheck("Wi-Fi only", checked = wifiOnly, onCheckedChange = onWifiOnlyChange)
-                EnvelopeCheck(
-                    "While charging",
-                    checked = requiresCharging,
-                    onCheckedChange = onChargingChange,
-                    enabled = autoBackupEnabled,
-                    disabledReason = "Turn on auto-backup to use this",
-                )
-            }
-            Spacer(Modifier.height(Spacing.sm))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                DateStamp(if (lastBackupAt > 0) "Last backup ${Fmt.stamp(lastBackupAt)}" else "No backup yet")
+            Spacer(Modifier.height(Spacing.md))
+            Text(
+                text = if (autoBackupEnabled) "Auto-backup is on. Manage it in Settings." else "Choose photos below, or enable auto-backup in Settings.",
+                style = MaterialTheme.typography.bodySmall,
+                color = c.onEnvelope2,
+            )
+            if (lastBackupAt > 0) {
+                Spacer(Modifier.height(Spacing.sm))
+                DateStamp("Last file sent ${Fmt.stamp(lastBackupAt)}")
             }
         }
     }
 }
 
-/**
- * The envelope's BACKED UP figure, measured against this phone: once a scan has run it is "on this
- * phone minus not yet sent", so it can never read more than ON THIS PHONE (the ledger also counts files
- * since deleted here). Before the first scan, the ledger's count is the best there is. [pending] is the
- * queue: "Back up N now" zeroes the unsent count as it queues, so queued files must not read as sent.
- */
-private fun backedUp(unsent: UnsentState, completedCount: Int, pending: Int = 0): Int =
-    if (unsent.computed) {
-        (unsent.libraryCount - maxOf(unsent.count, pending)).coerceAtLeast(0)
-    } else {
-        completedCount
-    }
+/** Only the current library's confirmed receipts count; unknown is shown as a placeholder. */
+private fun backedUp(unsent: UnsentState): Int? = unsent.backedUpCount.takeIf { unsent.computed }
 
 private val RefreshButtonSize = 40.dp
 
@@ -653,7 +631,7 @@ private fun linkLamp(state: HomeState): LampState = when (state) {
  * the counts.
  */
 @Composable
-private fun Fields(library: Int?, backedUp: Int, computer: String, link: LampState) {
+private fun Fields(library: Int?, backedUp: Int?, computer: String, link: LampState, limitedAccess: Boolean = false) {
     FlowRow(
         // Room at the end for the refresh button (Idle, Backlog). Kept in every state, so the form
         // doesn't reflow when the count lands.
@@ -662,7 +640,7 @@ private fun Fields(library: Int?, backedUp: Int, computer: String, link: LampSta
         verticalArrangement = Arrangement.spacedBy(Spacing.md),
     ) {
         EnvelopeField("On this phone", library?.let(Fmt::count) ?: "…")
-        EnvelopeField("Backed up", Fmt.count(backedUp))
+        EnvelopeField("Backed up", backedUp?.let(Fmt::count) ?: "...")
         EnvelopeField("To", computer, lamp = link)
     }
 }
@@ -749,6 +727,18 @@ private fun SendingBody(transfer: TransferState, computer: String, onView: () ->
     val done = transfer.completedFiles
     val total = transfer.totalFiles
     Column(Modifier.fillMaxWidth()) {
+        Text(
+            text = transfer.message ?: when (transfer.phase) {
+                TransferPhase.PREPARING -> "Preparing your backup"
+                TransferPhase.WAITING_FOR_COMPUTER -> "Waiting for the computer"
+                TransferPhase.WAITING_FOR_NETWORK -> "Waiting for an unmetered network"
+                TransferPhase.VERIFYING -> "Verifying files on the computer"
+                else -> "Sending your files"
+            },
+            style = MaterialTheme.typography.titleMedium,
+            color = c.onEnvelope,
+        )
+        Spacer(Modifier.height(Spacing.md))
         // The same TO field as the form, lamp blinking while the job runs.
         EnvelopeField("To", computer, lamp = LampState.Busy)
         Spacer(Modifier.height(Spacing.lg))
@@ -784,7 +774,7 @@ private fun SendingBody(transfer: TransferState, computer: String, onView: () ->
         Spacer(Modifier.height(Spacing.lg))
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             PrintButton("See transfer", onClick = onView, onEnvelope = true, modifier = Modifier.weight(1f))
-            PrintButton("Stop", onClick = onStop, style = PrintButtonStyle.Outline, icon = Ph.Stop, onEnvelope = true)
+            PrintButton("Pause", onClick = onStop, style = PrintButtonStyle.Outline, icon = Ph.Pause, onEnvelope = true)
         }
     }
 }

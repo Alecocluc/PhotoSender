@@ -104,6 +104,7 @@ internal fun PairingOptions(
     val c = PherryTheme.colors
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val ipAddress by viewModel.ipAddress.collectAsStateWithLifecycle()
+    val pairingCode by viewModel.pairingCode.collectAsStateWithLifecycle()
     val problem by viewModel.pairingProblem.collectAsStateWithLifecycle()
     val recentTargets by viewModel.recentDesktopTargets.collectAsStateWithLifecycle()
     val nearbyDesktops by viewModel.nearbyDesktops.collectAsStateWithLifecycle()
@@ -149,7 +150,8 @@ internal fun PairingOptions(
             desktops = nearbyDesktops,
             onPair = { desktop ->
                 focusManager.clearFocus()
-                viewModel.onDiscoveredSelected(desktop)
+                viewModel.onIpChanged(desktop.endpoint)
+                typing = true
             },
         )
 
@@ -167,6 +169,8 @@ internal fun PairingOptions(
         Spacer(Modifier.height(Spacing.md))
         ManualAddress(
             value = ipAddress,
+            pairingCode = pairingCode,
+            onPairingCodeChange = viewModel::onPairingCodeChanged,
             onValueChange = viewModel::onIpChanged,
             error = problem,
             connecting = connectionState == ConnectionState.CONNECTING,
@@ -180,7 +184,7 @@ internal fun PairingOptions(
 
         Spacer(Modifier.height(Spacing.md))
         Text(
-            text = "The list and the address are enough for sending. To let Sync delete files on the computer, scan its ticket once.",
+            text = "Scan the ticket or enter its pairing code to authorize this phone. The computer keeps each phone in its own folder.",
             style = MaterialTheme.typography.bodySmall,
             color = c.ink3,
         )
@@ -341,6 +345,8 @@ private fun RecentTargets(targets: List<String>, onSelect: (String) -> Unit) {
 @Composable
 internal fun ManualAddress(
     value: String,
+    pairingCode: String,
+    onPairingCodeChange: (String) -> Unit,
     onValueChange: (String) -> Unit,
     error: String?,
     connecting: Boolean,
@@ -420,6 +426,18 @@ internal fun ManualAddress(
                         unfocusedSupportingTextColor = c.ink3,
                         errorSupportingTextColor = c.red,
                     ),
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                OutlinedTextField(
+                    value = pairingCode,
+                    onValueChange = onPairingCodeChange,
+                    label = { Text("Pairing code") },
+                    supportingText = { Text("Shown on the computer's ticket. Leave blank for a phone already authorized here.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { onConnect() }),
+                    shape = PherryShape.print,
                 )
                 Spacer(Modifier.height(Spacing.sm))
                 PrintButton(

@@ -82,6 +82,7 @@ private fun groupByDay(records: List<UploadRecord>): List<DayGroup> {
 internal fun TransfersHistory(
     records: List<UploadRecord>?,
     completedCount: Int,
+    historyCount: Int,
     failedCount: Int,
     totalBytes: Long,
     lastSentAt: Long,
@@ -91,6 +92,7 @@ internal fun TransfersHistory(
     computer: String,
     listState: LazyListState,
     onCheck: () -> Unit,
+    onAudit: () -> Unit,
     onRetry: () -> Unit,
     onClear: () -> Unit,
     /** Runs before Retry starts sending (the shell asks for notification permission here). */
@@ -115,8 +117,7 @@ internal fun TransfersHistory(
             title = { Text("Clear transfer history?") },
             text = {
                 Text(
-                    "This phone forgets which files it sent. Files on $computer stay where they are. " +
-                        "The next backup may send some files again. Until then, Home counts them as not backed up."
+                    "Hide completed transfers from this list. Files on $computer and their backed-up status stay saved."
                 )
             },
             confirmButton = {
@@ -155,6 +156,7 @@ internal fun TransfersHistory(
                     connected = connected,
                     computer = computer,
                     onCheck = onCheck,
+                    onAudit = onAudit,
                 )
             }
         }
@@ -176,7 +178,7 @@ internal fun TransfersHistory(
 
         if (records.isEmpty()) {
             item(key = "empty") {
-                EmptyStrip(title = "No transfers yet", body = "Files you send appear here, newest first.")
+                EmptyStrip(title = if (completedCount > 0) "History cleared" else "No transfers yet", body = "New transfers appear here, newest first.")
             }
             return@LazyColumn
         }
@@ -193,19 +195,11 @@ internal fun TransfersHistory(
             }
         }
 
-        if (records.size >= HistoryViewModel.HISTORY_LIMIT) {
+        if (historyCount > records.size) {
             item(key = "limit") {
-                Text(
-                    text = if (completedCount > records.size) {
-                        "Showing the last ${Fmt.count(records.size)} of ${Fmt.count(completedCount)} transfers."
-                    } else {
-                        "Showing the last ${Fmt.count(records.size)}."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = PherryTheme.colors.ink3,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.lg),
-                )
+                PrintButton("Show older transfers (${Fmt.count(historyCount - records.size)} more)",
+                    onClick = historyViewModel::loadMoreHistory, style = PrintButtonStyle.Outline,
+                    modifier = Modifier.fillMaxWidth().padding(top = Spacing.lg))
             }
         }
 
@@ -242,6 +236,7 @@ private fun SummaryBlock(
     connected: Boolean,
     computer: String,
     onCheck: () -> Unit,
+    onAudit: () -> Unit,
 ) {
     val c = PherryTheme.colors
     val summary = buildList {
@@ -279,6 +274,16 @@ private fun SummaryBlock(
             icon = Ph.ShieldCheck,
             enabled = !verify.isVerifying && connected && completedCount > 0,
         )
+        Spacer(Modifier.height(Spacing.sm))
+        PrintButton(
+            text = "Verify file contents",
+            onClick = onAudit,
+            style = PrintButtonStyle.Quiet,
+            icon = Ph.SealCheck,
+            enabled = !verify.isVerifying && connected && completedCount > 0,
+        )
+        Text("Reads the computer's files and checks their contents. Large backups take longer.",
+            style = MaterialTheme.typography.bodySmall, color = c.ink2)
 
         Column(Modifier.fillMaxWidth()) {
             when {

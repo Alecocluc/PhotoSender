@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
+import android.os.Build
+import java.util.UUID
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "pherry_prefs")
 
@@ -47,6 +49,58 @@ class AppPreferences @Inject constructor(
     private val keepScreenAwakeKey = booleanPreferencesKey("keep_screen_awake")
     private val defaultUploadModeKey = stringPreferencesKey("default_upload_mode")
     private val onboardingCompletedKey = booleanPreferencesKey("onboarding_completed")
+    private val clientIdKey = stringPreferencesKey("transfer_client_id")
+    private val deviceNameKey = stringPreferencesKey("transfer_device_name")
+    private val userPausedKey = booleanPreferencesKey("transfer_user_paused")
+    private val receiverIdKey = stringPreferencesKey("receiver_id")
+    private val libraryIdKey = stringPreferencesKey("receiver_library_id")
+    private val receiverEndpointsKey = stringPreferencesKey("receiver_endpoints")
+
+    val userPaused: Flow<Boolean> = context.dataStore.data.map { it[userPausedKey] ?: false }
+    val receiverId: Flow<String> = context.dataStore.data.map { it[receiverIdKey].orEmpty() }
+    val libraryId: Flow<String> = context.dataStore.data.map { it[libraryIdKey].orEmpty() }
+    val deviceName: Flow<String> = context.dataStore.data.map {
+        it[deviceNameKey]?.takeIf(String::isNotBlank) ?: defaultDeviceName()
+    }
+
+    suspend fun clientId(): String {
+        var id = ""
+        context.dataStore.edit { prefs ->
+            id = prefs[clientIdKey] ?: UUID.randomUUID().toString().also { prefs[clientIdKey] = it }
+        }
+        return id
+    }
+
+    suspend fun saveDeviceName(value: String) {
+        val clean = value.filter { !it.isISOControl() }.trim().take(60)
+        context.dataStore.edit { it[deviceNameKey] = clean.ifBlank { defaultDeviceName() } }
+    }
+
+    suspend fun setUserPaused(paused: Boolean) {
+        context.dataStore.edit { it[userPausedKey] = paused }
+    }
+
+    suspend fun rememberReceiver(id: String, library: String, endpoint: String, name: String) {
+        context.dataStore.edit {
+            it[receiverIdKey] = id
+            it[libraryIdKey] = library
+            it[lastIpKey] = endpoint
+            it[lastServerEndpointKey] = endpoint
+            it[lastServerNameKey] = name
+            val endpoints = decodeTokens(it[receiverEndpointsKey]).toMutableMap()
+            endpoints[id] = endpoint
+            it[receiverEndpointsKey] = encodeTokens(endpoints)
+        }
+    }
+
+    suspend fun endpointForReceiver(id: String): String =
+        decodeTokens(context.dataStore.data.first()[receiverEndpointsKey])[id].orEmpty()
+
+    private fun defaultDeviceName(): String {
+        val model = Build.MODEL.orEmpty().trim()
+        val maker = Build.MANUFACTURER.orEmpty().trim()
+        return (if (model.startsWith(maker, true)) model else "$maker $model").trim().ifBlank { "Android phone" }
+    }
 
     val lastIpAddress: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[lastIpKey] ?: ""

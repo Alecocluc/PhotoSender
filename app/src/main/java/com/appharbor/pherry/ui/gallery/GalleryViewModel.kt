@@ -14,6 +14,8 @@ import com.appharbor.pherry.data.upload.UploadManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -48,7 +50,7 @@ data class AlbumSummary(
 )
 
 /** What a send did: frames put in the job, and frames left out because the computer already has them. */
-data class SendOutcome(val queued: Int, val alreadySent: Int)
+data class SendOutcome(val queued: Int, val alreadySent: Int, val error: String? = null)
 
 /** The id sets behind the Library's quick picks, so a chip can show whether its pick is already selected. */
 data class QuickPicks(
@@ -77,6 +79,11 @@ class GalleryViewModel @Inject constructor(
     /** The album [currentFolderItems] belongs to; null while an album is loading. */
     private val _currentFolderName = MutableStateFlow<String?>(null)
     val currentFolderName: StateFlow<String?> = _currentFolderName.asStateFlow()
+
+    private val _sendEvents = MutableSharedFlow<SendOutcome>(extraBufferCapacity = 1)
+    val sendEvents = _sendEvents.asSharedFlow()
+    private val _isQueueing = MutableStateFlow(false)
+    val isQueueing = _isQueueing.asStateFlow()
 
     private val _selectedIds = MutableStateFlow<Set<Long>>(emptySet())
     val selectedIds: StateFlow<Set<Long>> = _selectedIds.asStateFlow()
@@ -141,6 +148,12 @@ class GalleryViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
+            connectionManager.receiverIdentity.drop(1).collect {
+                _completedIds.value = emptySet()
+                loadFolders()
+            }
+        }
+        viewModelScope.launch {
             appPreferences.defaultUploadMode.collect { mode ->
                 _uploadMode.value = UploadMode.entries.firstOrNull { it.name == mode } ?: UploadMode.ADD
             }
@@ -161,7 +174,7 @@ class GalleryViewModel @Inject constructor(
         libraryJob = viewModelScope.launch {
             _isLoading.value = true
             val media = readSafely { mediaRepository.loadAllMedia(_filter.value) }
-            val completed = uploadManager.completedMediaStoreIds()
+            val completed = uploadManager.completedMediaStoreIds(media)
             rememberSizes(media)
             val (ids, folders) = withContext(Dispatchers.Default) {
                 val folders = media.groupBy { it.bucketName }
@@ -194,7 +207,7 @@ class GalleryViewModel @Inject constructor(
                 _currentFolderItems.value = emptyList()
             }
             val items = readSafely { mediaRepository.loadMediaInFolder(bucketName, _filter.value) }
-            val completed = uploadManager.completedMediaStoreIds()
+            val completed = uploadManager.completedMediaStoreIds(lastMedia.orEmpty() + items)
             rememberSizes(items)
             applyCompleted(completed)
             _currentFolderItems.value = items
@@ -266,8 +279,9 @@ class GalleryViewModel @Inject constructor(
     /** Quick-select every item not yet backed up to the desktop (Add mode). */
     fun selectNewSinceBackup() {
         viewModelScope.launch {
-            val completed = uploadManager.completedMediaStoreIds()
-            val unsent = readSafely { mediaRepository.loadAllMedia(_filter.value) }
+            val media = readSafely { mediaRepository.loadAllMedia(_filter.value) }
+            val completed = uploadManager.completedMediaStoreIds(media)
+            val unsent = media
                 .filter { it.id !in completed }
             rememberSizes(unsent)
             _selectedIds.update { current -> current + unsent.map { it.id }.toSet() }
@@ -284,25 +298,31 @@ class GalleryViewModel @Inject constructor(
      * anyway, and counting it would leave the job short). When nothing is left to send, nothing is
      * queued and the selection is cleared: the caller says so instead of opening Transfers.
      */
-    fun startTransfer(): SendOutcome {
-        val selected = _selectedIds.value
-        val completed = _completedIds.value
-        val toSend = selected.filterTo(LinkedHashSet()) { it !in completed }
-        val outcome = SendOutcome(queued = toSend.size, alreadySent = selected.size - toSend.size)
-        if (toSend.isEmpty()) {
-            _selectedIds.value = emptySet()
-            return outcome
-        }
+    fun startTransfer() {
+        if (_isQueueing.value) return
+        val selected = _selectedIds.value.toSet()
+        if (selected.isEmpty()) return
+        _isQueueing.value = true
         viewModelScope.launch {
-            val selectedItems = mediaRepository.getMediaItemsByIds(toSend)
-            if (selectedItems.isNotEmpty()) {
-                uploadManager.start(selectedItems)
+            try {
+                val selectedItems = mediaRepository.getMediaItemsByIds(selected)
+                val completed = uploadManager.completedMediaStoreIds(selectedItems)
+                val toSend = selectedItems.filter { it.id !in completed }
+                if (selectedItems.size < selected.size) {
+                    _sendEvents.emit(SendOutcome(0, 0, "Some selected files are no longer accessible. Refresh the library and choose them again."))
+                    return@launch
+                }
+                if (toSend.isNotEmpty()) uploadManager.enqueueAndSchedule(toSend, userInitiated = true)
+                _selectedIds.update { it - selected }
+                _sendEvents.emit(SendOutcome(toSend.size, selectedItems.size - toSend.size))
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _sendEvents.emit(SendOutcome(0, 0, "Could not prepare these files. Check photo access and storage, then retry."))
+            } finally {
+                _isQueueing.value = false
             }
-            // Clear the selection once it's queued so it doesn't linger across folders/filters and
-            // get accidentally re-sent on the next transfer.
-            _selectedIds.value = emptySet()
         }
-        return outcome
     }
 
     fun setMode(mode: UploadMode) {
@@ -339,7 +359,7 @@ class GalleryViewModel @Inject constructor(
     fun clearSyncSummary() = uploadManager.clearSyncSummary()
 
     private fun refreshBackupState() {
-        viewModelScope.launch { applyCompleted(uploadManager.completedMediaStoreIds()) }
+        viewModelScope.launch { applyCompleted(uploadManager.completedMediaStoreIds(lastMedia.orEmpty())) }
     }
 
     /** Publish [completed] and rebuild everything derived from it: album strips and quick picks. */

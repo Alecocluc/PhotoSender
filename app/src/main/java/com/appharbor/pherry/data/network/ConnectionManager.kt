@@ -2,30 +2,19 @@ package com.appharbor.pherry.data.network
 
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.preferences.AppPreferences
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * The computer this phone last paired with, kept while it isn't answering. [name] may be blank (not
- * learned yet). [disconnectedByUser] is true when the link is down because the user tapped Disconnect,
- * not because the computer stopped answering.
- */
 data class RememberedComputer(val name: String, val address: String, val disconnectedByUser: Boolean = false)
 
 @Singleton
@@ -33,245 +22,201 @@ class ConnectionManager @Inject constructor(
     private val okHttpClient: OkHttpClient,
     private val appPreferences: AppPreferences,
     private val session: PherrySession,
+    private val discovery: NsdDiscovery,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
+    private val connectMutex = Mutex()
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
-    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
-
+    val connectionState = _connectionState.asStateFlow()
     private val _serverName = MutableStateFlow("")
-    val serverName: StateFlow<String> = _serverName.asStateFlow()
-
+    val serverName = _serverName.asStateFlow()
     private val _connectedIp = MutableStateFlow("")
-    val connectedIp: StateFlow<String> = _connectedIp.asStateFlow()
-
+    val connectedIp = _connectedIp.asStateFlow()
     private val _connectedEndpoint = MutableStateFlow("")
-    val connectedEndpoint: StateFlow<String> = _connectedEndpoint.asStateFlow()
-
+    val connectedEndpoint = _connectedEndpoint.asStateFlow()
     private val _connectionError = MutableStateFlow<String?>(null)
-    val connectionError: StateFlow<String?> = _connectionError.asStateFlow()
-
+    val connectionError = _connectionError.asStateFlow()
+    private val _disconnectedByUser = MutableStateFlow(false)
+    val disconnectedByUser = _disconnectedByUser.asStateFlow()
+    private val _canDelete = MutableStateFlow(false)
+    val canDelete = _canDelete.asStateFlow()
+    private val _receiverIdentity = MutableStateFlow<ReceiverIdentity?>(null)
+    val receiverIdentity = _receiverIdentity.asStateFlow()
+    private var connectJob: Job? = null
     private var monitorJob: Job? = null
 
-    private val _disconnectedByUser = MutableStateFlow(false)
-    /** True after the user taps Disconnect, until they connect again. */
-    val disconnectedByUser: StateFlow<Boolean> = _disconnectedByUser.asStateFlow()
-
-    /** Set when the user explicitly disconnects, so a dropped heartbeat doesn't auto-reconnect. */
-    private var userDisconnected: Boolean
-        get() = _disconnectedByUser.value
-        set(value) { _disconnectedByUser.value = value }
-
-    private val _canDelete = MutableStateFlow(false)
-    /**
-     * Whether this connection carries the desktop's pairing token. Without it (paired from the Wi-Fi
-     * list or by typing the address) the desktop refuses Sync deletions.
-     */
-    val canDelete: StateFlow<Boolean> = _canDelete.asStateFlow()
-
-    /**
-     * The saved computer, or null when none is saved. Disconnect keeps it (the next start reconnects),
-     * so the UI can say "can't reach ALEX-PC" instead of "not paired" while it's asleep or off.
-     */
-    val rememberedComputer: StateFlow<RememberedComputer?> = combine(
-        appPreferences.lastIpAddress,
-        appPreferences.lastServerName,
-        _disconnectedByUser,
-    ) { address, name, byUser ->
-        if (address.isBlank()) null else RememberedComputer(name = name, address = address, disconnectedByUser = byUser)
+    val rememberedComputer = combine(appPreferences.lastIpAddress, appPreferences.lastServerName, _disconnectedByUser) { address, name, byUser ->
+        if (address.isBlank()) null else RememberedComputer(name, address, byUser)
     }.stateIn(scope, SharingStarted.Eagerly, null)
 
-    private fun setToken(token: String) {
-        session.token = token
-        _canDelete.value = session.token.isNotBlank()
-    }
-
-    fun connect(targetInput: String) = connectInternal(targetInput, silent = false)
-
-    /**
-     * Try to silently restore the last desktop on app launch. No error is surfaced if it fails —
-     * the desktop may just not be running yet — so the UI simply stays "Not connected".
-     */
-    fun autoReconnect() {
-        if (_connectionState.value != ConnectionState.DISCONNECTED) return
+    init {
         scope.launch {
-            val last = appPreferences.lastIpAddress.first()
-            if (last.isNotBlank()) connectInternal(last, silent = true)
+            session.clientId = appPreferences.clientId()
+            val id = appPreferences.receiverId.first()
+            val library = appPreferences.libraryId.first()
+            if (id.isNotBlank() && _receiverIdentity.value == null) _receiverIdentity.value = ReceiverIdentity(id, library)
         }
+        scope.launch { appPreferences.deviceName.collect { session.deviceName = it } }
     }
 
-    private fun connectInternal(targetInput: String, silent: Boolean) {
+    fun connect(targetInput: String) = connect(targetInput, "")
+    fun connect(targetInput: String, pairingCode: String) {
         val target = parseConnectionTarget(targetInput)
-        if (target == null) {
-            if (!silent) {
-                _connectionError.value = "Enter a valid desktop address"
-                _connectionState.value = ConnectionState.DISCONNECTED
-            }
-            return
-        }
-        userDisconnected = false
+        if (target == null) { _connectionError.value = "Enter a valid computer address"; return }
+        connectJob?.cancel()
+        monitorJob?.cancel()
+        _disconnectedByUser.value = false
         _connectionState.value = ConnectionState.CONNECTING
         _connectionError.value = null
-        _connectedIp.value = target.host
-        _connectedEndpoint.value = target.endpoint
-
-        scope.launch {
-            // The health check is token-less, so probe first to learn the desktop's stable id, then
-            // resolve the pairing token by that id. This keeps delete rights working after the PC's
-            // IP changes — a token stored under the old endpoint would otherwise be missed.
-            val health = performHealthCheck(target, silent)
-            if (health != null) {
-                setToken(resolveToken(target, health.deviceId))
-                appPreferences.saveLastServer(target.endpoint, health.serverName)
-                _connectionState.value = ConnectionState.CONNECTED
-                startMonitor(target)
-            } else {
-                setToken("")
-                _connectionState.value = ConnectionState.DISCONNECTED
-                _connectedIp.value = ""
-                _connectedEndpoint.value = ""
-            }
+        connectJob = scope.launch {
+            try {
+                connectMutex.withLock { establish(target, pairingCode.ifBlank { target.token }) }
+                startMonitor()
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { markDisconnected(e.message ?: "Could not reach your computer") }
         }
     }
 
-    /**
-     * Pick the pairing token for this connection and bind it to the desktop's stable [deviceId] so
-     * it survives the PC's IP changing. Priority: a token from the (QR) payload, then one already
-     * stored for this id, then a legacy token keyed by the endpoint — which is migrated onto the id
-     * and the stale endpoint entry dropped. Old desktops that report no id fall back to endpoint keying.
-     */
-    private suspend fun resolveToken(target: ConnectionTarget, deviceId: String): String {
-        if (target.token.isNotBlank()) {
-            appPreferences.rememberDesktopToken(deviceId.ifBlank { target.endpoint }, target.token)
-            return target.token
+    fun autoReconnect() {
+        _disconnectedByUser.value = false
+        if (_connectionState.value == ConnectionState.CONNECTED) return
+        scope.launch {
+            val address = appPreferences.lastIpAddress.first()
+            if (address.isNotBlank()) connect(address)
         }
-        if (deviceId.isBlank()) return appPreferences.tokenForEndpoint(target.endpoint)
-
-        appPreferences.tokenForDevice(deviceId).takeIf { it.isNotBlank() }?.let { return it }
-
-        val legacy = appPreferences.tokenForEndpoint(target.endpoint)
-        if (legacy.isNotBlank()) {
-            appPreferences.rememberDesktopToken(deviceId, legacy)
-            appPreferences.forgetDesktopToken(target.endpoint)
-        }
-        return legacy
     }
 
     fun disconnect() {
-        userDisconnected = true
+        _disconnectedByUser.value = true
+        connectJob?.cancel()
         monitorJob?.cancel()
-        monitorJob = null
-        setToken("")
-        _connectionState.value = ConnectionState.DISCONNECTED
+        markDisconnected(null)
+    }
+
+    private fun markDisconnected(message: String?) {
+        session.connection.set(null)
+        _canDelete.value = false
         _connectedIp.value = ""
         _connectedEndpoint.value = ""
-        _serverName.value = ""
+        _connectionState.value = ConnectionState.DISCONNECTED
+        _connectionError.value = message
     }
 
-    /**
-     * Heartbeat + self-healing. While connected we poll every [HEARTBEAT_MS]. On a dropped beat we
-     * flip to CONNECTING and retry with exponential backoff instead of giving up — so a WiFi blip or
-     * the desktop briefly sleeping reconnects on its own. After [MAX_FAILURES] consecutive misses we
-     * finally fall back to DISCONNECTED.
-     */
-    private fun startMonitor(target: ConnectionTarget) {
-        monitorJob?.cancel()
-        monitorJob = scope.launch {
-            var backoff = INITIAL_BACKOFF_MS
-            var failures = 0
-            while (true) {
-                val interval = if (_connectionState.value == ConnectionState.CONNECTED) HEARTBEAT_MS else backoff
-                delay(interval)
-                if (userDisconnected) break
-
-                if (performHealthCheck(target, silent = true) != null) {
-                    failures = 0
-                    backoff = INITIAL_BACKOFF_MS
-                    _connectionError.value = null
-                    if (_connectionState.value != ConnectionState.CONNECTED) {
-                        _connectionState.value = ConnectionState.CONNECTED
-                        _connectedIp.value = target.host
-                        _connectedEndpoint.value = target.endpoint
-                    }
-                } else {
-                    failures++
-                    if (failures >= MAX_FAILURES) {
-                        _connectionState.value = ConnectionState.DISCONNECTED
-                        _connectedIp.value = ""
-                        _connectedEndpoint.value = ""
-                        _serverName.value = ""
-                        break
-                    }
-                    // Reconnecting: keep the endpoint so uploads in flight can still resolve it.
-                    _connectionState.value = ConnectionState.CONNECTING
-                    backoff = (backoff * 2).coerceAtMost(MAX_BACKOFF_MS)
+    private suspend fun health(target: ConnectionTarget): JSONObject {
+        val request = Request.Builder().url(target.baseUrl + "/health").build()
+        return okHttpClient.newCall(request).awaitResponse().use {
+            if (!it.isSuccessful) throw IOException("The receiver is not answering")
+            JSONObject(it.body?.string().orEmpty()).also { json ->
+                if (json.optInt("apiVersion") < 2 || json.optString("deviceId").isBlank() || json.optString("libraryId").isBlank()) {
+                    throw IOException("Update Pherry Desktop before pairing this phone")
                 }
             }
         }
     }
 
-    /** Successful /health response: the desktop's display name and its stable device id (may be blank). */
-    private data class HealthResult(val serverName: String, val deviceId: String)
-
-    private fun performHealthCheck(target: ConnectionTarget, silent: Boolean): HealthResult? {
-        return try {
-            val request = Request.Builder()
-                .url("${target.baseUrl}/health")
-                .get()
-                .build()
-            okHttpClient.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string() ?: ""
-                    val json = runCatching { JSONObject(body) }.getOrNull()
-                    val name = json?.optString("serverName", "Desktop")?.takeIf { it.isNotBlank() } ?: "Desktop"
-                    val deviceId = json?.optString("deviceId", "")?.trim().orEmpty()
-                    _serverName.value = name
-                    HealthResult(name, deviceId)
-                } else {
-                    null
-                }
+    private suspend fun establish(target: ConnectionTarget, code: String = "", expected: ReceiverIdentity? = null): ReceiverConnection {
+        val info = health(target)
+        val identity = ReceiverIdentity(info.getString("deviceId"), info.getString("libraryId"))
+        if (expected != null && identity != expected) throw IOException("This address belongs to a different computer or destination folder")
+        val credential = if (code.isNotBlank()) {
+            // Freeze enrollment proof before the request: a lost first response must not strand
+            // the stable client identity behind a credential the phone never received.
+            val enrollmentCredential = EnrollmentCredentials.reuseOrCreate(appPreferences.tokenForDevice(identity.deviceId))
+            appPreferences.rememberDesktopToken(identity.deviceId, enrollmentCredential)
+            val payload = JSONObject().put("pairingCode", code).put("clientId", appPreferences.clientId())
+                .put("deviceName", appPreferences.deviceName.first())
+                .put("credential", enrollmentCredential)
+            val request = Request.Builder().url(target.baseUrl + "/pair")
+                .post(payload.toString().toRequestBody("application/json".toMediaType())).build()
+            okHttpClient.newCall(request).awaitResponse().use {
+                val json = runCatching { JSONObject(it.body?.string().orEmpty()) }.getOrElse { JSONObject() }
+                if (!it.isSuccessful) throw IOException(json.optString("error", "Pairing code was not accepted"))
+                if (json.optString("deviceId") != identity.deviceId || json.optString("libraryId") != identity.libraryId) throw IOException("Receiver changed during pairing")
+                json.getString("credential").also { token -> appPreferences.rememberDesktopToken(identity.deviceId, token) }
             }
-        } catch (e: Exception) {
-            if (!silent) {
-                _connectionError.value = "Could not reach server: ${e.localizedMessage ?: "unknown error"}"
-            }
-            null
+        } else appPreferences.tokenForDevice(identity.deviceId)
+        if (credential.isBlank()) throw IOException("Enter this computer's pairing code or scan its ticket")
+        val connection = ReceiverConnection(identity, target.baseUrl, credential)
+        // Verify enrollment before showing Connected; an old global token is not a v2 credential.
+        try { TransferApi(okHttpClient, connection).json("/v2/preflight", "POST", JSONObject().put("totalBytes", 0).put("totalFiles", 0)) }
+        catch (e: TransferHttpException) {
+            if (e.code == 401 || e.code == 403) throw IOException("Pairing expired. Scan the computer's ticket again")
+            throw e
         }
-    }
-
-    /**
-     * Used by the background auto-backup worker: make sure we're connected to the last desktop
-     * (setting the pairing token) so queued uploads can resolve a server. Returns whether the
-     * desktop is reachable right now.
-     */
-    suspend fun ensureConnectedToLast(): Boolean {
-        if (_connectionState.value == ConnectionState.CONNECTED && _connectedEndpoint.value.isNotBlank()) {
-            return true
-        }
-        val last = appPreferences.lastIpAddress.first()
-        val target = parseConnectionTarget(last) ?: return false
-        val health = performHealthCheck(target, silent = true) ?: return false
-        setToken(resolveToken(target, health.deviceId))
-        appPreferences.saveLastServer(target.endpoint, health.serverName)
-        userDisconnected = false
+        currentCoroutineContext().ensureActive()
+        session.clientId = appPreferences.clientId()
+        session.connection.set(connection)
+        _receiverIdentity.value = identity
         _connectedIp.value = target.host
         _connectedEndpoint.value = target.endpoint
+        _serverName.value = info.optString("serverName", "Computer")
         _connectionState.value = ConnectionState.CONNECTED
         _connectionError.value = null
-        startMonitor(target)
-        return true
+        _canDelete.value = true
+        appPreferences.rememberReceiver(identity.deviceId, identity.libraryId, target.endpoint, _serverName.value)
+        return connection
     }
 
-    fun getBaseUrl(): String = baseUrlForConnectionTarget(_connectedEndpoint.value) ?: ""
+    /** Resolve by stable identity; never transmit a persisted credential to an unchecked old IP. */
+    suspend fun connectionFor(identity: ReceiverIdentity): ReceiverConnection? = connectMutex.withLock {
+        if (_disconnectedByUser.value) return@withLock null
+        val endpoints = linkedSetOf<String>()
+        session.connection.get()?.takeIf { it.identity == identity }?.let { endpoints.add(it.baseUrl.removePrefix("http://")) }
+        appPreferences.endpointForReceiver(identity.deviceId).takeIf(String::isNotBlank)?.let(endpoints::add)
+        endpoints.addAll(discovery.desktops.value.map { it.endpoint })
+        for (endpoint in endpoints) {
+            val target = parseConnectionTarget(endpoint) ?: continue
+            try { return@withLock establish(target, expected = identity) }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { }
+        }
+        // DHCP may have moved the receiver since the previous session. Discovery is only a hint;
+        // every resulting endpoint must still pass the identity check above.
+        val ownedDiscovery = !discovery.isDiscovering
+        if (ownedDiscovery) discovery.start()
+        try {
+            delay(1500)
+            for (desktop in discovery.desktops.value) {
+                if (desktop.endpoint in endpoints) continue
+                try { return@withLock establish(ConnectionTarget(desktop.host, desktop.port), expected = identity) }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { }
+            }
+        } finally { if (ownedDiscovery) discovery.stop() }
+        markDisconnected("Waiting for your paired computer")
+        null
+    }
 
+    suspend fun selectedIdentity(): ReceiverIdentity? = _receiverIdentity.value ?: run {
+        val id = appPreferences.receiverId.first()
+        if (id.isBlank()) null else ReceiverIdentity(id, appPreferences.libraryId.first())
+    }
+
+    suspend fun ensureConnectedToLast(): Boolean {
+        val identity = selectedIdentity() ?: return false
+        return connectionFor(identity) != null
+    }
+
+    private fun startMonitor() {
+        monitorJob?.cancel()
+        monitorJob = scope.launch {
+            while (isActive && !_disconnectedByUser.value) {
+                delay(10_000)
+                val connection = session.connection.get() ?: break
+                val target = parseConnectionTarget(connection.baseUrl) ?: break
+                try {
+                    val info = health(target)
+                    if (info.optString("deviceId") != connection.identity.deviceId || info.optString("libraryId") != connection.identity.libraryId) {
+                        markDisconnected("The receiver or destination folder changed. Connect again to review it")
+                        break
+                    }
+                } catch (e: CancellationException) { throw e }
+                catch (_: Exception) { markDisconnected("Waiting for your computer"); break }
+            }
+        }
+    }
+
+    fun getBaseUrl(): String = session.connection.get()?.baseUrl.orEmpty()
     fun getConnectedEndpoint(): String = _connectedEndpoint.value
-
     fun baseUrlForTarget(target: String): String? = baseUrlForConnectionTarget(target)
-
-    private companion object {
-        const val HEARTBEAT_MS = 5000L
-        const val INITIAL_BACKOFF_MS = 2000L
-        const val MAX_BACKOFF_MS = 30000L
-        const val MAX_FAILURES = 12
-    }
 }

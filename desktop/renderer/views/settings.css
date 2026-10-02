@@ -1,5 +1,11 @@
 /* Settings: printed form blocks. Label column on the left, control column on the right, hairlines between rows. */
 .settings { display: grid; gap: 20px; max-width: 920px; }
+.device-intro { margin: 8px 0 18px; }
+.device-row { display: grid; gap: 10px; padding: 16px 0; border-top: 1px solid var(--rule); justify-items: start; }
+.device-row > .set-help { overflow-wrap: anywhere; max-width: 100%; }
+.device-name-line { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; }
+.device-name-line label { width: 100%; font-weight: 650; font-size: 13px; }
+.device-name-line .input { flex: 1 1 180px; min-width: 0; }
 .set-notice { margin-bottom: 22px; max-width: 920px; }
 
 .set-block { padding: 20px 24px 8px; }

@@ -88,6 +88,8 @@ object Ph {
     val Stamp = R.drawable.ph_stamp
     val Folder = R.drawable.ph_folder_simple
     val Eye2 = R.drawable.ph_eye
+    val Minus = R.drawable.ph_minus
+    val ExternalLink = R.drawable.ph_arrow_square_out
 }
 
 /** A Phosphor icon at the standard 24dp (or [size]). */

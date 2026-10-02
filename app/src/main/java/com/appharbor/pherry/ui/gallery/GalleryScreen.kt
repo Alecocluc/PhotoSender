@@ -91,6 +91,9 @@ import com.appharbor.pherry.ui.components.SelectionTicket
 import com.appharbor.pherry.ui.components.StatusTag
 import com.appharbor.pherry.ui.components.TagKind
 import com.appharbor.pherry.ui.permissions.hasMediaPermission
+import com.appharbor.pherry.ui.permissions.MediaAccess
+import com.appharbor.pherry.ui.permissions.mediaAccess
+import com.appharbor.pherry.ui.components.Notice
 import com.appharbor.pherry.ui.permissions.rememberPermissionAsk
 import com.appharbor.pherry.ui.permissions.requiredMediaPermissions
 import com.appharbor.pherry.ui.theme.PherryShape
@@ -112,6 +115,7 @@ fun GalleryScreen(
 ) {
     val albums by viewModel.albums.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val queueing by viewModel.isQueueing.collectAsStateWithLifecycle()
     val selectedBytes by viewModel.selectedBytes.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
     val totalAssets by viewModel.totalAssetCount.collectAsStateWithLifecycle()
@@ -130,6 +134,7 @@ fun GalleryScreen(
     val scope = rememberCoroutineScope()
 
     var hasPermission by remember { mutableStateOf(hasMediaPermission(context)) }
+    var access by remember { mutableStateOf(mediaAccess(context)) }
     var permissionBlocked by rememberSaveable { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
@@ -139,7 +144,8 @@ fun GalleryScreen(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
-        hasPermission = results.values.all { it }
+        hasPermission = hasMediaPermission(context)
+        access = mediaAccess(context)
         // Only a real "don't ask again" swaps Allow for app settings; a dismissed dialog asks again.
         permissionBlocked = !hasPermission && mediaAsk.blockedAfterDenial()
         if (hasPermission) viewModel.loadFolders()
@@ -151,6 +157,7 @@ fun GalleryScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 hasPermission = hasMediaPermission(context)
+                access = mediaAccess(context)
                 if (hasPermission) {
                     permissionBlocked = false
                     viewModel.loadFolders()
@@ -206,15 +213,16 @@ fun GalleryScreen(
     // Filters stay reachable while a filter switch is loading; only a truly empty library hides them.
     val showControls = hasPermission && !(libraryLoaded && totalAssets == 0 && filter == MediaFilter.ALL)
 
-    val send: () -> Unit = {
-        val outcome = viewModel.startTransfer()
-        if (outcome.queued > 0) {
-            onBeforeTransfer()
-            onTransferClick()
-        } else {
-            scope.launch { snackbar.showSnackbar(alreadySentMessage(outcome.alreadySent, serverName)) }
+    LaunchedEffect(viewModel) {
+        viewModel.sendEvents.collect { outcome ->
+            when {
+                outcome.error != null -> snackbar.showSnackbar(outcome.error)
+                outcome.queued > 0 -> onTransferClick()
+                else -> snackbar.showSnackbar(alreadySentMessage(outcome.alreadySent, serverName))
+            }
         }
     }
+    val send: () -> Unit = { onBeforeTransfer(); viewModel.startTransfer() }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val columns = if (maxWidth >= 600.dp) 6 else 4
@@ -250,6 +258,17 @@ fun GalleryScreen(
             }
 
             if (showControls) {
+                if (access == MediaAccess.SELECTED) {
+                    item(key = "limited-access") {
+                        Notice(
+                            title = "Showing photos you allowed",
+                            detail = "Other photos stay private. Choose more photos or allow full access for whole-library backup.",
+                            actionLabel = "Manage",
+                            onAction = { mediaAsk.beforeLaunch(); permissionLauncher.launch(requiredMediaPermissions()) },
+                            error = false,
+                        )
+                    }
+                }
                 item(key = "controls") {
                     LibraryControls(
                         filter = filter,
@@ -336,7 +355,8 @@ fun GalleryScreen(
             SelectionTicket(
                 count = ticketCount,
                 detail = ticketDetail(ticketBytes, connected, serverName, ticketAlreadyThere),
-                actionLabel = if (connected) sendLabel(ticketCount, ticketAlreadyThere) else null,
+                actionLabel = if (connected) { if (queueing) "Preparing..." else sendLabel(ticketCount, ticketAlreadyThere) } else null,
+                actionEnabled = !queueing,
                 onAction = send,
                 onClear = viewModel::deselectAll,
                 hint = if (connected) null else "Pair a computer",

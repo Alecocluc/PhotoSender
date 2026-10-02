@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -57,6 +58,7 @@ import com.appharbor.pherry.ui.gallery.UploadMode
 import com.appharbor.pherry.ui.theme.PherryShape
 import com.appharbor.pherry.ui.theme.PherryTheme
 import com.appharbor.pherry.ui.theme.Spacing
+import com.appharbor.pherry.ui.permissions.hasFullMediaPermission
 
 @Composable
 fun SettingsScreen(
@@ -76,6 +78,7 @@ fun SettingsScreen(
     val wifiOnlyTransfer by viewModel.wifiOnlyTransfer.collectAsStateWithLifecycle()
     val keepScreenAwake by viewModel.keepScreenAwake.collectAsStateWithLifecycle()
     val defaultUploadModeName by viewModel.defaultUploadMode.collectAsStateWithLifecycle()
+    val deviceName by viewModel.deviceName.collectAsStateWithLifecycle()
     val uploadMode = UploadMode.entries.firstOrNull { it.name == defaultUploadModeName } ?: UploadMode.ADD
 
     val c = PherryTheme.colors
@@ -86,6 +89,35 @@ fun SettingsScreen(
 
     var askAutoBackup by rememberSaveable { mutableStateOf(false) }
     var askDisconnect by rememberSaveable { mutableStateOf(false) }
+    var askMirror by rememberSaveable { mutableStateOf(false) }
+    var editingName by rememberSaveable { mutableStateOf(false) }
+    var nameDraft by rememberSaveable { mutableStateOf("") }
+
+    if (editingName) {
+        AlertDialog(
+            onDismissRequest = { editingName = false },
+            title = { Text("Name this phone") },
+            text = {
+                OutlinedTextField(value = nameDraft, onValueChange = { nameDraft = it.take(64) },
+                    label = { Text("Phone name") }, singleLine = true)
+            },
+            confirmButton = { TextButton(enabled = nameDraft.isNotBlank(), onClick = {
+                viewModel.saveDeviceName(nameDraft); editingName = false
+            }) { Text("Save") } },
+            dismissButton = { TextButton(onClick = { editingName = false }) { Text("Cancel") } },
+        )
+    }
+    if (askMirror) {
+        AlertDialog(
+            onDismissRequest = { askMirror = false },
+            title = { Text("Enable mirror deletions?") },
+            text = { Text("After you delete a photo on this phone, a manual mirror can also remove its backup from this phone's folder on the computer. Every deletion is previewed and requires your confirmation. Auto-backup only adds files. Keep this off if the computer should preserve everything.") },
+            confirmButton = { TextButton(onClick = {
+                viewModel.onDefaultUploadModeSelected(UploadMode.SYNC); askMirror = false
+            }) { Text("Enable mirror deletions", color = c.red) } },
+            dismissButton = { TextButton(onClick = { askMirror = false }) { Text("Keep backups") } },
+        )
+    }
 
     // The link can drop on its own while the dialog is open; there is nothing left to disconnect then.
     LaunchedEffect(connectionState) {
@@ -170,6 +202,10 @@ fun SettingsScreen(
 
         item(key = "computer") {
             SettingsSection("Computer") {
+                com.appharbor.pherry.ui.components.ActionRow(
+                    title = "This phone", subtitle = deviceName, icon = Ph.Phone,
+                    onClick = { nameDraft = deviceName; editingName = true },
+                )
                 ComputerBlock(
                     state = connectionState,
                     serverName = serverName,
@@ -185,29 +221,6 @@ fun SettingsScreen(
 
         item(key = "backup") {
             SettingsSection("Backup") {
-                Spacer(Modifier.height(Spacing.md))
-                Text("When you back up", style = MaterialTheme.typography.titleSmall, color = c.ink)
-                Spacer(Modifier.height(Spacing.sm))
-                PrintSegmented(
-                    options = listOf(
-                        UploadMode.ADD to "Add new only",
-                        UploadMode.SYNC to "Sync this phone",
-                    ),
-                    selected = uploadMode,
-                    onSelect = viewModel::onDefaultUploadModeSelected,
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                Text(
-                    text = when (uploadMode) {
-                        UploadMode.ADD -> "Sends new photos and videos. Never deletes anything on the computer."
-                        UploadMode.SYNC -> "Sends new photos and videos, and deletes from the computer what you delete here. " +
-                            "You confirm before anything is deleted."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = c.ink2,
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                Hairline()
                 SwitchRow(
                     title = "Auto-backup",
                     subtitle = "Sends new photos and videos to $computer every 15 minutes or so, while on Wi-Fi and $computer is on.",
@@ -230,20 +243,40 @@ fun SettingsScreen(
                 )
                 Hairline()
                 SwitchRow(
-                    title = "Wi-Fi only",
-                    subtitle = "Transfers wait when the Wi-Fi is a phone hotspot or marked as metered.",
+                    title = "Unmetered networks only",
+                    subtitle = "Transfers wait on metered networks. Turn off to send over a metered hotspot.",
                     icon = Ph.Wifi,
                     checked = wifiOnlyTransfer,
                     onCheckedChange = viewModel::onWifiOnlyTransferChanged,
                 )
-                Hairline()
+
+            }
+        }
+
+        item(key = "advanced") {
+            SettingsSection("Advanced") {
                 SwitchRow(
-                    title = "Review every sync",
-                    subtitle = "Shows what a sync will send before it starts. Deleting from the computer always asks first.",
-                    icon = Ph.Eye,
-                    checked = confirmDestructiveSync,
-                    onCheckedChange = viewModel::onConfirmDestructiveSyncChanged,
+                    title = "Mirror deletions",
+                    subtitle = if (hasFullMediaPermission(context))
+                        "Manual backups can remove this phone's deleted photos from its computer folder. Always asks before deleting."
+                    else "Requires full photo and video access. Limited access never permits deletions.",
+                    icon = Ph.Trash,
+                    checked = uploadMode == UploadMode.SYNC,
+                    enabled = hasFullMediaPermission(context) || uploadMode == UploadMode.SYNC,
+                    onCheckedChange = { on ->
+                        if (on) askMirror = true else viewModel.onDefaultUploadModeSelected(UploadMode.ADD)
+                    },
                 )
+                if (uploadMode == UploadMode.SYNC) {
+                    Hairline()
+                    SwitchRow(
+                        title = "Review upload-only mirror plans",
+                        subtitle = "Preview even when no files will be deleted. Deletions always need confirmation.",
+                        icon = Ph.Eye,
+                        checked = confirmDestructiveSync,
+                        onCheckedChange = viewModel::onConfirmDestructiveSyncChanged,
+                    )
+                }
             }
         }
 
@@ -251,7 +284,7 @@ fun SettingsScreen(
             SettingsSection("Transfers") {
                 SwitchRow(
                     title = "Faster transfers",
-                    subtitle = "Sends up to 6 files at once. Turn off if your Wi-Fi drops.",
+                    subtitle = "Allows more files in parallel when the network and computer can keep up.",
                     icon = Ph.Lightning,
                     checked = highSpeedTransferEnabled,
                     onCheckedChange = viewModel::onHighSpeedTransferChanged,

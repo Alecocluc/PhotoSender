@@ -1,12 +1,14 @@
 import { state } from './state.js';
 
 const _registry = {};
+const _cleanup = {};
 
-export function register(name, fn) { _registry[name] = fn; }
+export function register(name, fn, cleanup) { _registry[name] = fn; _cleanup[name] = cleanup; }
 
 export function navigate(view) {
   if (!_registry[view]) view = "receiver";
   const changed = state.view !== view;
+  if (changed) _cleanup[state.view]?.();
   state.view = view;
   document.querySelectorAll(".nav-item").forEach((el) => {
     if (el.dataset.view === view) el.setAttribute("aria-current", "page");

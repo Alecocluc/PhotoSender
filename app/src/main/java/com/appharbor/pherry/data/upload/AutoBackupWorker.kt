@@ -32,21 +32,15 @@ class AutoBackupWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         if (!appPreferences.autoBackupEnabled.first()) return Result.success()
+        if (appPreferences.userPaused.first()) return Result.success()
 
         // Need a reachable desktop to send to; otherwise wait for the next period.
         if (!connectionManager.ensureConnectedToLast()) return Result.success()
 
-        val since = appPreferences.lastAutoBackupAt.first()
         val now = System.currentTimeMillis()
-
-        val completedIds = uploadRecordDao.getCompletedMediaStoreIds().toHashSet()
-        val queuedIds = uploadRecordDao.getPendingAndUploading().mapTo(HashSet()) { it.mediaStoreId }
-
-        val fresh = mediaRepository.loadAllMedia(MediaFilter.ALL).filter { item ->
-            // MediaStore DATE_MODIFIED is in seconds.
-            val modifiedMs = item.dateModified * 1000L
-            modifiedMs >= since && item.id !in completedIds && item.id !in queuedIds
-        }
+        // A timestamp checkpoint misses restored/imported originals with old modification dates.
+        // Receipt fingerprints cover edited rows and the currently selected destination.
+        val fresh = uploadManager.filterUnsent(mediaRepository.loadAllMedia(MediaFilter.ALL))
 
         // Await the enqueue/schedule so the checkpoint only advances once these records are
         // persisted and the worker is queued. start() would fire-and-forget on UploadManager's own

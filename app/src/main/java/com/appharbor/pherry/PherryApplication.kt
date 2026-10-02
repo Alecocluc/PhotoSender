@@ -29,6 +29,7 @@ class PherryApplication : Application(), Configuration.Provider {
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
+            .setJobSchedulerJobIdRange(1_000, 70_000)
             .build()
 
     override fun onCreate() {

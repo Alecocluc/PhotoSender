@@ -71,7 +71,7 @@ export function startRebuildPolling() {
 export async function clearHistoryConfirm() {
   const ok = await showConfirm({
     title: "Clear the history on this computer?",
-    message: "Files stay on disk. This computer forgets which files it already has, so phones may send some again.",
+    message: "This removes the recent transfer log. Files, your Photos library and the duplicate index stay in place, so phones still recognise their saved copies.",
     confirmText: "Clear history",
     danger: true,
   });
@@ -99,8 +99,8 @@ export async function exportHistory() {
 
 export async function importHistory() {
   const ok = await showConfirm({
-    title: "Replace the history with a backup?",
-    message: "The history and duplicate index on this computer are replaced by the file you pick. No photos or videos are moved or deleted. Pherry restarts the receiver to load it.",
+    title: "Restore records from a history backup?",
+    message: "Pherry merges records for files that are still on disk into its index. Existing records stay in place. No photos or videos are moved or deleted.",
     confirmText: "Choose a backup",
   });
   if (!ok) return;
@@ -154,7 +154,7 @@ export async function cleanDuplicates() {
   const copies = plural(count, "extra copy", "extra copies");
   const ok = await showConfirm({
     title: `Delete ${plural(count, "duplicate copy", "duplicate copies")}?`,
-    message: `Pherry found <strong>${escHtml(copies)}</strong>${groups ? ` of ${escHtml(plural(groups, "file"))}` : ""}, using ${escHtml(fmtBytes(probe.bytesFreed || 0))}. The oldest copy of each file stays; the rest are deleted from disk. This can't be undone.`,
+    message: `Pherry found <strong>${escHtml(copies)}</strong>${groups ? ` of ${escHtml(plural(groups, "file"))}` : ""}, using ${escHtml(fmtBytes(probe.bytesFreed || 0))}. The oldest copy within each phone's folder stays; the rest are deleted from disk. Copies belonging to other phones are kept. This can't be undone.`,
     confirmText: `Delete ${n(count)}`,
     danger: true,
   });

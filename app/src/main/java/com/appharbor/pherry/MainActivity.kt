@@ -49,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -216,6 +217,16 @@ fun PherryApp(
         val topLevel = currentDestination?.route in Destinations.map { it.route }
 
         val openTab: (String) -> Unit = { route -> navController.openTab(route) }
+        var showTransferHistory by rememberSaveable { mutableStateOf(false) }
+        val openTransfers: () -> Unit = {
+            showTransferHistory = false
+            openTab(Screen.Activity.route)
+        }
+        val openHistory: () -> Unit = {
+            showTransferHistory = true
+            openTab(Screen.Activity.route)
+        }
+        LaunchedEffect(shareViewModel) { shareViewModel.sent.collect { openTransfers() } }
 
         val scope = rememberCoroutineScope()
         val connectSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -260,7 +271,6 @@ fun PherryApp(
                 ) {
                     ShareImportSheet(
                         onConnect = openConnect,
-                        onSent = { openTab(Screen.Activity.route) },
                         onBeforeTransfer = onBeforeTransfer,
                         onDismiss = { shareViewModel.cancel() },
                         viewModel = shareViewModel,
@@ -315,7 +325,8 @@ fun PherryApp(
                             HomeScreen(
                                 onConnectClick = openConnect,
                                 onOpenLibrary = { openTab(Screen.Gallery.route) },
-                                onOpenTransfers = { openTab(Screen.Activity.route) },
+                                onOpenTransfers = openTransfers,
+                                onOpenHistory = openHistory,
                                 onOpenSettings = { openTab(Screen.Settings.route) },
                                 onBeforeTransfer = onBeforeTransfer,
                             )
@@ -327,7 +338,7 @@ fun PherryApp(
                                 onFolderClick = { bucketName ->
                                     navController.navigate(Screen.FolderDetail.createRoute(bucketName))
                                 },
-                                onTransferClick = { openTab(Screen.Activity.route) },
+                                onTransferClick = openTransfers,
                                 onConnectClick = openConnect,
                                 onBeforeTransfer = onBeforeTransfer,
                                 connectionState = connectionState,
@@ -347,13 +358,14 @@ fun PherryApp(
                                 viewModel = galleryViewModel,
                                 onBack = { navController.popBackStack() },
                                 onBeforeTransfer = onBeforeTransfer,
-                                onTransferClick = { openTab(Screen.Activity.route) },
+                                onTransferClick = openTransfers,
                                 onConnectClick = openConnect,
                                 connectionState = connectionState,
                             )
                         }
                         composable(Screen.Activity.route) {
                             ActivityScreen(
+                                showHistory = showTransferHistory,
                                 onOpenLibrary = { openTab(Screen.Gallery.route) },
                                 onConnectClick = openConnect,
                                 onBeforeTransfer = onBeforeTransfer,

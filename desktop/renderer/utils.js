@@ -52,7 +52,11 @@ export function escHtml(s) {
 
 export function entryName(e) { return e?.originalName || e?.fileName || "Untitled"; }
 export function entryTime(e) { return e?.timestamp || e?.time || 0; }
-export function entryKey(e) { return `${e?.bucketName || ""}/${entryName(e)}/${entryTime(e)}`; }
+export function entryKey(e) { return `${e?.deviceId || ""}/${e?.relativePath || `${e?.bucketName || ""}/${e?.fileName || entryName(e)}`}/${entryTime(e)}`; }
+/** Display names may differ from the safe on-disk name. Always open the recorded physical path. */
+export function fileArgs(e) {
+  return { relativePath: e?.relativePath || '', deviceId: e?.deviceId || '', bucket: e?.bucketName || '', name: e?.fileName || entryName(e) };
+}
 export function isVideo(name) { return /\.(mp4|mov|avi|mkv|webm|m4v|3gp)$/i.test(name || ""); }
 export function isPhoto(name) { return /\.(heic|heif|jpe?g|png|gif|webp|tif?f|bmp|raw|nef|cr2|arw|dng)$/i.test(name || ""); }
 
@@ -80,7 +84,7 @@ export function plural(count, one, many = `${one}s`) {
 }
 
 // Compact, scheme-less QR payload the phone scans: "ip:port?t=token". Kept short so it fits the
-// tiny built-in QR encoder's byte budget. Token gates destructive (delete) operations on the PC.
+// tiny built-in QR encoder's byte budget. This code enrolls a phone; its credential gates transfers.
 export function qrPayloadFor(ip, port, token) {
   if (!ip || ip === "-") return "";
   const base = `${ip}:${port}`;

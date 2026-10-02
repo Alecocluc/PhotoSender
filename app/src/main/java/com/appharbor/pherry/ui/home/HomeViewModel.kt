@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
@@ -45,6 +47,9 @@ data class UnsentState(
     val syncMode: Boolean = false,
     /** Photos and videos on this phone at the time of the scan (the envelope's ON PHONE field). */
     val libraryCount: Int = 0,
+    /** Completed versions in the visible library, scoped to the selected destination. */
+    val backedUpCount: Int = 0,
+    val error: String? = null,
     val isLoading: Boolean = false,
     /** False until the first real scan completes, so the UI can tell "unknown" from "zero". */
     val computed: Boolean = false,
@@ -57,6 +62,7 @@ data class UnsentState(
  * staleness guard keeps rapid tab-switching from re-scanning a large library, and a new completion
  * invalidates the cache so the next open recomputes.
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val uploadManager: UploadManager,
@@ -80,23 +86,35 @@ class HomeViewModel @Inject constructor(
         .sample(250L)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), uploadManager.transferState.value)
 
-    val completedCount: StateFlow<Int> = uploadRecordDao.getCompletedCount()
+    val completedCount: StateFlow<Int> = connectionManager.receiverIdentity.flatMapLatest { target ->
+        if (target == null) flowOf(0) else uploadRecordDao.getCompletedCount(target.deviceId, target.libraryId)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    val failedCount: StateFlow<Int> = uploadRecordDao.getFailedCount()
+    val failedCount: StateFlow<Int> = connectionManager.receiverIdentity.flatMapLatest { target ->
+        if (target == null) flowOf(0) else uploadRecordDao.getFailedCount(target.deviceId, target.libraryId)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    val queuedCount: StateFlow<Int> = uploadRecordDao.getQueuedCount()
+    val queuedCount: StateFlow<Int> = connectionManager.receiverIdentity.flatMapLatest { target ->
+        if (target == null) flowOf(0) else uploadRecordDao.getQueuedCount(target.deviceId, target.libraryId)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    val totalTransferredBytes: StateFlow<Long> = uploadRecordDao.getTotalTransferredBytes()
+    val totalTransferredBytes: StateFlow<Long> = connectionManager.receiverIdentity.flatMapLatest { target ->
+        if (target == null) flowOf(0L) else uploadRecordDao.getTotalTransferredBytes(target.deviceId, target.libraryId)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     /** The last frames that reached the computer, newest first (Home's film strip). */
-    val recentSent: StateFlow<List<UploadRecord>> = uploadRecordDao.getRecentCompleted(12)
+    val recentSent: StateFlow<List<UploadRecord>> = connectionManager.receiverIdentity.flatMapLatest { target ->
+        if (target == null) flowOf(emptyList()) else uploadRecordDao.getRecentCompleted(target.deviceId, target.libraryId, 12)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val lastBackupAt: StateFlow<Long> = uploadRecordDao.getLastSyncTimestamp()
+    val lastBackupAt: StateFlow<Long> = connectionManager.receiverIdentity.flatMapLatest { target ->
+        if (target == null) flowOf(0L) else uploadRecordDao.getLastSyncTimestamp(target.deviceId, target.libraryId)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     val autoBackupEnabled: StateFlow<Boolean> = appPreferences.autoBackupEnabled
@@ -137,15 +155,26 @@ class HomeViewModel @Inject constructor(
 
     private var unsentJob: Job? = null
     private var lastComputedAt = 0L
-    // The plan from the last Sync-mode refresh, reused by prepareSync so tapping the tile doesn't
-    // trigger a second full library scan.
+    // Snapshot used for the Home summary; confirmation always takes a fresh scan.
     private var latestSyncPlan: SyncPlan? = null
 
     init {
+        viewModelScope.launch {
+            connectionManager.receiverIdentity.drop(1).collect {
+                unsentJob?.cancel()
+                latestSyncPlan = null
+                _pendingSyncPlan.value = null
+                lastComputedAt = 0L
+                _unsent.value = UnsentState()
+                refreshUnsent(force = true)
+            }
+        }
         // A new completion (or a record going away) means the unsent set changed — invalidate so the
         // next refresh recomputes. drop(1) skips the flow's initial replay value.
         viewModelScope.launch {
-            uploadRecordDao.getCompletedCount().drop(1).collect { lastComputedAt = 0L }
+            connectionManager.receiverIdentity.flatMapLatest { target ->
+                if (target == null) flowOf(0) else uploadRecordDao.getCompletedCount(target.deviceId, target.libraryId)
+            }.drop(1).collect { lastComputedAt = 0L }
         }
         // Switching Add⇄Sync changes what the tile should show (deletions only matter in Sync), so
         // invalidate too — otherwise a just-changed mode would keep showing the old snapshot.
@@ -165,50 +194,65 @@ class HomeViewModel @Inject constructor(
         if (unsentJob?.isActive == true) return
         unsentJob = viewModelScope.launch {
             _unsent.update { it.copy(isLoading = true) }
-            val liveItems = mediaRepository.loadAllMedia(MediaFilter.ALL)
-            lastComputedAt = System.currentTimeMillis()
-            _unsent.value = if (appPreferences.defaultUploadMode.first() == UploadMode.SYNC.name) {
-                // Sync mode: the full plan also tells us what's been removed from the phone, so the
-                // tile can surface pending desktop deletions instead of "all caught up".
-                val plan = uploadManager.computeSyncPlan(liveItems)
-                latestSyncPlan = plan
-                UnsentState(
-                    count = plan.uploadCount,
-                    bytes = plan.uploadBytes,
-                    deleteCount = plan.deleteCount,
-                    syncMode = true,
-                    libraryCount = liveItems.size,
-                    isLoading = false,
-                    computed = true,
-                )
-            } else {
-                latestSyncPlan = null
-                val items = uploadManager.filterUnsent(liveItems)
-                UnsentState(
-                    count = items.size,
-                    bytes = items.sumOf { it.size },
-                    syncMode = false,
-                    libraryCount = liveItems.size,
-                    isLoading = false,
-                    computed = true,
-                )
+            try {
+                val liveItems = mediaRepository.loadAllMedia(MediaFilter.ALL)
+                val completedIds = uploadManager.completedMediaStoreIds(liveItems)
+                val backedUpCount = liveItems.count { it.id in completedIds }
+                lastComputedAt = System.currentTimeMillis()
+                _unsent.value = if (appPreferences.defaultUploadMode.first() == UploadMode.SYNC.name) {
+                    // Sync mode: the full plan also tells us what's been removed from the phone, so the
+                    // tile can surface pending desktop deletions instead of "all caught up".
+                    val plan = uploadManager.computeSyncPlan(liveItems)
+                    latestSyncPlan = plan
+                    UnsentState(
+                        count = plan.uploadCount,
+                        bytes = plan.uploadBytes,
+                        deleteCount = plan.deleteCount,
+                        syncMode = true,
+                        libraryCount = liveItems.size,
+                        backedUpCount = backedUpCount,
+                        isLoading = false,
+                        computed = true,
+                    )
+                } else {
+                    latestSyncPlan = null
+                    val items = uploadManager.filterUnsent(liveItems)
+                    UnsentState(
+                        count = items.size,
+                        bytes = items.sumOf { it.size },
+                        syncMode = false,
+                        libraryCount = liveItems.size,
+                        backedUpCount = backedUpCount,
+                        isLoading = false,
+                        computed = true,
+                    )
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _unsent.update { it.copy(isLoading = false, computed = false, error = "Could not read the photo library. Check photo access and try again.") }
             }
         }
     }
 
     /**
-     * Open the Sync confirmation dialog. Reuses the plan computed by the last [refreshUnsent] (the
-     * tile is only shown once that plan exists); falls back to a fresh scan if the cache was cleared.
+     * Take a fresh snapshot before displaying a destructive mirror plan.
      */
     fun prepareSync() {
         if (_isPreparingSync.value) return
-        latestSyncPlan?.let { _pendingSyncPlan.value = it; return }
         viewModelScope.launch {
             _isPreparingSync.value = true
-            val plan = uploadManager.computeSyncPlan(mediaRepository.loadAllMedia(MediaFilter.ALL))
-            latestSyncPlan = plan
-            _pendingSyncPlan.value = plan
-            _isPreparingSync.value = false
+            try {
+                val plan = uploadManager.computeSyncPlan(mediaRepository.loadAllMedia(MediaFilter.ALL))
+                latestSyncPlan = plan
+                _pendingSyncPlan.value = plan
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _unsent.update { it.copy(error = "Could not prepare the mirror. Check photo access and try again.") }
+            } finally {
+                _isPreparingSync.value = false
+            }
         }
     }
 
@@ -238,10 +282,14 @@ class HomeViewModel @Inject constructor(
             _isQueueing.value = true
             try {
                 val items = uploadManager.filterUnsent(mediaRepository.loadAllMedia(MediaFilter.ALL))
-                if (items.isNotEmpty()) uploadManager.start(items)
+                if (items.isNotEmpty()) uploadManager.enqueueAndSchedule(items, userInitiated = true)
                 lastComputedAt = System.currentTimeMillis()
                 _unsent.update { it.copy(count = 0, bytes = 0, isLoading = false, computed = true) }
                 _queued.tryEmit(Unit)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _unsent.update { it.copy(error = "Could not queue your photos. Check photo access and try again.") }
             } finally {
                 _isQueueing.value = false
             }
@@ -250,14 +298,14 @@ class HomeViewModel @Inject constructor(
 
     fun retryFailed() = uploadManager.retryFailed()
 
-    /** Stop the running transfer. Unsent files stay queued and resume when Pherry next starts. */
+    /** Pause the running transfer durably. Only an explicit Resume starts it again. */
     fun stopTransfer() = uploadManager.cancelTransfer()
 
     /** Try the last computer again, e.g. right after Android grants local network access. */
     fun reconnect() = connectionManager.autoReconnect()
 
     /** Restart a queue that was stopped (or interrupted) without waiting for the next app start. */
-    fun resumeQueued() = uploadManager.resumeIfPending()
+    fun resumeQueued() = uploadManager.resumeTransfer()
 
     fun formatBytes(bytes: Long): String = when {
         bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)

@@ -33,6 +33,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,6 +58,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.model.MediaItem
 import com.appharbor.pherry.ui.components.EmptyStrip
@@ -90,6 +94,7 @@ fun FolderDetailScreen(
     val loadedName by viewModel.currentFolderName.collectAsStateWithLifecycle()
     val folderItems by viewModel.currentFolderItems.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val queueing by viewModel.isQueueing.collectAsStateWithLifecycle()
     val selectedBytes by viewModel.selectedBytes.collectAsStateWithLifecycle()
     val completedIds by viewModel.completedIds.collectAsStateWithLifecycle()
     val serverName by viewModel.serverName.collectAsStateWithLifecycle()
@@ -101,13 +106,21 @@ fun FolderDetailScreen(
     val scope = rememberCoroutineScope()
     var viewerId by rememberSaveable { mutableStateOf<Long?>(null) }
     var ticketHeight by remember { mutableIntStateOf(0) }
+    var selectionMode by rememberSaveable { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(bucketName) { viewModel.loadFolderItems(bucketName) }
+    DisposableEffect(lifecycleOwner, bucketName) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.loadFolderItems(bucketName)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val loading = loadedName != bucketName
     val items = if (loading) emptyList<MediaItem>() else folderItems
     val connected = connectionState == ConnectionState.CONNECTED
-    val selecting = selectedIds.isNotEmpty()
+    val selecting = selectionMode || selectedIds.isNotEmpty()
 
     val viewerIndex = remember(viewerId, items) {
         viewerId?.let { id -> items.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
@@ -121,7 +134,7 @@ fun FolderDetailScreen(
         HashMap<Long, Int>(selectedIds.size).apply { selectedIds.forEachIndexed { i, id -> put(id, i + 1) } }
     }
 
-    BackHandler(enabled = selecting && !viewerOpen) { viewModel.deselectAll() }
+    BackHandler(enabled = selecting && !viewerOpen) { selectionMode = false; viewModel.deselectAll() }
 
     val dataLine = when {
         selecting -> "${Fmt.count(selectedIds.size)} selected"
@@ -134,17 +147,16 @@ fun FolderDetailScreen(
 
     val alreadyThere = remember(selectedIds, completedIds) { selectedIds.count { it in completedIds } }
 
-    // Opens Transfers only when something was queued; a pick the computer already has gets a snackbar.
-    val sendSelection: () -> Boolean = {
-        val outcome = viewModel.startTransfer()
-        if (outcome.queued > 0) {
-            onBeforeTransfer()
-            onTransferClick()
-        } else {
-            scope.launch { snackbar.showSnackbar(alreadySentMessage(outcome.alreadySent, serverName)) }
+    LaunchedEffect(viewModel) {
+        viewModel.sendEvents.collect { outcome ->
+            when {
+                outcome.error != null -> snackbar.showSnackbar(outcome.error)
+                outcome.queued > 0 -> { viewerId = null; selectionMode = false; onTransferClick() }
+                else -> snackbar.showSnackbar(alreadySentMessage(outcome.alreadySent, serverName))
+            }
         }
-        outcome.queued > 0
     }
+    val sendSelection: () -> Unit = { onBeforeTransfer(); viewModel.startTransfer() }
 
     BoxWithConstraints(
         Modifier
@@ -159,7 +171,7 @@ fun FolderDetailScreen(
         val rows = remember(items, columns) { items.chunked(columns) }
         val navigationBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         // A hidden ticket reports no size change, so only count its height while it is up.
-        val listBottom = if (selecting && ticketHeight > 0) with(density) { ticketHeight.toDp() } else navigationBottom
+        val listBottom = if (selectedIds.isNotEmpty() && ticketHeight > 0) with(density) { ticketHeight.toDp() } else navigationBottom
 
         // Hidden from accessibility while the viewer covers it.
         Column(
@@ -194,12 +206,18 @@ fun FolderDetailScreen(
                     }
                 },
                 actions = {
-                    if (unsent.isNotEmpty() && !unsentAllSelected) {
+                    if (items.isNotEmpty()) {
+                        TextButton(onClick = {
+                            selectionMode = !selecting
+                            if (!selectionMode) viewModel.deselectAll()
+                        }) { Text(if (selecting) "Done" else "Select", color = c.ink) }
+                    }
+                    if (selecting && unsent.isNotEmpty() && !unsentAllSelected) {
                         TextButton(onClick = { viewModel.selectUnsent(items) }) {
                             Text("Select new", style = MaterialTheme.typography.labelLarge, color = c.ink)
                         }
                     }
-                    if (items.isNotEmpty()) {
+                    if (selecting && items.isNotEmpty()) {
                         IconToggleButton(
                             checked = allSelected,
                             onCheckedChange = { all -> if (all) viewModel.selectAll(items) else viewModel.deselectAll() },
@@ -284,7 +302,7 @@ fun FolderDetailScreen(
         val ticketBytes = heldWhile(selecting, selectedBytes)
         val ticketAlreadyThere = heldWhile(selecting, alreadyThere)
         AnimatedVisibility(
-            visible = selecting && !viewerOpen,
+            visible = selectedIds.isNotEmpty() && !viewerOpen,
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
             modifier = Modifier
@@ -294,9 +312,10 @@ fun FolderDetailScreen(
             SelectionTicket(
                 count = ticketCount,
                 detail = ticketDetail(ticketBytes, connected, serverName, ticketAlreadyThere),
-                actionLabel = if (connected) sendLabel(ticketCount, ticketAlreadyThere) else null,
+                actionLabel = if (connected) { if (queueing) "Preparing..." else sendLabel(ticketCount, ticketAlreadyThere) } else null,
+                actionEnabled = !queueing,
                 onAction = { sendSelection() },
-                onClear = viewModel::deselectAll,
+                onClear = { viewModel.deselectAll(); selectionMode = false },
                 hint = if (connected) null else "Pair a computer",
                 onHint = onConnectClick,
                 applyNavigationPadding = true,
@@ -319,7 +338,7 @@ fun FolderDetailScreen(
                 onSend = { item ->
                     viewModel.selectAll(listOf(item))
                     // Stay on the picture when the computer already has it; the snackbar says so.
-                    if (sendSelection()) viewerId = null
+                    sendSelection()
                 },
                 onConnect = onConnectClick,
             )

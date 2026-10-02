@@ -31,4 +31,9 @@ class ShareIntakeBus @Inject constructor() {
     fun clear() {
         _requests.value = emptyList()
     }
+
+    /** A share arriving during an import must not be erased when the older import finishes. */
+    fun replaceIfCurrent(original: List<Uri>, remaining: List<Uri>) {
+        _requests.compareAndSet(original, remaining)
+    }
 }

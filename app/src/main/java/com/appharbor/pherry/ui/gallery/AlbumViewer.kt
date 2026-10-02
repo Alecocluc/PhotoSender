@@ -1,9 +1,14 @@
 package com.appharbor.pherry.ui.gallery
 
+import android.content.Intent
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,14 +32,24 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,7 +70,7 @@ import com.appharbor.pherry.ui.theme.Spacing
 
 /**
  * The album's frames one at a time on film black, swiped sideways. Covers the album, draws under
- * the system bars, and closes on System Back. Videos show their frame; there is no playback.
+ * the system bars, and closes on System Back. Photos support zoom; videos open the device's player.
  */
 @Composable
 internal fun AlbumViewer(
@@ -169,22 +184,56 @@ internal fun AlbumViewer(
 @Composable
 private fun ViewerPage(item: MediaItem) {
     val c = PherryTheme.colors
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    val context = LocalContext.current
+    var scale by remember(item.id) { mutableFloatStateOf(1f) }
+    var offset by remember(item.id) { mutableStateOf(Offset.Zero) }
+    var bounds by remember { mutableStateOf(IntSize.Zero) }
+    val transform = rememberTransformableState { zoom, pan, _ ->
+        scale = (scale * zoom).coerceIn(1f, 5f)
+        val maxX = bounds.width * (scale - 1f) / 2f
+        val maxY = bounds.height * (scale - 1f) / 2f
+        offset = Offset((offset.x + pan.x).coerceIn(-maxX, maxX), (offset.y + pan.y).coerceIn(-maxY, maxY))
+    }
+    Box(Modifier.fillMaxSize().clipToBounds().onSizeChanged { bounds = it }, contentAlignment = Alignment.Center) {
         AsyncImage(
             model = rememberFrameModel(item.uri, item.isVideo, sizePx = 1080),
             contentDescription = "${item.displayName}, ${if (item.isVideo) "video" else "photo"}",
             contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize()
+                .then(if (item.isVideo) Modifier else Modifier
+                    .transformable(state = transform, canPan = { scale > 1f })
+                    .pointerInput(item.id) {
+                        detectTapGestures(onDoubleTap = {
+                            scale = if (scale > 1f) 1f else 2.5f
+                            offset = Offset.Zero
+                        })
+                    })
+                .graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y },
         )
         if (item.isVideo) {
-            Box(
+            IconButton(
+                onClick = {
+                    try {
+                        context.startActivity(Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(item.uri, item.mimeType)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        })
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        Toast.makeText(context, "Install a video player to play this video.", Toast.LENGTH_LONG).show()
+                    } catch (_: SecurityException) {
+                        Toast.makeText(context, "Allow access to this video before playing it.", Toast.LENGTH_LONG).show()
+                    }
+                },
                 modifier = Modifier
                     .size(56.dp)
                     .clip(PherryShape.print)
                     .background(c.film.copy(alpha = 0.72f)),
-                contentAlignment = Alignment.Center,
             ) {
-                PhIcon(Ph.Play, contentDescription = null, tint = c.filmInk, size = 28.dp)
+                PhIcon(Ph.Play, contentDescription = "Play video", tint = c.filmInk, size = 28.dp)
+            }
+        } else if (scale > 1f) {
+            IconButton(onClick = { scale = 1f; offset = Offset.Zero }, modifier = Modifier.align(Alignment.TopEnd)) {
+                PhIcon(Ph.Minus, contentDescription = "Reset zoom", tint = c.filmInk)
             }
         }
     }

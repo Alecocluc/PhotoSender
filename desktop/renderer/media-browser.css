@@ -1,0 +1,47 @@
+/* A contact sheet with a finite viewport; the collection itself has no display cap. */
+.query-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.query-search { flex: 1 1 250px; min-width: 180px; }
+.query-controls .select { max-width: 220px; min-width: 115px; }
+.query-dates { position: relative; font-size: 13px; }
+.query-dates summary { padding: 8px 10px; cursor: pointer; }
+.query-dates > div { position: absolute; right: 0; z-index: 8; top: 100%; display: grid; gap: 12px; padding: 18px; background: var(--sheet); border: 1px solid var(--rule); box-shadow: var(--lift-hi); border-radius: var(--r); }
+.query-dates label { display: grid; gap: 4px; }
+.query-error, .browser-error { color: var(--red); font-size: 13px; }
+.browser-guide { flex-wrap: wrap; min-height: 48px; height: auto; padding: 6px 0; gap: 10px; }
+.browser-jump { display: flex; align-items: center; gap: 7px; margin-left: auto; font-family: var(--sans); text-transform: none; letter-spacing: 0; font-size: 12px; }
+.browser-jump .input { width: 86px; height: 30px; padding: 4px 7px; }
+.media-viewport { position: relative; min-width: 0; overflow-anchor: none; }
+.media-window { position: absolute; inset: 0 0 auto; width: 100%; }
+.media-grid-row { display: grid; grid-template-columns: repeat(var(--media-columns, 1), minmax(0, 1fr)); height: var(--media-row-height); padding-bottom: 14px; }
+.media-cell { min-width: 0; min-height: 0; }
+.media-cell .frame { width: 100%; height: 100%; }
+.media-cell .frame .edge { flex: 0 0 18px; }
+.media-cell .frame .shot { flex: 1 1 auto; aspect-ratio: auto; min-height: 0; width: 100%; }
+.media-cell .frame .shot img { position: absolute; inset: 0; }
+.media-placeholder { height: 100%; min-width: 0; background: var(--well); border-bottom: 1px solid var(--rule); }
+.media-placeholder.frame { background: var(--film-2); }
+.inventory-row { display: flex; min-width: 0; height: 100%; border-bottom: 1px solid var(--rule); }
+.inventory-entry { flex: 1; min-width: 0; display: grid; grid-template-columns: 46px 52px minmax(0, 1fr) 65px 82px 148px; gap: 12px; align-items: center; text-align: left; border: 0; background: transparent; cursor: pointer; padding: 10px 8px; }
+.inventory-entry:hover, .inventory-entry:focus-visible { background: var(--well); }
+.inventory-name { display: grid; min-width: 0; gap: 3px; }
+.inventory-name strong { font-size: 13.5px; font-weight: 650; }
+.inventory-name span { font-size: 12px; color: var(--ink-3); }
+.inventory-name > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inventory-no, .inventory-size, .inventory-date { color: var(--ink-3); font-size: 11px; }
+.inventory-date { line-height: 1.5; }
+.inventory-size { white-space: nowrap; text-align: right; }
+.inventory-reveal { flex-shrink: 0; align-self: center; }
+.is-ledger .media-grid-row { padding-bottom: 0; }
+.browser-foot { color: var(--ink-3); font-size: 12.5px; border-top: 1px solid var(--rule); padding: 16px 0; margin-top: 20px; }
+.browser-empty { text-align: center; padding: 50px 24px; border: 1px dashed var(--rule-strong); }
+.browser-empty h2 { font-size: 18px; }.browser-empty p { font-size: 13px; color: var(--ink-2); }
+.browser-empty .empty-strip { justify-content: center; }
+.media-browser [hidden] { display: none !important; }
+@media (max-width: 1180px) { .inventory-entry { grid-template-columns: 38px 48px minmax(0, 1fr) 78px 125px; gap: 8px; }.inventory-kind { display: none; } }
+@media (max-width: 820px) {
+  .inventory-entry { grid-template-columns: 46px minmax(0, 1fr) 76px; gap: 4px 10px; }
+  .inventory-entry .mini { grid-row: 1 / 3; }.inventory-name { grid-column: 2; grid-row: 1; }
+  .inventory-size { grid-column: 3; grid-row: 1; }.inventory-date { grid-column: 2 / 4; grid-row: 2; }
+  .inventory-no { display: none; }.query-controls .select { flex: 1 1 120px; max-width: 100%; }
+}
+@media (max-width: 600px) { .browser-jump { font-size: 11px; }.browser-jump label { display: none; }.query-search { flex-basis: 100%; }.query-dates > div { right: auto; left: 0; } }

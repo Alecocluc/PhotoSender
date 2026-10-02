@@ -1,12 +1,38 @@
 const {
-  app, BrowserWindow, ipcMain, dialog, shell,
-  Tray, Menu, Notification, nativeImage, nativeTheme,
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  Tray,
+  Menu,
+  Notification,
+  nativeImage,
+  nativeTheme,
+  utilityProcess,
+  powerSaveBlocker,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const os = require("os");
-const { createServer, getLocalIPs } = require("./server");
+const { pathToFileURL } = require("node:url");
+const { inside } = require("./storage");
+const getLocalIPs = () => [
+  ...new Set(
+    Object.values(os.networkInterfaces())
+      .flat()
+      .filter((a) => a && a.family === "IPv4" && !a.internal)
+      .map((a) => a.address),
+  ),
+];
+// Isolated development smoke tests must never touch the user's receiver or settings.
+if (!app.isPackaged && process.env.PHERRY_TEST_USER_DATA)
+  app.setPath("userData", process.env.PHERRY_TEST_USER_DATA);
+let adminToken = crypto.randomBytes(32).toString("base64url");
+let sleepBlocker = null;
+let shuttingDown = false;
+const jobStates = new Map();
 
 let Bonjour = null;
 try {
@@ -37,7 +63,12 @@ if (!gotSingleInstanceLock) {
 }
 
 /** What the receiver is doing now. Kept so a window opened later (or reloaded) can ask for it. */
-let lastServerState = { running: false, port: DEFAULT_PORT, error: null, code: null };
+let lastServerState = {
+  running: false,
+  port: DEFAULT_PORT,
+  error: null,
+  code: null,
+};
 
 let settings = {
   downloadPath: "",
@@ -93,8 +124,10 @@ function loadSettings() {
   if (!["system", "light", "dark"].includes(settings.theme)) {
     settings.theme = "system";
   }
-  if (typeof settings.minimizeToTray !== "boolean") settings.minimizeToTray = true;
-  if (typeof settings.notifyOnArrival !== "boolean") settings.notifyOnArrival = true;
+  if (typeof settings.minimizeToTray !== "boolean")
+    settings.minimizeToTray = true;
+  if (typeof settings.notifyOnArrival !== "boolean")
+    settings.notifyOnArrival = true;
   let needsSave = false;
   if (!settings.pairingToken || typeof settings.pairingToken !== "string") {
     settings.pairingToken = generatePairingToken();
@@ -128,7 +161,9 @@ function applyLaunchAtStartup() {
 
 /** Paper by day, darkroom by night: matches the renderer's ground so the window never flashes. */
 function windowBackground() {
-  const dark = settings.theme === "dark" || (settings.theme === "system" && nativeTheme.shouldUseDarkColors);
+  const dark =
+    settings.theme === "dark" ||
+    (settings.theme === "system" && nativeTheme.shouldUseDarkColors);
   return dark ? "#161513" : "#F5F5F2";
 }
 
@@ -143,17 +178,27 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
     icon: path.join(__dirname, "renderer", "pherry-icon.png"),
     show: false,
     backgroundColor: windowBackground(),
   });
 
+  mainWindow.webContents.on("will-navigate", (event) => event.preventDefault());
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  mainWindow.webContents.session.setPermissionRequestHandler(
+    (_contents, _permission, callback) => callback(false),
+  );
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
   // A bind failure at launch happens before any window exists; repeat the state once the page is up.
-  mainWindow.webContents.on("did-finish-load", () => broadcastToRenderer("server-state", { ...lastServerState }));
+  mainWindow.webContents.on("did-finish-load", () =>
+    broadcastToRenderer("server-state", { ...lastServerState }),
+  );
 
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => {
+    if (!process.env.PHERRY_TEST_USER_DATA) mainWindow.show();
+  });
 
   // Closing the window hides it to the tray (the receiver keeps running) unless the user
   // explicitly quit or disabled the tray behavior.
@@ -175,14 +220,27 @@ function broadcastToRenderer(channel, payload) {
 }
 
 function setServerState(next) {
-  lastServerState = { running: false, port: settings.port, error: null, code: null, ...next };
+  lastServerState = {
+    running: false,
+    port: settings.port,
+    error: null,
+    code: null,
+    ...next,
+  };
   updateTrayTooltip();
   broadcastToRenderer("server-state", { ...lastServerState });
 }
 
 /** Same order as the renderer's sortedIPs(): home Wi-Fi ranges first, VPN and virtual adapters last. */
 function sortedLocalIPs() {
-  const score = (ip) => (/^192\.168\./.test(ip) ? 0 : /^10\./.test(ip) ? 1 : /^172\./.test(ip) ? 2 : 3);
+  const score = (ip) =>
+    /^192\.168\./.test(ip)
+      ? 0
+      : /^10\./.test(ip)
+        ? 1
+        : /^172\./.test(ip)
+          ? 2
+          : 3;
   return [...(getLocalIPs() || [])].sort((a, b) => score(a) - score(b));
 }
 
@@ -191,7 +249,10 @@ function formatBytes(bytes) {
   const units = ["B", "KB", "MB", "GB", "TB"];
   let i = 0;
   let v = bytes;
-  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
   return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
@@ -201,11 +262,15 @@ function formatBytes(bytes) {
 function stopBonjour() {
   try {
     if (bonjourService) bonjourService.stop();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   bonjourService = null;
   try {
     if (bonjourInstance) bonjourInstance.destroy();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   bonjourInstance = null;
 }
 
@@ -219,345 +284,347 @@ function startBonjour() {
       type: "pherry",
       protocol: "tcp",
       port: settings.port,
-      txt: { host: os.hostname(), v: "1", id: settings.deviceId },
+      txt: { host: os.hostname(), v: "2", id: settings.deviceId },
     });
   } catch (err) {
     console.error("mDNS publish failed:", err.message);
   }
 }
 
-function stopServer() {
-  return new Promise((resolve) => {
-    stopBonjour();
-    if (!serverInstance) return resolve();
-    const ref = serverInstance;
-    serverInstance = null;
-    try {
-      ref.close(() => resolve());
-    } catch {
+async function stopServer() {
+  stopBonjour();
+  const child = serverInstance;
+  serverInstance = null;
+  if (sleepBlocker !== null) {
+    powerSaveBlocker.stop(sleepBlocker);
+    sleepBlocker = null;
+  }
+  if (!child) return;
+  await new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      child.kill();
       resolve();
-    }
+    }, 4000);
+    child.once("exit", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    child.postMessage({ type: "stop" });
   });
+}
+
+function handleJobs(info) {
+  const jobs = info?.items || [];
+  const busy = jobs.some((j) => ["planning", "running"].includes(j.state));
+  if (busy && sleepBlocker === null)
+    sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
+  if (!busy && sleepBlocker !== null) {
+    powerSaveBlocker.stop(sleepBlocker);
+    sleepBlocker = null;
+  }
+  for (const job of jobs) {
+    const before = jobStates.get(job.id);
+    jobStates.set(job.id, job.state);
+    if (
+      before &&
+      before !== job.state &&
+      job.state === "completed" &&
+      settings.notifyOnArrival &&
+      Notification.isSupported() &&
+      !mainWindow?.isFocused()
+    ) {
+      const notice = new Notification({
+        title: `Backup from ${job.deviceName} finished`,
+        body: `${job.completedFiles || 0} saved · ${job.skippedFiles || 0} already present · ${job.failedFiles || 0} failed`,
+        silent: true,
+      });
+      notice.on("click", showMainWindow);
+      notice.show();
+    }
+  }
+  broadcastToRenderer("jobs-changed", info);
 }
 
 async function startServer() {
   await stopServer();
   fs.mkdirSync(settings.downloadPath, { recursive: true });
-  const expressApp = createServer(settings.downloadPath, {
-    historyStatePath,
-    pairingToken: settings.pairingToken,
-    deviceId: settings.deviceId,
-    onFileReceived: (entry) => {
-      broadcastToRenderer("file-received", entry);
-      if (trackArrival(entry)) notifyArrival(entry);
-      if (settings.autoOpenFolder) {
-        const bucket = entry?.bucketName || "Unsorted";
-        const target = path.join(settings.downloadPath, bucket);
-        if (fs.existsSync(target)) shell.openPath(target);
+  thumbnailCache.clear();
+  thumbnailCacheChars = 0;
+  const child = utilityProcess.fork(
+    path.join(__dirname, "receiver-process.js"),
+    [],
+    { serviceName: "Pherry Receiver", stdio: "pipe" },
+  );
+  serverInstance = child;
+  child.stderr?.on("data", (data) => console.error(String(data).trim()));
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error("The receiver took too long to start"));
+    }, 30000);
+    child.on("message", (message) => {
+      if (message.type === "ready") {
+        clearTimeout(timeout);
+        startBonjour();
+        refreshTray();
+        setServerState({ running: true, port: settings.port });
+        resolve();
+      } else if (message.type === "error") {
+        clearTimeout(timeout);
+        setServerState({
+          running: false,
+          port: settings.port,
+          error: message.error,
+          code: message.code,
+        });
+        reject(new Error(message.error));
+      } else if (message.type === "jobs-changed") handleJobs(message.data);
+      else if (message.type === "file-received") {
+        broadcastToRenderer(message.type, message.data);
+        if (settings.autoOpenFolder && message.data.relativePath) {
+          try {
+            shell.openPath(
+              path.dirname(
+                inside(settings.downloadPath, message.data.relativePath),
+              ),
+            );
+          } catch {
+            /* stale receipt */
+          }
+        }
+      } else if (["files-removed", "devices-changed"].includes(message.type))
+        broadcastToRenderer(message.type, message.data);
+    });
+    child.once("exit", (code) => {
+      clearTimeout(timeout);
+      if (serverInstance === child) {
+        serverInstance = null;
+        if (sleepBlocker !== null) {
+          powerSaveBlocker.stop(sleepBlocker);
+          sleepBlocker = null;
+        }
+        setServerState({
+          running: false,
+          error: "The receiver stopped. Restart Pherry to resume your backup.",
+          code,
+        });
       }
-    },
-    // A phone's Sync removed files here: the window's lists and totals need re-reading.
-    onFilesRemoved: (info) => broadcastToRenderer("files-removed", info),
-  });
-
-  return new Promise((resolve, reject) => {
-    const server = expressApp.listen(settings.port, "0.0.0.0", () => {
-      serverInstance = server;
-      console.log(`Pherry server listening on port ${settings.port}`);
-      startBonjour();
-      refreshTray();
-      setServerState({ running: true, port: settings.port });
-      resolve();
+      reject(new Error("The receiver stopped during startup"));
     });
-    // Node 18+ cuts any request that takes longer than 5 minutes to arrive in full (requestTimeout
-    // defaults to 300 s). A multi-GB video over Wi-Fi, sharing bandwidth with parallel uploads,
-    // takes longer than that, so every big file was cut off and restarted from zero, forever.
-    // Lift the whole-request limit; drop only sockets that go silent for 2 minutes instead.
-    server.requestTimeout = 0;
-    server.setTimeout(120000);
-    server.once("error", (err) => {
-      console.error("Server bind error:", err.message);
-      setServerState({ running: false, port: settings.port, error: err.message, code: err.code || null });
-      reject(err);
+    child.postMessage({
+      type: "start",
+      downloadPath: settings.downloadPath,
+      port: settings.port,
+      options: {
+        historyStatePath,
+        databasePath: path.join(app.getPath("userData"), "receiver.sqlite"),
+        pairingToken: settings.pairingToken,
+        deviceId: settings.deviceId,
+        adminToken,
+      },
     });
   });
 }
 
-// ── Arrival notifications ──────────────────────────────────────────────────
-// A backup is thousands of files: one toast (with sound) when a phone starts sending, then one
-// silent summary once it has been quiet for ARRIVAL_GAP_MS. Mirrors SESSION_GAP_MS in renderer/state.js.
-const ARRIVAL_GAP_MS = 20000;
-let arrivalSession = null; // { device, count, bytes, bucket, timer }
-
-function windowFocused() {
-  return !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused());
-}
-
-function showArrivalToast({ title, body, silent, bucket }) {
-  const n = new Notification({ title, body, silent, icon: trayImage() || undefined });
-  n.on("click", () => {
-    showMainWindow();
-    const target = path.join(settings.downloadPath, bucket || "Unsorted");
-    if (fs.existsSync(target)) shell.openPath(target);
+async function localFetch(route, options = {}) {
+  const res = await fetch(`http://127.0.0.1:${settings.port}${route}`, {
+    ...options,
+    signal: ["/history/import", "/history/remove-duplicates"].includes(route)
+      ? undefined
+      : AbortSignal.timeout(30000),
+    headers: { ...options.headers, "X-Pherry-Admin": adminToken },
   });
-  n.show();
+  return res;
 }
-
-/** Fold one arrival into the phone's session. Returns true for the first file of a new session. */
-function trackArrival(entry) {
-  const device = entry?.deviceName || "";
-  let s = arrivalSession;
-  let started = false;
-  if (!s || s.device !== device) {
-    if (s) {
-      clearTimeout(s.timer);
-      summarizeArrivals(s);
-    }
-    s = arrivalSession = { device, count: 0, bytes: 0, bucket: "", timer: null };
-    started = true;
+async function api(route, method = "GET", body) {
+  const res = await localFetch(route, {
+    method,
+    ...(body === undefined
+      ? {}
+      : {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+  });
+  const value = await res.json();
+  if (!res.ok)
+    throw new Error(
+      value.error || "The receiver could not complete that action",
+    );
+  return value;
+}
+function query(options = {}) {
+  const params = new URLSearchParams();
+  for (const key of [
+    "limit",
+    "offset",
+    "query",
+    "kind",
+    "type",
+    "album",
+    "deviceId",
+    "sort",
+    "dateFrom",
+    "dateTo",
+    "snapshot",
+  ]) {
+    if (["string", "number"].includes(typeof options[key]))
+      params.set(key, String(options[key]).slice(0, 250));
   }
-  s.count += 1;
-  s.bytes += Number(entry?.size) || 0;
-  s.bucket = entry?.bucketName || s.bucket;
-  clearTimeout(s.timer);
-  s.timer = setTimeout(() => {
-    if (arrivalSession === s) arrivalSession = null;
-    summarizeArrivals(s);
-  }, ARRIVAL_GAP_MS);
-  return started;
+  return params.toString();
+}
+function handle(channel, fn) {
+  ipcMain.handle(channel, (event, ...args) => {
+    const expected = pathToFileURL(
+      path.join(__dirname, "renderer", "index.html"),
+    ).href;
+    if (
+      !mainWindow ||
+      event.sender !== mainWindow.webContents ||
+      event.senderFrame?.url !== expected
+    )
+      throw new Error("Untrusted desktop page");
+    return fn(event, ...args);
+  });
 }
 
-/** The quiet summary for a session of more than one file (the first toast already named a single one). */
-function summarizeArrivals(s) {
-  try {
-    if (s.count < 2 || !settings.notifyOnArrival || !Notification.isSupported() || windowFocused()) return;
-    showArrivalToast({
-      title: `${s.count.toLocaleString()} files arrived${s.device ? ` from ${s.device}` : ""}`,
-      body: formatBytes(s.bytes),
-      silent: true,
-      bucket: s.bucket,
-    });
-  } catch { /* best effort */ }
-}
-
-/** Native OS notification when a phone starts sending (unless the window is focused). */
-function notifyArrival(entry) {
-  try {
-    if (!settings.notifyOnArrival) return;
-    if (!Notification.isSupported()) return;
-    if (windowFocused()) return;
-    showArrivalToast({
-      title: entry?.deviceName ? `Receiving from ${entry.deviceName}` : "Receiving files",
-      body: entry?.fileName || entry?.originalName || "",
-      silent: false,
-      bucket: entry?.bucketName,
-    });
-  } catch { /* best effort */ }
-}
-
-/** fetch() against our own server with the pairing token attached (for desktop-side actions). */
-function localFetch(pathname, options = {}) {
-  const headers = { ...(options.headers || {}), "X-Pherry-Token": settings.pairingToken };
-  return fetch(`http://127.0.0.1:${settings.port}${pathname}`, { ...options, headers });
-}
-
-// ── IPC handlers ───────────────────────────────────────────────────────────
-
-ipcMain.handle("get-status", async () => {
-  try {
-    const res = await fetch(`http://127.0.0.1:${settings.port}/status`);
-    return await res.json();
-  } catch {
-    return { totalReceived: 0, totalBytes: 0, uptimeMs: 0, recentActivity: [] };
-  }
-});
-
-ipcMain.handle("get-history", async (_e, options = {}) => {
-  try {
-    const limit = Number(options.limit || 0);
-    const offset = Number(options.offset || 0);
-    const params = new URLSearchParams();
-    if (Number.isFinite(limit) && limit > 0) params.set("limit", String(Math.floor(limit)));
-    if (Number.isFinite(offset) && offset >= 0) params.set("offset", String(Math.floor(offset)));
-    const suffix = params.toString();
-    const res = await fetch(`http://127.0.0.1:${settings.port}/history${suffix ? `?${suffix}` : ""}`);
-    return await res.json();
-  } catch {
-    return {
-      totalReceived: 0,
-      totalBytes: 0,
-      historyCount: 0,
-      totalCount: 0,
-      lastTransferAt: 0,
-      offset: 0,
-      nextOffset: 0,
-      returnedCount: 0,
-      hasMore: false,
-      items: [],
-    };
-  }
-});
-
-ipcMain.handle("clear-history", async () => {
-  try {
-    const res = await localFetch(`/history/clear`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-    if (!res.ok) return { success: false };
-    return await res.json();
-  } catch {
-    return { success: false };
-  }
-});
-
-ipcMain.handle("export-history", async () => {
-  const stamp = new Date().toISOString().slice(0, 10);
+handle("get-status", () => api("/status"));
+handle("get-history", (_event, options) => api(`/history?${query(options)}`));
+handle("get-media", (_event, options) => api(`/v2/media?${query(options)}`));
+handle("get-jobs", () => api("/v2/jobs"));
+handle("get-job", (_event, options) =>
+  api(`/v2/jobs/${encodeURIComponent(options?.id || options)}`),
+);
+handle("get-devices", () => api("/v2/devices"));
+handle("rename-device", (_event, options) =>
+  api(
+    `/v2/devices/${encodeURIComponent(options.id || options.deviceId)}`,
+    "PATCH",
+    { name: options.name || options.deviceName },
+  ),
+);
+handle("revoke-device", (_event, options) =>
+  api(
+    `/v2/devices/${encodeURIComponent(options.id || options.deviceId)}`,
+    "DELETE",
+  ),
+);
+handle("clear-history", () => api("/history/clear", "POST", {}));
+handle("export-history", async () => {
   const result = await dialog.showSaveDialog(mainWindow, {
     title: "Export Pherry history",
-    defaultPath: path.join(app.getPath("documents"), `Pherry-history-${stamp}.json`),
+    defaultPath: path.join(
+      app.getPath("documents"),
+      `Pherry-history-${new Date().toISOString().slice(0, 10)}.json`,
+    ),
     filters: [{ name: "JSON", extensions: ["json"] }],
   });
-  if (result.canceled || !result.filePath) return { success: false, canceled: true };
-
+  if (result.canceled || !result.filePath)
+    return { success: false, canceled: true };
   try {
-    const fallbackState = {
-      version: 2,
-      totalReceived: 0,
-      totalBytes: 0,
-      activityLog: [],
-      completedFiles: [],
-      completedMd5s: [],
-    };
-    const raw = fs.existsSync(historyStatePath)
-      ? fs.readFileSync(historyStatePath, "utf8")
-      : JSON.stringify(fallbackState, null, 2);
-    JSON.parse(raw);
-    fs.writeFileSync(result.filePath, raw, "utf8");
+    const data = await api("/history/export");
+    await fs.promises.writeFile(
+      result.filePath,
+      JSON.stringify(data, null, 2),
+      "utf8",
+    );
     return { success: true, filePath: result.filePath };
   } catch (err) {
     return { success: false, error: err.message };
   }
 });
-
-ipcMain.handle("import-history", async () => {
+handle("import-history", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "Import Pherry history",
     properties: ["openFile"],
     filters: [{ name: "JSON", extensions: ["json"] }],
   });
-  if (result.canceled || !result.filePaths[0]) return { success: false, canceled: true };
-
+  if (result.canceled || !result.filePaths[0])
+    return { success: false, canceled: true };
   try {
-    const raw = fs.readFileSync(result.filePaths[0], "utf8");
-    const parsed = JSON.parse(raw);
-    const looksLikeHistory =
-      parsed &&
-      typeof parsed === "object" &&
-      (
-        Array.isArray(parsed.activityLog) ||
-        Array.isArray(parsed.completedFiles) ||
-        Array.isArray(parsed.completedMd5s)
-      );
-    if (!looksLikeHistory) {
-      return { success: false, error: "That file does not look like a Pherry history export." };
-    }
-
-    fs.mkdirSync(path.dirname(historyStatePath), { recursive: true });
-    fs.writeFileSync(historyStatePath, JSON.stringify(parsed, null, 2), "utf8");
-    await startServer();
-    return { success: true, filePath: result.filePaths[0] };
+    const stat = await fs.promises.stat(result.filePaths[0]);
+    if (stat.size > 64 * 1024 * 1024)
+      throw new Error("The history file is too large (maximum 64 MB)");
+    const data = JSON.parse(
+      await fs.promises.readFile(result.filePaths[0], "utf8"),
+    );
+    if (!Array.isArray(data.activityLog) && !Array.isArray(data.completedFiles))
+      throw new Error("This is not a Pherry history export");
+    return await api("/history/import", "POST", data);
   } catch (err) {
     return { success: false, error: err.message };
   }
 });
+handle("rebuild-history-index", () =>
+  api("/history/rebuild-index", "POST", {}),
+);
+handle("rebuild-history-progress", () => api("/history/rebuild-progress"));
+handle("remove-duplicates", (_event, opts = {}) =>
+  api("/history/remove-duplicates", "POST", { dryRun: !!opts.dryRun }),
+);
 
-ipcMain.handle("rebuild-history-index", async () => {
-  try {
-    const res = await fetch(`http://127.0.0.1:${settings.port}/history/rebuild-index`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-    if (!res.ok) return { success: false };
-    return await res.json();
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
+handle("get-local-ips", () => getLocalIPs());
 
-ipcMain.handle("rebuild-history-progress", async () => {
-  try {
-    const res = await fetch(`http://127.0.0.1:${settings.port}/history/rebuild-progress`);
-    if (!res.ok) return { success: false };
-    return { success: true, ...(await res.json()) };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
+handle("get-server-state", () => ({ ...lastServerState }));
 
-ipcMain.handle("remove-duplicates", async (_e, opts = {}) => {
-  try {
-    const res = await localFetch(`/history/remove-duplicates`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dryRun: !!opts.dryRun }),
-    });
-    if (!res.ok) return { success: false };
-    return await res.json();
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-
-ipcMain.handle("get-local-ips", () => getLocalIPs());
-
-ipcMain.handle("get-server-state", () => ({ ...lastServerState }));
-
-ipcMain.handle("get-host-info", () => ({
+handle("get-host-info", () => ({
   hostname: os.hostname(),
   platform: process.platform,
   version: app.getVersion(),
 }));
 
-ipcMain.handle("get-settings", () => ({ ...settings }));
+handle("get-settings", () => ({ ...settings }));
 
-// Generate a fresh pairing code and restart the receiver so the new token immediately gates
-// destructive routes. Paired phones keep working for uploads but must re-scan the QR to regain
-// delete/clean rights — that's the point of rotating (e.g. after sharing the code with a guest).
-ipcMain.handle("rotate-pairing-token", async () => {
-  settings.pairingToken = generatePairingToken();
-  saveSettings();
+// Enrollment-code rotation preserves established phone credentials. Revoke a phone separately.
+handle("rotate-pairing-token", async () => {
+  const code = generatePairingToken();
   try {
-    await startServer();
+    await api("/v2/pairing-code", "POST", { code });
+    settings.pairingToken = code;
+    saveSettings();
+    refreshTray();
+    return { success: true, pairingToken: code };
   } catch (err) {
-    return { success: false, error: err.message, pairingToken: settings.pairingToken };
+    return { success: false, error: err.message };
   }
-  refreshTray();
-  return { success: true, pairingToken: settings.pairingToken };
 });
 
-ipcMain.handle("update-settings", async (_e, patch = {}) => {
+handle("update-settings", async (_e, patch = {}) => {
   const prev = { ...settings };
   const next = { ...settings };
   let needsRestart = false;
 
-  if (typeof patch.theme === "string" && ["system", "light", "dark"].includes(patch.theme)) {
+  if (
+    typeof patch.theme === "string" &&
+    ["system", "light", "dark"].includes(patch.theme)
+  ) {
     next.theme = patch.theme;
   }
-  if (typeof patch.autoOpenFolder === "boolean") next.autoOpenFolder = patch.autoOpenFolder;
-  if (typeof patch.launchAtStartup === "boolean") next.launchAtStartup = patch.launchAtStartup;
-  if (typeof patch.minimizeToTray === "boolean") next.minimizeToTray = patch.minimizeToTray;
-  if (typeof patch.notifyOnArrival === "boolean") next.notifyOnArrival = patch.notifyOnArrival;
+  if (typeof patch.autoOpenFolder === "boolean")
+    next.autoOpenFolder = patch.autoOpenFolder;
+  if (typeof patch.launchAtStartup === "boolean")
+    next.launchAtStartup = patch.launchAtStartup;
+  if (typeof patch.minimizeToTray === "boolean")
+    next.minimizeToTray = patch.minimizeToTray;
+  if (typeof patch.notifyOnArrival === "boolean")
+    next.notifyOnArrival = patch.notifyOnArrival;
   if (typeof patch.port === "number" || typeof patch.port === "string") {
     const p = Math.floor(Number(patch.port));
-    if (Number.isFinite(p) && p >= MIN_PORT && p <= MAX_PORT && p !== prev.port) {
+    if (
+      Number.isFinite(p) &&
+      p >= MIN_PORT &&
+      p <= MAX_PORT &&
+      p !== prev.port
+    ) {
       next.port = p;
       needsRestart = true;
     }
   }
-  if (typeof patch.downloadPath === "string" && patch.downloadPath && patch.downloadPath !== prev.downloadPath) {
+  if (
+    typeof patch.downloadPath === "string" &&
+    patch.downloadPath &&
+    patch.downloadPath !== prev.downloadPath
+  ) {
     next.downloadPath = patch.downloadPath;
     needsRestart = true;
   }
@@ -587,7 +654,7 @@ ipcMain.handle("update-settings", async (_e, patch = {}) => {
   return { success: true, settings: { ...settings }, restarted: false };
 });
 
-ipcMain.handle("choose-folder", async () => {
+handle("choose-folder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ["openDirectory"],
     defaultPath: settings.downloadPath,
@@ -595,12 +662,16 @@ ipcMain.handle("choose-folder", async () => {
   if (!result.canceled && result.filePaths[0]) {
     const newPath = result.filePaths[0];
     if (newPath !== settings.downloadPath) {
+      const previousPath = settings.downloadPath;
       settings.downloadPath = newPath;
       saveSettings();
       try {
         await startServer();
-      } catch {
-        /* ignore — surfaced via server-state */
+      } catch (error) {
+        settings.downloadPath = previousPath;
+        saveSettings();
+        await startServer().catch(() => {});
+        throw error;
       }
     }
     return settings.downloadPath;
@@ -608,14 +679,24 @@ ipcMain.handle("choose-folder", async () => {
   return settings.downloadPath;
 });
 
-ipcMain.handle("open-folder", async (_e, p) => {
-  const target = p || settings.downloadPath;
+handle("open-folder", async (_e, p) => {
+  let target = settings.downloadPath;
+  if (p && p !== settings.downloadPath) {
+    try {
+      target = inside(
+        settings.downloadPath,
+        path.isAbsolute(p) ? path.relative(settings.downloadPath, p) : p,
+      );
+    } catch {
+      return false;
+    }
+  }
   if (fs.existsSync(target)) {
     await shell.openPath(target);
   }
 });
 
-ipcMain.handle("open-external", async (_e, url) => {
+handle("open-external", async (_e, url) => {
   if (typeof url === "string" && /^https?:\/\//i.test(url)) {
     await shell.openExternal(url);
   }
@@ -624,17 +705,41 @@ ipcMain.handle("open-external", async (_e, url) => {
 // ── Files: thumbnails + open/reveal ──────────────────────────────────────────
 
 /** Resolve a {bucket,name} pair to an absolute path strictly inside the download folder. */
-function resolveDownloadFile(bucket, name) {
-  const safeBucket = String(bucket || "Unsorted").replace(/\.\./g, "").replace(/^[\\/]+/, "");
-  const safeName = path.basename(String(name || ""));
-  if (!safeName) return null;
-  const root = path.resolve(settings.downloadPath);
-  const full = path.resolve(path.join(root, safeBucket, safeName));
-  if (full !== root && !full.startsWith(root + path.sep)) return null; // path-traversal guard
-  return full;
+function resolveDownloadFile(opts = {}) {
+  try {
+    return inside(
+      settings.downloadPath,
+      opts.relativePath ||
+        path.join(
+          opts.deviceFolder || "",
+          opts.bucket || "Unsorted",
+          path.basename(String(opts.name || "")),
+        ),
+    );
+  } catch {
+    return null;
+  }
 }
 
-const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"]);
+const MEDIA_EXTS = new Set([
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".heic",
+  ".heif",
+  ".tif",
+  ".tiff",
+  ".mp4",
+  ".mov",
+  ".m4v",
+  ".webm",
+  ".mkv",
+  ".avi",
+  ".3gp",
+]);
 const thumbnailCache = new Map(); // key `path:mtime` -> dataURL
 // 256px thumbnails so a ~160px contact-sheet frame stays sharp on a 2x display. They are about four
 // times the size of the old 128px ones, so the cache is also capped by its total length.
@@ -642,20 +747,33 @@ const THUMB_SIZE = 256;
 const THUMB_CACHE_MAX_CHARS = 64 * 1024 * 1024;
 let thumbnailCacheChars = 0;
 
-ipcMain.handle("get-thumbnail", async (_e, opts = {}) => {
+handle("get-thumbnail", async (_e, opts = {}) => {
   try {
-    const full = resolveDownloadFile(opts.bucket, opts.name);
+    const full = resolveDownloadFile(opts);
     if (!full || !fs.existsSync(full)) return null;
-    if (!IMAGE_EXTS.has(path.extname(full).toLowerCase())) return null;
+    if (!MEDIA_EXTS.has(path.extname(full).toLowerCase())) return null;
     const stat = fs.statSync(full);
     const key = `${full}:${stat.mtimeMs}`;
-    if (thumbnailCache.has(key)) return thumbnailCache.get(key);
-    const img = await nativeImage.createThumbnailFromPath(full, { width: THUMB_SIZE, height: THUMB_SIZE });
+    if (thumbnailCache.has(key)) {
+      const cached = thumbnailCache.get(key);
+      thumbnailCache.delete(key);
+      thumbnailCache.set(key, cached);
+      return cached;
+    }
+    const img = await nativeImage.createThumbnailFromPath(full, {
+      width: THUMB_SIZE,
+      height: THUMB_SIZE,
+    });
     const dataUrl = img.isEmpty() ? null : img.toDataURL();
     if (dataUrl) {
-      if (thumbnailCache.size > 600 || thumbnailCacheChars + dataUrl.length > THUMB_CACHE_MAX_CHARS) {
-        thumbnailCache.clear();
-        thumbnailCacheChars = 0;
+      while (
+        thumbnailCache.size &&
+        (thumbnailCache.size >= 600 ||
+          thumbnailCacheChars + dataUrl.length > THUMB_CACHE_MAX_CHARS)
+      ) {
+        const oldest = thumbnailCache.keys().next().value;
+        thumbnailCacheChars -= thumbnailCache.get(oldest).length;
+        thumbnailCache.delete(oldest);
       }
       thumbnailCache.set(key, dataUrl);
       thumbnailCacheChars += dataUrl.length;
@@ -666,8 +784,8 @@ ipcMain.handle("get-thumbnail", async (_e, opts = {}) => {
   }
 });
 
-ipcMain.handle("reveal-file", async (_e, opts = {}) => {
-  const full = resolveDownloadFile(opts.bucket, opts.name);
+handle("reveal-file", async (_e, opts = {}) => {
+  const full = resolveDownloadFile(opts);
   if (full && fs.existsSync(full)) {
     shell.showItemInFolder(full);
     return true;
@@ -675,11 +793,11 @@ ipcMain.handle("reveal-file", async (_e, opts = {}) => {
   return false;
 });
 
-ipcMain.handle("open-file", async (_e, opts = {}) => {
-  const full = resolveDownloadFile(opts.bucket, opts.name);
+handle("open-file", async (_e, opts = {}) => {
+  const full = resolveDownloadFile(opts);
   if (full && fs.existsSync(full)) {
-    await shell.openPath(full);
-    return true;
+    const error = await shell.openPath(full);
+    return !error;
   }
   return false;
 });
@@ -688,7 +806,9 @@ ipcMain.handle("open-file", async (_e, opts = {}) => {
 
 function trayImage() {
   try {
-    const img = nativeImage.createFromPath(path.join(__dirname, "renderer", "tray-icon.png"));
+    const img = nativeImage.createFromPath(
+      path.join(__dirname, "renderer", "tray-icon.png"),
+    );
     return img.isEmpty() ? null : img;
   } catch {
     return null;
@@ -713,7 +833,12 @@ function buildTrayMenu() {
     { label: `Address: ${address}`, enabled: false },
     { label: `Pairing code: ${settings.pairingToken}`, enabled: false },
     { type: "separator" },
-    { label: "Open the Pherry folder", click: () => fs.existsSync(settings.downloadPath) && shell.openPath(settings.downloadPath) },
+    {
+      label: "Open the Pherry folder",
+      click: () =>
+        fs.existsSync(settings.downloadPath) &&
+        shell.openPath(settings.downloadPath),
+    },
     { type: "separator" },
     {
       label: "Quit Pherry",
@@ -747,7 +872,7 @@ function updateTrayTooltip() {
       ? "Pherry · receiving"
       : s.code === "EADDRINUSE"
         ? `Pherry · not receiving, port ${s.port} is in use`
-        : "Pherry · not receiving"
+        : "Pherry · not receiving",
   );
 }
 
@@ -779,7 +904,11 @@ app.whenReady().then(async () => {
   } catch (err) {
     // Surfaced through lastServerState: the window asks for it (get-server-state) once it loads.
     if (!lastServerState.error) {
-      setServerState({ running: false, port: settings.port, error: err?.message || "The receiver couldn't start" });
+      setServerState({
+        running: false,
+        port: settings.port,
+        error: err?.message || "The receiver couldn't start",
+      });
     }
   }
   createTray();
@@ -788,8 +917,13 @@ app.whenReady().then(async () => {
   watchNetwork();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
   app.isQuitting = true;
+  if (!shuttingDown && serverInstance) {
+    event.preventDefault();
+    shuttingDown = true;
+    stopServer().finally(() => app.quit());
+  }
 });
 
 // The receiver is meant to keep running in the tray. Only actually quit when the user

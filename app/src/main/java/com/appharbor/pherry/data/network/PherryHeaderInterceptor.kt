@@ -4,26 +4,26 @@ import okhttp3.Interceptor
 import okhttp3.Response
 import javax.inject.Inject
 import javax.inject.Singleton
+import java.net.URLEncoder
 
-/**
- * Attaches Pherry's identity headers to every request:
- *  - `X-Device-Name`: a friendly phone name for the desktop's history/sources view.
- *  - `X-Pherry-Token`: the pairing token (when known), required by the desktop for destructive ops.
- *
- * Both are safe to send on every request; the server only enforces the token where it matters.
- */
+/** Adds enrollment identity only to authenticated receiver requests. Names use UTF-8 percent
+ * encoding because HTTP header values cannot contain arbitrary Unicode display names. */
 @Singleton
 class PherryHeaderInterceptor @Inject constructor(
     private val session: PherrySession,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val builder = chain.request().newBuilder()
-        if (session.deviceName.isNotBlank()) {
-            builder.header("X-Device-Name", session.deviceName)
+        val connection = session.connection.get()
+        val request = chain.request()
+        if (request.header("Authorization") != null && session.deviceName.isNotBlank()) {
+            builder.header("X-Device-Name-Encoded", URLEncoder.encode(session.deviceName, "UTF-8").replace("+", "%20"))
         }
-        val token = session.token
-        if (token.isNotBlank()) {
-            builder.header("X-Pherry-Token", token)
+        // Public health/enrollment probes never carry an existing receiver's secret.
+        if (connection != null && request.url.toString().startsWith(connection.baseUrl + "/v2/")) {
+            if (request.header("Authorization") == null) builder.header("Authorization", "Bearer ${connection.credential}")
+            builder.header("X-Pherry-Client", session.clientId)
+            builder.header("X-Device-Name-Encoded", URLEncoder.encode(session.deviceName, "UTF-8").replace("+", "%20"))
         }
         return chain.proceed(builder.build())
     }

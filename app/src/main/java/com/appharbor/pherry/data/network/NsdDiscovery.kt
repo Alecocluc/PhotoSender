@@ -39,6 +39,7 @@ class NsdDiscovery @Inject constructor(
     val desktops: StateFlow<List<DiscoveredDesktop>> = _desktops.asStateFlow()
 
     private var discoveryListener: NsdManager.DiscoveryListener? = null
+    val isDiscovering: Boolean get() = discoveryListener != null
     private var multicastLock: WifiManager.MulticastLock? = null
 
     // resolveService can only run one resolve at a time on older APIs, so serialize them.

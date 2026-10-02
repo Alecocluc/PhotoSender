@@ -1,6 +1,6 @@
 // Shared markup for the contact sheet and other repeated pieces of the Pherry desktop world.
 import { state } from './state.js';
-import { escHtml, entryName, entryTime, entryKey, isVideo, fileIcon, fmtBytes, fmtFullTime } from './utils.js';
+import { escHtml, entryName, entryTime, entryKey, isVideo, fileIcon, fmtBytes, fmtFullTime, fileArgs } from './utils.js';
 import { canThumbnail } from './thumbs.js';
 import { icon } from './icons.js';
 import { showToast } from './shell.js';
@@ -13,16 +13,17 @@ import { showToast } from './shell.js';
  */
 export function frameHtml(entry, { number, edgeRight = "", edgeBottom = "" } = {}) {
   const name = entryName(entry);
+  const file = fileArgs(entry);
   const key = entryKey(entry);
   const elapsed = developElapsed(key);
   const developing = elapsed != null;
   const thumbable = canThumbnail(name);
   const thumb = thumbable
-    ? ` data-thumb-bucket="${escHtml(entry.bucketName || "")}" data-thumb-name="${escHtml(name)}"`
+    ? ` data-thumb-bucket="${escHtml(file.bucket)}" data-thumb-name="${escHtml(file.name)}" data-thumb-path="${escHtml(file.relativePath)}" data-thumb-device="${escHtml(file.deviceId)}"`
     : "";
-  const label = `${name}, ${fmtBytes(entry.size)}, saved ${fmtFullTime(entryTime(entry))}. Open.`;
+  const label = `${name}${entry.deviceName ? `, from ${entry.deviceName}` : ''}${entry.bucketName ? `, ${entry.bucketName}` : ''}, ${fmtBytes(entry.size)}, saved ${fmtFullTime(entryTime(entry))}. Open.`;
   return `
-    <button class="frame${developing ? " developing" : ""}"${developing ? ` style="--develop-at:-${Math.round(elapsed)}ms"` : ""} data-bucket="${escHtml(entry.bucketName || "")}" data-name="${escHtml(name)}" data-key="${escHtml(key)}" title="${escHtml(name)}" aria-label="${escHtml(label)}">
+    <button class="frame${developing ? " developing" : ""}"${developing ? ` style="--develop-at:-${Math.round(elapsed)}ms"` : ""} data-bucket="${escHtml(file.bucket)}" data-name="${escHtml(file.name)}" data-path="${escHtml(file.relativePath)}" data-device="${escHtml(file.deviceId)}" data-key="${escHtml(key)}" title="${escHtml(name)}" aria-label="${escHtml(label)}">
       <span class="edge"><span>${number != null ? `${escHtml(String(number))}${icon("caret-right", { weight: "bold", size: 9 })}` : ""}</span><span class="dim">${escHtml(edgeRight)}</span></span>
       <span class="shot${thumbable ? "" : " no-thumb"}"${thumb}>${icon(fileIcon(name), { size: 26 })}${isVideo(name) ? `<span class="play">${icon("play", { weight: "fill", size: 12 })}</span>` : ""}</span>
       <span class="edge"><span class="dim">${escHtml(edgeBottom)}</span></span>
@@ -34,12 +35,12 @@ export function wireFrames(root) {
   pruneFresh();
   root.querySelectorAll(".frame[data-name]").forEach((el) => {
     el.addEventListener("click", async () => {
-      const ok = await window.api.openFile({ bucket: el.dataset.bucket, name: el.dataset.name });
+      const ok = await window.api.openFile({ bucket: el.dataset.bucket, name: el.dataset.name, relativePath: el.dataset.path, deviceId: el.dataset.device });
       if (!ok) showToast("That file is no longer in the Pherry folder.", "error");
     });
     el.addEventListener("contextmenu", async (e) => {
       e.preventDefault();
-      const ok = await window.api.revealFile({ bucket: el.dataset.bucket, name: el.dataset.name });
+      const ok = await window.api.revealFile({ bucket: el.dataset.bucket, name: el.dataset.name, relativePath: el.dataset.path, deviceId: el.dataset.device });
       if (!ok) showToast("That file is no longer in the Pherry folder.", "error");
     });
   });
@@ -90,7 +91,7 @@ export function reuseFrames(fresh, previous) {
   fresh.querySelectorAll(".frame[data-key]").forEach((el) => {
     const old = previous.get(el.dataset.key);
     if (!old || old === el) return;
-    if (old.querySelector(".edge")?.textContent !== el.querySelector(".edge")?.textContent) return;
+    if ([...old.querySelectorAll('.edge')].map((edge) => edge.textContent).join('|') !== [...el.querySelectorAll('.edge')].map((edge) => edge.textContent).join('|')) return;
     syncDevelop(old);
     el.replaceWith(old);
   });

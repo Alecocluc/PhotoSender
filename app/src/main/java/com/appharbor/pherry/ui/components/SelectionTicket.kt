@@ -35,6 +35,7 @@ fun SelectionTicket(
     hint: String? = null,
     onHint: (() -> Unit)? = null,
     applyNavigationPadding: Boolean = true,
+    actionEnabled: Boolean = true,
 ) {
     val c = PherryTheme.colors
     Column(
@@ -48,7 +49,7 @@ fun SelectionTicket(
             modifier = Modifier.fillMaxWidth().padding(start = Spacing.xs, end = Spacing.lg, top = Spacing.sm, bottom = Spacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onClear) {
+            IconButton(onClick = onClear, enabled = actionEnabled) {
                 PhIcon(Ph.X, contentDescription = "Clear selection", tint = c.onEnvelope)
             }
             Column(Modifier.weight(1f)) {
@@ -63,7 +64,7 @@ fun SelectionTicket(
             }
             Spacer(Modifier.width(Spacing.sm))
             if (actionLabel != null) {
-                PrintButton(text = actionLabel, onClick = onAction, icon = Ph.Send, onEnvelope = true)
+                PrintButton(text = actionLabel, onClick = onAction, icon = Ph.Send, onEnvelope = true, enabled = actionEnabled)
             } else if (hint != null && onHint != null) {
                 PrintButton(text = hint, onClick = onHint, style = PrintButtonStyle.Outline, onEnvelope = true)
             }

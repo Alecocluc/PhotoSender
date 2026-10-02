@@ -4,6 +4,12 @@ contextBridge.exposeInMainWorld("api", {
   // Queries
   getStatus: () => ipcRenderer.invoke("get-status"),
   getHistory: (options) => ipcRenderer.invoke("get-history", options),
+  getMedia: (options) => ipcRenderer.invoke("get-media", options),
+  getJobs: () => ipcRenderer.invoke("get-jobs"),
+  getJob: (options) => ipcRenderer.invoke("get-job", options),
+  getDevices: () => ipcRenderer.invoke("get-devices"),
+  renameDevice: (options) => ipcRenderer.invoke("rename-device", options),
+  revokeDevice: (options) => ipcRenderer.invoke("revoke-device", options),
   getLocalIPs: () => ipcRenderer.invoke("get-local-ips"),
   getSettings: () => ipcRenderer.invoke("get-settings"),
   getHostInfo: () => ipcRenderer.invoke("get-host-info"),
@@ -47,5 +53,15 @@ contextBridge.exposeInMainWorld("api", {
     const handler = (_e, data) => cb(data);
     ipcRenderer.on("ips-changed", handler);
     return () => ipcRenderer.removeListener("ips-changed", handler);
+  },
+  onJobsChanged: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on("jobs-changed", handler);
+    return () => ipcRenderer.removeListener("jobs-changed", handler);
+  },
+  onDevicesChanged: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on("devices-changed", handler);
+    return () => ipcRenderer.removeListener("devices-changed", handler);
   },
 });

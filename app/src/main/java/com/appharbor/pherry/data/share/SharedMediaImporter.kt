@@ -10,6 +10,7 @@ import com.appharbor.pherry.data.model.MediaItem
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
@@ -23,10 +24,13 @@ data class SharedItem(
     val isVideo: Boolean,
 )
 
+data class SharedImportFailure(val uri: Uri, val name: String, val reason: String)
+data class SharedImportResult(val items: List<MediaItem>, val failures: List<SharedImportFailure>)
+
 /**
  * Turns media shared into Pherry from another app (Google Photos, the gallery, …) into something the
  * normal upload pipeline can send. Foreign content URIs aren't MediaStore rows and their read grant
- * dies with the receiving activity, so each item is copied into the app cache up front; the queued
+ * dies with the receiving activity, so each item is copied into durable app storage up front; the queued
  * [MediaItem] then points at that stable local file.
  */
 @Singleton
@@ -36,12 +40,13 @@ class SharedMediaImporter @Inject constructor(
 ) {
     private val resolver: ContentResolver = context.contentResolver
 
-    private fun cacheDir(): File = File(context.cacheDir, SHARED_DIR).apply { mkdirs() }
+    // Pending uploads must survive Android cache eviction under storage pressure.
+    private fun cacheDir(): File = File(context.filesDir, SHARED_DIR).apply { mkdirs() }
 
     /** Cheap metadata read for the review sheet — queries the provider, copies nothing. */
     suspend fun describe(uris: List<Uri>): List<SharedItem> = withContext(Dispatchers.IO) {
         uris.mapIndexedNotNull { index, uri ->
-            val mime = resolver.getType(uri).orEmpty()
+            val mime = runCatching { resolver.getType(uri) }.getOrNull().orEmpty()
             // Only ferry images/videos; ignore anything else another app might smuggle in.
             if (mime.isNotEmpty() && !mime.startsWith("image/") && !mime.startsWith("video/")) {
                 return@mapIndexedNotNull null
@@ -57,49 +62,64 @@ class SharedMediaImporter @Inject constructor(
     }
 
     /**
-     * Copy each shared item into the cache and return queueable [MediaItem]s. Items that can't be read
-     * are skipped rather than failing the whole batch. Synthetic negative ids keep these clear of real
-     * MediaStore ids (and of each other across runs); content dedup still happens by MD5 server-side.
+     * Copy shared items into app storage and report every unreadable source alongside successful
+     * [MediaItem]s. Synthetic negative IDs keep shares separate from MediaStore IDs.
      */
-    suspend fun importToCache(uris: List<Uri>): List<MediaItem> = withContext(Dispatchers.IO) {
+    suspend fun importToCache(uris: List<Uri>): SharedImportResult = withContext(Dispatchers.IO) {
         val dir = cacheDir()
-        uris.mapIndexedNotNull { index, uri ->
-            val mime = resolver.getType(uri).orEmpty()
-            if (mime.isNotEmpty() && !mime.startsWith("image/") && !mime.startsWith("video/")) {
-                return@mapIndexedNotNull null
+        val items = mutableListOf<MediaItem>()
+        val failures = mutableListOf<SharedImportFailure>()
+        uris.forEachIndexed { index, uri ->
+            coroutineContext.ensureActive()
+            var name = "Shared file ${index + 1}"
+            var dest: File? = null
+            try {
+                val mime = resolver.getType(uri).orEmpty()
+                if (mime.isNotEmpty() && !mime.startsWith("image/") && !mime.startsWith("video/")) {
+                    failures += SharedImportFailure(uri, name, "This file is not a photo or video.")
+                    return@forEachIndexed
+                }
+                name = sanitizeName(queryNameAndSize(uri).first ?: fallbackName(index, mime, uri))
+                val file = uniqueFile(dir, name)
+                dest = file
+                val input = resolver.openInputStream(uri) ?: throw java.io.IOException("Cannot open this file")
+                input.use { source ->
+                    file.outputStream().use { output ->
+                        val buffer = ByteArray(128 * 1024)
+                        while (true) {
+                            coroutineContext.ensureActive()
+                            val count = source.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                }
+                if (file.length() == 0L) throw java.io.IOException("The file is empty")
+                items += MediaItem(
+                    id = idSeq.decrementAndGet(), uri = Uri.fromFile(file), displayName = file.name,
+                    size = file.length(), dateModified = System.currentTimeMillis() / 1000L,
+                    mimeType = mime.ifEmpty { "application/octet-stream" }, bucketName = SHARED_BUCKET,
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                dest?.delete()
+                throw e
+            } catch (e: Exception) {
+                dest?.delete()
+                val reason = when (e) {
+                    is SecurityException -> "Access expired. Share this file again from its app."
+                    is java.io.FileNotFoundException -> "The source file is unavailable. Download it in its app, then retry."
+                    else -> "Could not copy this file. Check free space on this phone, then retry."
+                }
+                failures += SharedImportFailure(uri, name, reason)
             }
-            val (name, _) = queryNameAndSize(uri)
-            val safeName = sanitizeName(name ?: fallbackName(index, mime, uri))
-            val dest = uniqueFile(dir, safeName)
-
-            val copied = runCatching {
-                resolver.openInputStream(uri)?.use { input ->
-                    dest.outputStream().use { output -> input.copyTo(output) }
-                    true
-                } ?: false
-            }.getOrDefault(false)
-
-            if (!copied || !dest.exists() || dest.length() == 0L) {
-                dest.delete()
-                return@mapIndexedNotNull null
-            }
-
-            MediaItem(
-                id = idSeq.decrementAndGet(),
-                uri = Uri.fromFile(dest),
-                displayName = dest.name,
-                size = dest.length(),
-                dateModified = System.currentTimeMillis() / 1000L,
-                mimeType = mime.ifEmpty { "application/octet-stream" },
-                bucketName = SHARED_BUCKET,
-            )
         }
+        SharedImportResult(items, failures)
     }
 
     /**
      * Drop cached shares older than [maxAgeMs]. Files survive long enough to be uploaded (and to be
      * re-tried after a process restart); anything older has already been sent or abandoned. Called on
-     * launch so the cache can't grow without bound. A file still queued (a PENDING or UPLOADING
+     * launch so the cache can't grow without bound. A file still queued (a pending, uploading or failed
      * record points at it) is kept whatever its age, so a long-paused queue never loses its source.
      */
     suspend fun pruneCache(maxAgeMs: Long = DEFAULT_MAX_AGE_MS) {
@@ -115,9 +135,9 @@ class SharedMediaImporter @Inject constructor(
         }
     }
 
-    /** Absolute paths of cached shares that a PENDING or UPLOADING record still needs. */
+    /** Absolute paths of shared files still needed for a transfer or a failed-item retry. */
     private suspend fun queuedCachePaths(): Set<String> =
-        uploadRecordDao.getPendingAndUploading().mapNotNullTo(HashSet()) { record ->
+        (uploadRecordDao.getPendingAndUploading() + uploadRecordDao.getFailed()).mapNotNullTo(HashSet()) { record ->
             val uri = Uri.parse(record.contentUri)
             if (uri.scheme == ContentResolver.SCHEME_FILE) uri.path?.let { File(it).absolutePath } else null
         }

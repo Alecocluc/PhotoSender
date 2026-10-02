@@ -81,7 +81,7 @@ data class PherryTextStyles(
     /** A value printed on the envelope's order form ("4,212" under ON THIS PHONE). */
     val envelopeValue: TextStyle = TextStyle(fontFamily = MartianText, fontWeight = FontWeight(400), fontSize = 15.sp, lineHeight = 20.sp),
     /** Small data line under a title (counts, dates), set in caps by the caller. */
-    val monoCaps: TextStyle = TextStyle(fontFamily = MartianEdge, fontWeight = FontWeight(500), fontSize = 11.sp, lineHeight = 14.sp, letterSpacing = 0.06.em),
+    val monoCaps: TextStyle = TextStyle(fontFamily = MartianText, fontWeight = FontWeight(500), fontSize = 12.sp, lineHeight = 17.sp, letterSpacing = 0.03.em),
     /** Pairing code and ticket numbers. */
     val code: TextStyle = TextStyle(fontFamily = MartianCode, fontWeight = FontWeight(600), fontSize = 28.sp, lineHeight = 32.sp, letterSpacing = 0.16.em),
     /** The wordmark. */

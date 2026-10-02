@@ -66,8 +66,8 @@ fun SyncConfirmDialog(
             Text(
                 when {
                     plan.isNoOp && plan.deletesWithheld -> "Nothing to send"
-                    plan.isNoOp -> "Already in sync"
-                    else -> "Sync with $computerName?"
+                    plan.isNoOp -> "Backup is current"
+                    else -> "Mirror deletions on $computerName?"
                 }
             )
         },
@@ -129,8 +129,8 @@ fun SyncConfirmDialog(
                 deletes -> TextButton(
                     onClick = onConfirm,
                     colors = ButtonDefaults.textButtonColors(contentColor = c.red),
-                ) { Text("Sync and delete ${Fmt.count(plan.deleteCount)}") }
-                else -> TextButton(onClick = onConfirm, colors = ButtonDefaults.textButtonColors(contentColor = c.ink)) { Text("Sync") }
+                ) { Text("Delete ${Fmt.count(plan.deleteCount)} and back up") }
+                else -> TextButton(onClick = onConfirm, colors = ButtonDefaults.textButtonColors(contentColor = c.ink)) { Text("Back up") }
             }
         },
         dismissButton = when {

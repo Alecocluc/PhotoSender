@@ -334,6 +334,7 @@ private fun Fact(@DrawableRes icon: Int, title: String, body: String) {
 @Composable
 private fun PairStep(viewModel: ConnectViewModel, onContinue: () -> Unit) {
     val c = PherryTheme.colors
+    val context = LocalContext.current
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val serverName by viewModel.serverName.collectAsStateWithLifecycle()
     val endpoint by viewModel.connectedEndpoint.collectAsStateWithLifecycle()
@@ -351,6 +352,14 @@ private fun PairStep(viewModel: ConnectViewModel, onContinue: () -> Unit) {
             text = "Don't have it yet? Install Pherry Desktop on your computer first.",
             style = MaterialTheme.typography.bodyMedium,
             color = c.ink3,
+        )
+        PrintButton(
+            text = "Get Pherry Desktop",
+            onClick = {
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Alecocluc/PhotoSender"))) }
+            },
+            style = PrintButtonStyle.Quiet,
+            icon = Ph.ExternalLink,
         )
         Spacer(Modifier.height(Spacing.xl))
 

@@ -250,14 +250,14 @@ components:
 
 **Creative North Star: "Lab Envelope & Contact Sheet"**
 
-Pherry is a photo lab you own. The phone drops film off; the computer develops and keeps it. Every backup is a job written on a yellow drop-off envelope, and every library, arrival list and history is a darkroom contact sheet: strips of film-black frames with orange edge print naming the frame number and its status. The world is the same on both platforms; Android (Jetpack Compose, Material 3 with its roles remapped) and Pherry Desktop (Electron, vanilla CSS custom properties) are two prints from one negative.
+Pherry is a photo lab you own. The phone drops film off; the computer develops and keeps it. Every backup is a job written on a yellow drop-off envelope. Photos and arrivals are contact sheets: film-black frames with orange edge print. History is their printed transfer ledger, distinct from the permanent photo collection. The world is the same on both platforms; Android (Jetpack Compose, Material 3 with its roles remapped) and Pherry Desktop (Electron, vanilla CSS custom properties) are two prints from one negative.
 
-Grounds are photo-print paper by day and darkroom by night. One committed field of envelope yellow per screen holds the job (what is waiting, sending or selected), with ink-black controls printed on it. Everything else is flat: paper, white print sheets, hairline rules, square 4px corners, perforated tear lines and the envelope's thumb-cut notch. Depth comes from material and colour, not shadow. Safelight red appears only for rejects and deletions; a small green lamp only for a live link. Phosphor icons, Archivo for words, Martian Mono for data.
+Grounds are photo-print paper by day and darkroom by night. One committed area of envelope yellow per screen holds the work (what is waiting, sending or selected), with ink-black controls printed on it. The desktop may show several envelopes together when several phones have unfinished jobs; their identities and counts must stay separate. Everything else is flat: paper, white print sheets, hairline rules, square 4px corners, perforated tear lines and the envelope's thumb-cut notch. Depth comes from material and colour, not shadow. Safelight red appears only for rejects and deletions; a small green lamp only for a live link. Phosphor icons, Archivo for words, Martian Mono for data.
 
 The system rejects the cloud-sync dashboard: no stat-card grids, gradient progress bars, cloud glyphs or teal. The metaphor is visual only; the words stay literal.
 
 **Key Characteristics:**
-- One envelope-yellow field per screen, and it always means "the job".
+- One envelope-yellow job area per screen; separate phones have separate envelopes within it.
 - Film-black strips with orange edge print carry every collection of photos.
 - Flat paper and darkroom grounds; square 4px print corners, 2px frame corners.
 - Selection is a yellow grease-pencil ring drawn on the picture, never a chrome overlay.
@@ -302,7 +302,7 @@ A neutral paper-and-ink print world with one committed yellow, one orange that l
 Android maps Material roles onto the world: primary = ink, onPrimary = paper, primaryContainer = envelope yellow, surface/background = paper, surfaceContainerLowest = sheet (light), surfaceContainer = sheet (dark), surfaceVariant = well, secondaryContainer = well-2, outline = rule-strong, outlineVariant = rule, error = red, errorContainer = red wash, tertiary = green, surfaceTint transparent. New Android code reads PherryTheme.colors, not raw M3 roles.
 
 ### Named Rules
-**The One Envelope Rule.** Each screen commits exactly one envelope-yellow field, and it holds the job. When the job changes, the yellow moves: while a phone is sending, the desktop Receiver's claim-ticket stub prints quietly (sheet and ink, perforation and notches kept) and the live job band holds the yellow. Yellow elsewhere only marks what is in the job (grease ring, job tag, nav indicator, the switch's on state).
+**The One Envelope Rule.** Each screen commits its envelope yellow to the work. The desktop's unfinished jobs share one job area, with a separately named envelope for each phone. Finished receipts return to paper. When work starts, the pairing ticket collapses by default; if reopened during a job, its stub prints quietly (sheet and ink, perforation and notches kept). Yellow elsewhere only marks what is in the job (grease ring, job tag, nav indicator, the switch's on state).
 
 **The Edge Print Stays On Film Rule.** Orange appears only on film-black. On paper, data is ink in mono caps.
 
@@ -343,9 +343,11 @@ Android maps Material roles onto the world: primary = ink, onPrimary = paper, pr
 
 **Android (phone).** Single column with a 16dp gutter (Spacing.screen) on a 4dp-based scale (2, 4, 8, 12, 16, 24, 32, 48). Every touch target is at least 48dp; settings rows at least 56dp. Shell: top bar with the wordmark and the computer chip; M3 NavigationBar on paper with tonal elevation 0 and a yellow indicator; edge-to-edge with full-screen surfaces (album, viewer, onboarding) handling their own insets. Home's first viewport is the envelope (about 60% of the screen) followed by a scrolling film strip of recent sends. The album contact sheet is rows of FilmRow, 3 columns on phones, 4 at 600dp, 6 at 840dp; Library album strips are 4 columns (6 at 600dp) with sprockets. Rows are separated by paper.
 
-**Desktop.** Grid shell: a 228px rail (rail ground, 1px rule on its right) and a main column capped at 1240px with 30px 36px 48px padding. Under 900px the rail collapses to 64px icons (labels kept for assistive tech, visually hidden); under 600px padding drops to 20px 16px and frames to a 120px minimum. The Receiver is a 316px claim ticket beside the contact sheet (32px gap), pinned only when the whole ticket fits (min-width 1081px and min-height 760px), stacking below 1080px. Contact sheets are auto-fill grids of frames with a 148px minimum (168px on the Receiver), zero column gap so each row reads as one strip, and a 14px row gap of paper. View header: title with its data line below, actions to the right, 24px under it.
+**Desktop.** Grid shell: a 228px rail (rail ground, 1px rule on its right) and a main column capped at 1240px with 30px 36px 48px padding. Under 900px the rail collapses to 64px icons (labels kept for assistive tech, visually hidden); under 600px padding drops to 20px 16px. When expanded, the Receiver's 316px claim ticket sits beside the contact sheet (32px gap), pinned only when the whole ticket fits (min-width 1081px and min-height 760px), stacking below 1080px. Collapsing the ticket gives the job area and contact sheet that width. Contact sheets keep a 148px minimum frame width (168px on the Receiver, 128px in narrow windows), zero column gap so each row reads as one strip, and a 14px row gap of paper. View header: title with its data line below, actions to the right, 24px under it.
 
-**Long lists** carry guide words: a sticky header naming the span in view ("OCT 2 — SEP 28" or the day) with a count on the right, on paper over a 1px rule.
+**Long lists** keep their controls and result count on paper over a hairline rule. Desktop Photos and History use a virtual window of rows, not thousands of hidden DOM elements. Search, phone, album, type, saved-date range and sort apply to the entire server collection. Frame edge print carries the saved date. Arrow keys, Home/End and the explicit Go to item control reach entries beyond the visible window. A stable query snapshot prevents new arrivals from shifting older rows; while someone is browsing those rows, offer an Updates available action instead of taking their place away.
+
+**Desktop library boundaries.** Photos represents the permanent file inventory. History represents the newest 5,000 transfer events. Do not label the latter as every file on disk, use an all-time transfer total as the Photos count, or require repeated Load more clicks to search an older album. The renderer retains at most six 120-record pages and only visible rows plus overscan. Thumbnail work is independently bounded and paused while hidden. These are implementation constraints in service of a calm interface, not settings the user must manage.
 
 ## Elevation & Depth
 
@@ -415,7 +417,17 @@ A 10dp (desktop 9px) round light. On = green with halo (ringed in envelope ink w
 - **Desktop rail:** 40px items, 600 weight, ink-2 text; hover well; current page prints solid ink with paper text and a filled icon. Photo count in condensed mono on the right. The receiver's station (lamp, status word, address) is pinned to the rail foot.
 
 ### Envelope (signature)
-The job field: envelope yellow, 4px corners, the thumb-cut notch, 20dp padding (plus 6dp at the top under the notch). Content is printed in envelope ink: form fields (label over a mono value: ON THIS PHONE, BACKED UP, and TO, the computer's name behind its link lamp), the waiting count at display size, one ink button, a perforation, order-form checkboxes, and a rubber date stamp for the last backup. Progress is the job bar: a 10dp square ink bar on a 16% ink track, ticked every 10%. Nothing is printed above the count: in message states (no Wi-Fi access, no computer, can't reach it) the lamp sits inline before the title, and the Transfers envelope carries state and destination on the data line under its bar ("FINISHED · TO ALEX-PC · 1.2 GB"). On the desktop the live job band is the same envelope (radial mask notch, 40px count first, then From, Received and Speed fields with the busy lamp before the phone's name, and a 10px job bar) entering with a 420ms rise.
+The job field: envelope yellow, 4px corners, the thumb-cut notch, 20dp padding (plus 6dp at the top under the notch). Content is printed in envelope ink: form fields (label over a mono value: ON THIS PHONE, BACKED UP, and TO, the computer's name behind its link lamp), the waiting count at display size, one ink button, a perforation, order-form checkboxes, and a rubber date stamp for the last backup. Progress is the job bar: a 10dp square ink bar on a 16% ink track, ticked every 10%. Nothing is printed above the count: in message states (no Wi-Fi access, no computer, can't reach it) the lamp sits inline before the title, and the Transfers envelope carries state and destination on the data line under its bar. Desktop envelopes lead with the saved count, then name the state and phone, received bytes, speed, already-present count and current file. Their 420ms entrance plays once per new job, never again on every status tick.
+
+### Job state and receipts
+
+Job identity comes from the transfer protocol and persists across interruptions. Never infer a finished backup from a quiet timer, combine two phones' counts, or carry a previous phone's name into a new stream. Preparing, running, waiting, paused, failed, cancelled and completed must have distinct words. Pause and connection loss preserve acknowledged work. A disk-space warning uses actual preflight information; total selected bytes may include files already on the computer.
+
+Finished jobs become expandable receipts on paper with the phone, saved files and bytes, already-present files, failures, dates and phone folder. Copy receipt is an explicit action. A job with failed files says Backup needs attention, even if its processing has ended. Saved and already present are separate totals. Receipts confirm the recorded outcome; they do not claim a second independent copy or promise that the user may safely erase the phone.
+
+### Paired phones
+
+Desktop Settings lists enrolled phones, their display names, stable folders and last connection. Rename updates the label without moving files. Remove access explains that the phone must pair again and that existing files stay on disk. The legacy inventory group Previous backups is a Photos filter, not a fictitious paired phone. A new enrollment code and revoking a phone's existing credential are separate actions.
 
 ### Film strip and contact sheet (signature)
 A film-black strip with 5 to 6px side margins holding equal frames separated by 4dp of film. Each frame: an 18px edge-print row above (frame number plus a bold Phosphor caret, status or time on the right in dim film ink), the picture at 2px corners on a film-2 well (4:3 on desktop sheets, square on Android sheets), and an optional edge row below ("ON PC" with a bold check icon). Video frames carry a 20dp play badge on 72% film; failed frames a red 20dp X badge. Desktop frames are buttons: hover brightens the image 8%, focus is a 2px yellow inset outline. Loading states are blank film-2 frames that breathe slowly (opacity 1 to 0.55, 1.4s, alternate), never spinners, shimmer gradients or placeholder glyphs; a file glyph appears only on a frame that cannot get a thumbnail or whose thumbnail failed.
@@ -428,7 +440,7 @@ Selecting a frame draws a yellow china-marker ring over 240ms: a slightly tilted
 
 ### Ticket (signature)
 - **Selection ticket (Android):** a full-width yellow band rising from the bottom while frames are marked: perforation along the top, clear (X), "12 selected" in titleMedium (polite live region), a mono-caps detail line ("48 MB · to ALEX-PC"), and the send button printed on the envelope (or an outline "Pair a computer" hint when there is no link).
-- **Claim ticket (desktop Receiver):** a white sheet (6px corners) holding the QR on pure white, then a tear line, then the yellow stub with the pairing code as the ticket number (code typography), the address with a Copy button, and a note under a 20% ink hairline. While a job is live the stub goes quiet (.ticket.is-quiet: sheet ground, ink and ink-2 text, rule hairline) so the job band stays the one yellow field. Under 1080px the stub sits beside the body behind a dashed rule. Settings repeats the stub at small size.
+- **Claim ticket (desktop Receiver):** a white sheet (6px corners) holding the QR on pure white, then a tear line, then the yellow stub with the pairing code as the ticket number (code typography), the address with a Copy button, and a note under a 20% ink hairline. It opens for first pairing, then collapses so monitoring the backup takes priority. Pair another phone reopens it. While a job is live the stub goes quiet (.ticket.is-quiet: sheet ground, ink and ink-2 text, rule hairline). Under 1080px the stub sits beside the body behind a dashed rule. Settings repeats the stub at small size. The code is required to enroll and send; copy must not imply that only deletion requires pairing.
 
 ### Notices, empties, guide words, toasts
 - **Notice:** red wash with a warning-circle icon, a plain title and detail, and the fix as a text button; info variant on well.
@@ -442,7 +454,7 @@ One geometry generates every asset (docs/brand/build_brand.py): a "P" cut from f
 ## Do's and Don'ts
 
 ### Do:
-- **Do** give each screen exactly one envelope-yellow field, holding the job, with everything on it printed in on-envelope ink.
+- **Do** reserve envelope yellow for the job area, with each phone's work clearly separated and everything on it printed in on-envelope ink.
 - **Do** put every collection of photos on film-black strips with orange edge print (frame number with a Phosphor caret, status or time dim on the right).
 - **Do** mark selection with the yellow grease-pencil ring and its order number, and let arrivals develop from the orange negative (300ms crossfade under reduced motion).
 - **Do** use 4px print corners for controls and containers, 2px for frames and tags, 1.5px ink strokes for interactive outlines and 1px rules for structure.
@@ -461,3 +473,11 @@ One geometry generates every asset (docs/brand/build_brand.py): a "P" cut from f
 - **Don't** use spinners for loading media; show empty film-2 frames.
 - **Don't** use lab puns, exclamation marks, "Oops" or emoji in copy, or invent URLs, speeds or features; the metaphor is visual and the words stay literal.
 - **Don't** use androidx material icons or any non-Phosphor icon set, or text glyphs as icons.
+
+## Behavior and verification contract
+
+The visual redesign now sits on protocol v2: destination-scoped receipts, SHA-256 verification, resumable chunks, separate phone directories, a persistent SQLite inventory and an isolated desktop receiver process. Those behaviors define what status copy is allowed to claim. See PRODUCT.md for migration, development commands and limits.
+
+Pairing is access control. The current LAN transport is HTTP without TLS; do not call it encrypted. Clearing transfer history leaves Photos, original files and deduplication intact. Import merges records for files present on disk and never restores credentials. Mirror deletion and duplicate cleanup stay within phone ownership.
+
+Maintain visible keyboard focus through data refreshes, expose loading/errors through live regions, include phone identity in duplicate-looking frame labels and honor reduced motion. Validate narrow 480px desktop windows as well as the default 1280px window. The synthetic 20,000-file renderer check demonstrates bounded DOM and correct querying; it is not a measured Wi-Fi speed claim or a substitute for a real-device backup test.

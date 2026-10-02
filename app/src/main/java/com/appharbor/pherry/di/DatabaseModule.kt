@@ -22,7 +22,7 @@ object DatabaseModule {
             context,
             PherryDatabase::class.java,
             "photosender_db"
-        ).build()
+        ).addMigrations(PherryDatabase.MIGRATION_1_2).build()
     }
 
     @Provides

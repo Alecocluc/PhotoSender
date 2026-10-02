@@ -1,5 +1,6 @@
-import { state, refreshSettings, refreshIPs, sessionActive, computerName } from '../state.js';
-import { escHtml, sortedIPs } from '../utils.js';
+import { state, refreshSettings, refreshIPs, refreshDevices, sessionActive, sendingName, computerName } from '../state.js';
+import { escHtml, sortedIPs, fmtFullTime } from '../utils.js';
+import { clearThumbnails } from '../thumbs.js';
 import { register, rerender } from '../router.js';
 import {
   exportHistory, importHistory,
@@ -16,6 +17,8 @@ const MAX_PORT = 65535;
 let portDraft = null;
 let portError = "";
 let portBusy = false;
+const deviceDrafts = new Map();
+const deviceBusy = new Set();
 
 function currentPort() {
   return Number(state.server.port || state.settings?.port || 3210);
@@ -89,7 +92,7 @@ function receivingHtml(s, port) {
       <h2 class="section-title" id="set-receiving">Receiving</h2>
       ${row({
         name: "Pherry folder", forId: "dl-path", helpId: "dl-path-help",
-        help: "Photos and videos are saved here, one folder per album. Files already saved stay where they are, and Pherry only recognises files in this folder: move them over and rebuild the duplicate index, or a backup check from a phone sends them again.",
+        help: "Photos and videos are saved here, in a separate folder for each phone, with albums inside. Existing files stay where they are if you choose another folder. Move them over and rebuild the index to avoid sending them again.",
         control: `
           <input class="input mono set-path" id="dl-path" value="${escHtml(s.downloadPath || "")}" readonly aria-describedby="dl-path-help" />
           <button class="btn" id="choose-folder">Choose…</button>
@@ -97,7 +100,7 @@ function receivingHtml(s, port) {
       })}
       ${row({
         name: "Port", forId: "port-input", helpId: "port-help",
-        help: `A number from ${MIN_PORT} to ${MAX_PORT}. Applying restarts the receiver, and phones need to pair again with the new address.`,
+        help: `A number from ${MIN_PORT} to ${MAX_PORT}. Applying restarts the receiver. Your phones keep their pairing; reconnect them if they don't find the new address automatically.`,
         control: `
           <input class="input mono set-port" id="port-input" type="number" inputmode="numeric" min="${MIN_PORT}" max="${MAX_PORT}" step="1"
             value="${escHtml(draft)}" aria-describedby="port-help${portError ? " port-error" : ""}" ${portError ? `aria-invalid="true"` : ""} />
@@ -127,11 +130,32 @@ function pairingHtml(s) {
           </div>
         </div>
         <div class="set-pair-text">
-          <p>Phones that scanned this code can delete files here when they use Sync. Get a new code if you shared it with someone you don't trust; paired phones then need to scan again.</p>
+          <p>A phone must pair before it can send files or manage its own backup. Get a new code if you shared it by mistake. Already paired phones keep their access; remove access below to disconnect one.</p>
           <button class="btn danger" id="rotate-token">${icon("arrows-clockwise", { size: 17 })}Get a new code</button>
         </div>
       </div>
     </section>`;
+}
+
+function devicesHtml() {
+  const devices = (state.devices || []).filter((device) => String(device.deviceId || device.id) !== 'legacy');
+  return `<section class="print set-block" aria-labelledby="set-devices">
+    <h2 class="section-title" id="set-devices">Paired phones</h2>
+    <p class="set-help device-intro">Each phone has its own copy of your files. Names are for display; renaming a phone keeps its folder in place.</p>
+    ${devices.length ? devices.map((device, index) => {
+      const id = String(device.deviceId || device.id);
+      const revoked = device.revoked || device.revokedAt;
+      const busy = deviceBusy.has(id);
+      const name = deviceDrafts.get(id) ?? device.deviceName ?? '';
+      return `<div class="device-row" data-device-id="${escHtml(id)}">
+        <div class="device-name-line"><label for="device-name-${index}">${escHtml(device.deviceName || 'Phone')}${revoked ? ' · Access removed' : ''}</label>
+          <input class="input" id="device-name-${index}" data-device-name value="${escHtml(name)}" maxlength="80" aria-label="Name for ${escHtml(device.deviceName || 'phone')}" ${busy ? 'disabled' : ''} />
+          <button class="btn sm" data-device-save ${busy ? 'disabled' : ''}>${busy ? 'Saving…' : 'Save name'}</button></div>
+        <p class="set-help">Folder: <span class="mono">${escHtml(device.deviceFolder || 'Created when this phone pairs')}</span>${device.lastSeenAt ? `<br>Last connected ${escHtml(fmtFullTime(device.lastSeenAt))}` : ''}</p>
+        ${revoked ? '<p class="set-help">Pair this phone again to restore access. Its saved files are still here.</p>' : `<button class="btn danger sm" data-device-revoke ${busy ? 'disabled' : ''}>Remove access</button>`}
+      </div>`;
+    }).join('') : '<p class="set-empty device-intro">No phones paired yet. Scan the ticket on the Receiver screen to connect your first phone.</p>'}
+  </section>`;
 }
 
 function behaviourHtml(s) {
@@ -219,6 +243,7 @@ function render() {
   const root = document.querySelector("#view-root");
   const active = document.activeElement;
   const focusId = active?.id && root.contains(active) ? active.id : null;
+  const selection = active?.tagName === 'INPUT' && active.type === 'text' ? [active.selectionStart, active.selectionEnd] : null;
 
   const s = state.settings || {};
   const port = currentPort();
@@ -234,6 +259,7 @@ function render() {
     <div class="settings">
       ${receivingHtml(s, port)}
       ${pairingHtml(s)}
+      ${devicesHtml()}
       ${behaviourHtml(s)}
       ${maintenanceHtml()}
       ${appearanceHtml(s)}
@@ -241,7 +267,11 @@ function render() {
     </div>`;
 
   wire();
-  if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
+  if (focusId) {
+    const input = document.getElementById(focusId);
+    input?.focus({ preventScroll: true });
+    if (selection && input?.setSelectionRange) input.setSelectionRange(...selection);
+  }
 }
 
 // ── Actions ──────────────────────────────────────────────────────────────
@@ -251,7 +281,7 @@ async function okToRestart(change) {
   if (!sessionActive()) return true;
   return showConfirm({
     title: "Restart the receiver now?",
-    message: `<strong>${escHtml(state.session?.device || "A phone")}</strong> is sending right now. ${escHtml(change)} restarts the receiver, which can interrupt that transfer.`,
+    message: `<strong>${escHtml(sendingName())}</strong> has an unfinished backup. ${escHtml(change)} restarts the receiver. Finished files are kept and the phone can resume.`,
     confirmText: "Restart now",
   });
 }
@@ -307,8 +337,8 @@ async function applyPort() {
     state.server.port = state.settings?.port || p;
     const ip = sortedIPs(state.ips)[0];
     showToast(ip
-      ? `Receiving on port ${p}. Pair your phone again with ${ip}:${p}.`
-      : `Receiving on port ${p}. Pair your phone again with the new address.`);
+      ? `Receiving on port ${p}. Phones can reconnect to ${ip}:${p}.`
+      : `Receiving on port ${p}. Phones keep their pairing when they reconnect.`);
   } else {
     portError = `Port ${p} couldn't be opened: ${portProblem(res?.error)}. Pherry kept port ${prev}; try another number.`;
   }
@@ -324,7 +354,7 @@ async function chooseFolder() {
     const ok = await showConfirm({
       title: "Use a different folder?",
       message: `Files already in <strong class="mono">${escHtml(before)}</strong> stay there. Pherry won't recognise them in the new folder, so a phone's backup check will send them again. To avoid that, move them into the new folder first, then use Rebuild the duplicate index.`
-        + (sessionActive() ? ` <strong>${escHtml(state.session?.device || "A phone")}</strong> is sending right now, and changing the folder restarts the receiver, which can interrupt that transfer.` : ""),
+        + (sessionActive() ? ` <strong>${escHtml(sendingName())}</strong> has an unfinished backup. Changing the folder restarts the receiver and changes where the phone resumes.` : ""),
       confirmText: "Change folder",
     });
     if (!ok) return;
@@ -337,6 +367,7 @@ async function chooseFolder() {
     return;
   }
   await refreshSettings();
+  if (chosen && chosen !== before) { clearThumbnails(); state.revision += 1; }
   renderStation();
   rerender();
   if (chosen && chosen !== before) showToast(`New files are saved to ${chosen}.`);
@@ -346,8 +377,7 @@ async function rotateToken() {
   const old = state.settings?.pairingToken || "";
   const ok = await showConfirm({
     title: "Get a new pairing code?",
-    message: `The code <strong class="mono set-code-inline">${escHtml(old)}</strong> stops working. Phones can still send photos, but they can't delete files here with Sync until they scan the new ticket.`
-      + (sessionActive() ? " A phone is sending right now, and restarting the receiver can interrupt it." : ""),
+    message: `The code <strong class="mono set-code-inline">${escHtml(old)}</strong> stops accepting new phones. Already paired phones keep their access. To disconnect a phone, use Remove access in Paired phones.`,
     confirmText: "Get a new code",
     danger: true,
   });
@@ -362,7 +392,7 @@ async function rotateToken() {
   renderStation();
   rerender();
   if (res?.success) {
-    showToast("New pairing code ready. Scan the ticket again on your phones to keep using Sync.");
+    showToast("New pairing code ready. Your paired phones keep their access.");
   } else {
     showToast(`Couldn't get a new code${res?.error ? `: ${res.error}` : ""}. Try again.`, "error");
   }
@@ -392,6 +422,45 @@ async function copyAddress(text, btn) {
   } catch {
     showToast("Couldn't copy. Select the address and copy it by hand.", "error");
   }
+}
+
+async function saveDevice(row) {
+  const id = row.dataset.deviceId;
+  if (deviceBusy.has(id)) return;
+  const input = row.querySelector('[data-device-name]');
+  const name = input.value.trim();
+  if (!name || name.length > 80) {
+    showToast('Use a phone name between 1 and 80 characters.', 'error');
+    input.focus(); return;
+  }
+  deviceDrafts.set(id, name); deviceBusy.add(id); render();
+  try {
+    const result = await window.api.renameDevice({ id, name });
+    if (result?.success === false) throw new Error(result.error || 'Try again.');
+    deviceDrafts.delete(id); await refreshDevices(); state.revision += 1;
+    showToast('Phone name saved. Its folder stays in the same place.');
+  } catch (error) { showToast(`Could not rename the phone. ${error.message || 'Try again.'}`, 'error'); }
+  finally { deviceBusy.delete(id); if (state.view === 'settings') render(); }
+}
+
+async function revokeDevice(row) {
+  const id = row.dataset.deviceId;
+  if (deviceBusy.has(id)) return;
+  const device = state.devices.find((item) => String(item.deviceId || item.id) === id);
+  const ok = await showConfirm({
+    title: `Remove access for ${device?.deviceName || 'this phone'}?`,
+    message: 'This phone will no longer be able to send files or manage its backup until it pairs again. Files already saved on this computer stay here. An unfinished backup may stop.',
+    confirmText: 'Remove access', danger: true,
+  });
+  if (!ok) return;
+  deviceBusy.add(id); if (state.view === 'settings') render();
+  try {
+    const result = await window.api.revokeDevice({ id });
+    if (result?.success === false) throw new Error(result.error || 'Try again.');
+    await refreshDevices(); state.revision += 1;
+    showToast('Phone access removed. Its saved files stay here.');
+  } catch (error) { showToast(`Could not remove access. ${error.message || 'Try again.'}`, 'error'); }
+  finally { deviceBusy.delete(id); if (state.view === 'settings') render(); }
 }
 
 function wire() {
@@ -424,6 +493,16 @@ function wire() {
     b.addEventListener("click", () => copyAddress(b.dataset.copy, b)));
 
   $("#rotate-token")?.addEventListener("click", rotateToken);
+  document.querySelectorAll('.device-row').forEach((row) => {
+    const input = row.querySelector('[data-device-name]');
+    input.addEventListener('input', () => deviceDrafts.set(row.dataset.deviceId, input.value));
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); saveDevice(row); }
+      if (event.key === 'Escape') { deviceDrafts.delete(row.dataset.deviceId); render(); }
+    });
+    row.querySelector('[data-device-save]').addEventListener('click', () => saveDevice(row));
+    row.querySelector('[data-device-revoke]')?.addEventListener('click', () => revokeDevice(row));
+  });
 
   $("#opt-notify")?.addEventListener("change", (e) => saveToggle(e.target, "notifyOnArrival"));
   $("#opt-auto-open")?.addEventListener("change", (e) => saveToggle(e.target, "autoOpenFolder"));
@@ -464,8 +543,9 @@ register("settings", () => {
   render();
   if (!entering) return;
   const before = sortedIPs(state.ips).join(",");
-  refreshIPs().then(() => {
-    if (state.view === "settings" && sortedIPs(state.ips).join(",") !== before) {
+  const devicesBefore = JSON.stringify(state.devices);
+  Promise.all([refreshIPs(), refreshDevices()]).then(() => {
+    if (state.view === "settings" && (sortedIPs(state.ips).join(",") !== before || JSON.stringify(state.devices) !== devicesBefore)) {
       renderStation();
       render();
     }

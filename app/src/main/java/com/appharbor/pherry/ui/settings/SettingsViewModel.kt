@@ -60,6 +60,13 @@ class SettingsViewModel @Inject constructor(
     val defaultUploadMode: StateFlow<String> = appPreferences.defaultUploadMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), UploadMode.ADD.name)
 
+    val deviceName = appPreferences.deviceName
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), android.os.Build.MODEL)
+
+    fun saveDeviceName(name: String) {
+        viewModelScope.launch { appPreferences.saveDeviceName(name.trim()) }
+    }
+
     fun onThemeModeSelected(mode: ThemeMode) {
         viewModelScope.launch {
             appPreferences.saveThemeMode(mode)

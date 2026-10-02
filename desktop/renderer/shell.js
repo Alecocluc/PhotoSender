@@ -1,4 +1,4 @@
-import { state, computerName } from './state.js';
+import { state, jobState, computerName } from './state.js';
 import { primaryIP, escHtml } from './utils.js';
 import { icon } from './icons.js';
 
@@ -65,11 +65,12 @@ export function renderStation() {
     addrTitle = "";
     lampTitle = "Starting…";
   } else if (state.server.running) {
+    const receiving = state.status?.receiving?.length > 0 || state.jobs.some((job) => ['running', 'receiving'].includes(jobState(job)));
     lampClass = "lamp on";
-    words = "Receiving";
+    words = receiving ? "Receiving" : "Ready";
     addrText = ip !== "-" ? `${ip}:${port}` : "No network";
     addrTitle = `${computerName()} · ${ip}:${port}`;
-    lampTitle = ip !== "-" ? `Receiving on ${ip}:${port}` : "Receiving, but this computer isn't on a network";
+    lampTitle = ip !== "-" ? `${receiving ? 'Receiving' : 'Ready to receive'} on ${ip}:${port}` : "This computer isn't on a network";
   } else {
     lampClass = "lamp off";
     words = "Stopped";
@@ -86,7 +87,7 @@ export function renderStation() {
   setAttr(lamp, "role", "img");
   setAttr(lamp, "aria-label", lampTitle);
   const count = document.querySelector("#nav-photos-count");
-  if (count) setText(count, state.status?.totalReceived ? Number(state.status.totalReceived).toLocaleString() : "");
+  if (count) setText(count, state.status?.mediaCount ? Number(state.status.mediaCount).toLocaleString() : "");
 }
 
 /**

@@ -34,6 +34,13 @@ class ConnectViewModel @Inject constructor(
 
     private val _ipAddress = MutableStateFlow("")
     val ipAddress: StateFlow<String> = _ipAddress.asStateFlow()
+    private val _pairingCode = MutableStateFlow("")
+    val pairingCode = _pairingCode.asStateFlow()
+
+    fun onPairingCodeChanged(code: String) {
+        _pairingCode.value = code.filter { it.isLetterOrDigit() }.take(12)
+        _ipError.value = null
+    }
 
     private val _ipError = MutableStateFlow<String?>(null)
     val ipError: StateFlow<String?> = _ipError.asStateFlow()
@@ -67,11 +74,13 @@ class ConnectViewModel @Inject constructor(
     }
 
     fun onIpChanged(ip: String) {
+        if (_ipAddress.value != ip) _pairingCode.value = ""
         _ipAddress.value = ip
         _ipError.value = null
     }
 
     fun onRecentTargetSelected(target: String) {
+        _pairingCode.value = ""
         _ipAddress.value = target
         onConnect()
     }
@@ -97,6 +106,7 @@ class ConnectViewModel @Inject constructor(
             return
         }
         _ipAddress.value = parsed.endpoint
+        _pairingCode.value = ""
         _ipError.value = null
         viewModelScope.launch {
             appPreferences.rememberDesktopTarget(parsed.endpoint)
@@ -117,7 +127,7 @@ class ConnectViewModel @Inject constructor(
         viewModelScope.launch {
             appPreferences.rememberDesktopTarget(endpoint)
         }
-        connectionManager.connect(endpoint)
+        connectionManager.connect(_ipAddress.value, pairingCode = _pairingCode.value)
     }
 
     fun onDisconnect() {
