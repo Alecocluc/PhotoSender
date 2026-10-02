@@ -66,13 +66,15 @@ class UserTransferJobService : JobService() {
         fun schedule(context: Context, wifiOnly: Boolean, estimatedBytes: Long = 0): Boolean {
             if (Build.VERSION.SDK_INT < 34) return false
             return runCatching {
+                val scheduler = context.getSystemService(JobScheduler::class.java)
+                if (scheduler.getPendingJob(JOB_ID) != null) return false
                 val builder = JobInfo.Builder(JOB_ID, ComponentName(context, UserTransferJobService::class.java))
                     .setUserInitiated(true)
                     .setRequiredNetworkType(if (wifiOnly) JobInfo.NETWORK_TYPE_UNMETERED else JobInfo.NETWORK_TYPE_ANY)
                     .setBackoffCriteria(15_000, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
                 if (estimatedBytes > 0) builder.setEstimatedNetworkBytes(0, estimatedBytes)
                     .setMinimumNetworkChunkBytes(minOf(4L * 1024 * 1024, estimatedBytes))
-                context.getSystemService(JobScheduler::class.java).schedule(builder.build()) == JobScheduler.RESULT_SUCCESS
+                scheduler.schedule(builder.build()) == JobScheduler.RESULT_SUCCESS
             }.getOrDefault(false)
         }
         fun cancel(context: Context) { context.getSystemService(JobScheduler::class.java).cancel(JOB_ID) }

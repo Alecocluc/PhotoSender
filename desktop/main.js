@@ -18,6 +18,7 @@ const crypto = require("crypto");
 const os = require("os");
 const { pathToFileURL } = require("node:url");
 const { inside } = require("./storage");
+const { ReceiverRestartPolicy } = require("./restart-policy");
 const getLocalIPs = () => [
   ...new Set(
     Object.values(os.networkInterfaces())
@@ -32,6 +33,9 @@ if (!app.isPackaged && process.env.PHERRY_TEST_USER_DATA)
 let adminToken = crypto.randomBytes(32).toString("base64url");
 let sleepBlocker = null;
 let shuttingDown = false;
+const receiverRestartPolicy = new ReceiverRestartPolicy();
+let receiverRestartTimer = null;
+let serverStartTail = Promise.resolve();
 const jobStates = new Map();
 
 let Bonjour = null;
@@ -152,6 +156,7 @@ function saveSettings() {
 }
 
 function applyLaunchAtStartup() {
+  if (!app.isPackaged && process.env.PHERRY_TEST_USER_DATA) return;
   try {
     app.setLoginItemSettings({ openAtLogin: !!settings.launchAtStartup });
   } catch {
@@ -275,6 +280,7 @@ function stopBonjour() {
 }
 
 function startBonjour() {
+  if (!app.isPackaged && process.env.PHERRY_TEST_USER_DATA) return;
   if (!Bonjour) return;
   stopBonjour();
   try {
@@ -292,6 +298,8 @@ function startBonjour() {
 }
 
 async function stopServer() {
+  clearTimeout(receiverRestartTimer);
+  receiverRestartTimer = null;
   stopBonjour();
   const child = serverInstance;
   serverInstance = null;
@@ -345,7 +353,28 @@ function handleJobs(info) {
   broadcastToRenderer("jobs-changed", info);
 }
 
-async function startServer() {
+function scheduleReceiverRecovery(uptimeMs) {
+  if (shuttingDown || receiverRestartTimer) return;
+  const delay = receiverRestartPolicy.nextDelay(uptimeMs);
+  if (delay === null) {
+    setServerState({ running: false, error: "The receiver keeps stopping. Restart Pherry to try again.", recovering: false });
+    return;
+  }
+  setServerState({ running: false, error: "The receiver stopped. Reconnecting automatically…", recovering: true });
+  receiverRestartTimer = setTimeout(() => {
+    receiverRestartTimer = null;
+    startServer({ recovering: true }).catch(() => {
+      if (lastServerState.code !== "EADDRINUSE") scheduleReceiverRecovery(0);
+    });
+  }, delay);
+}
+function startServer({ recovering = false } = {}) {
+  if (!recovering) receiverRestartPolicy.reset();
+  const next = serverStartTail.catch(() => {}).then(() => shuttingDown ? undefined : startReceiverProcess());
+  serverStartTail = next;
+  return next;
+}
+async function startReceiverProcess() {
   await stopServer();
   fs.mkdirSync(settings.downloadPath, { recursive: true });
   thumbnailCache.clear();
@@ -356,23 +385,35 @@ async function startServer() {
     { serviceName: "Pherry Receiver", stdio: "pipe" },
   );
   serverInstance = child;
+  let readyAt = 0;
   child.stderr?.on("data", (data) => console.error(String(data).trim()));
   await new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error("The receiver took too long to start"));
-    }, 30000);
+    let timeout;
+    const watchStartup = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        child.kill();
+        reject(new Error("The receiver took too long to start"));
+      }, 30000);
+    };
+    watchStartup();
     child.on("message", (message) => {
-      if (message.type === "ready") {
+      if (message.type === "recovery-progress") {
+        // Large interrupted videos can take minutes to verify on a hard drive.
+        // Actual bytes read extend the watchdog; a stalled process still times out.
+        if (!readyAt) watchStartup();
+      } else if (message.type === "ready") {
+        readyAt = Date.now();
         clearTimeout(timeout);
         startBonjour();
         refreshTray();
-        setServerState({ running: true, port: settings.port });
+        setServerState({ running: true, port: settings.port, recovering: false, error: null, code: null });
         resolve();
       } else if (message.type === "error") {
         clearTimeout(timeout);
         setServerState({
           running: false,
+          recovering: false,
           port: settings.port,
           error: message.error,
           code: message.code,
@@ -408,6 +449,7 @@ async function startServer() {
           error: "The receiver stopped. Restart Pherry to resume your backup.",
           code,
         });
+        if (readyAt && !shuttingDown) scheduleReceiverRecovery(Date.now() - readyAt);
       }
       reject(new Error("The receiver stopped during startup"));
     });
@@ -919,10 +961,14 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", (event) => {
   app.isQuitting = true;
-  if (!shuttingDown && serverInstance) {
-    event.preventDefault();
+  if (!shuttingDown) {
     shuttingDown = true;
-    stopServer().finally(() => app.quit());
+    clearTimeout(receiverRestartTimer);
+    receiverRestartTimer = null;
+    if (serverInstance) {
+      event.preventDefault();
+      stopServer().finally(() => app.quit());
+    }
   }
 });
 

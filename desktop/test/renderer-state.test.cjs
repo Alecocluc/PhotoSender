@@ -44,6 +44,29 @@ test('20,000 item browsing sends the snapshot and retains only six pages', async
   assert.equal(requests[1].snapshot, 21000); assert.equal(data.item(2400).id, 2400);
 });
 
+test('arrival refresh keeps the loaded snapshot until the new page is ready', async () => {
+  const { DataWindow } = await moduleFrom('data-window.js');
+  const next = deferred(); let calls = 0;
+  const data = new DataWindow(() => ++calls === 1 ? Promise.resolve({ items: [{ id: 1 }], totalCount: 1, snapshot: 1 }) : next.promise, () => {});
+  await data.load(0);
+  const refreshing = data.refresh();
+  assert.equal(data.ready, true); assert.equal(data.item(0).id, 1); assert.equal(data.snapshot, 1);
+  next.resolve({ items: [{ id: 2 }, { id: 1 }], totalCount: 2, snapshot: 2 });
+  assert.equal(await refreshing, true);
+  assert.equal(data.item(0).id, 2); assert.equal(data.item(1).id, 1); assert.equal(data.snapshot, 2);
+});
+
+test('scrolling or focusing while an arrival query is pending keeps the reading snapshot', async () => {
+  const { DataWindow } = await moduleFrom('data-window.js');
+  const next = deferred(); let calls = 0, atTop = true;
+  const data = new DataWindow(() => ++calls === 1 ? Promise.resolve({ items: [{ id: 1 }], totalCount: 1000, snapshot: 1 }) : next.promise, () => {});
+  await data.load(0);
+  const refreshing = data.refresh(() => atTop); atTop = false;
+  next.resolve({ items: [{ id: 2 }], totalCount: 1001, snapshot: 2 });
+  assert.equal(await refreshing, false);
+  assert.equal(data.total, 1000); assert.equal(data.item(0).id, 1); assert.equal(data.snapshot, 1);
+});
+
 test('virtual window bounds rendered rows even at the end of a huge library', async () => {
   const { visibleRange } = await moduleFrom('data-window.js');
   for (const columns of [1, 2, 6]) {

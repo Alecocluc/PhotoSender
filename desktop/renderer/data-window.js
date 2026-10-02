@@ -8,6 +8,7 @@ export class DataWindow {
   reset(query, notify = true) {
     this.generation += 1; this.query = { ...query }; this.snapshot = undefined;
     this.pages = new Map(); this.pending = new Map(); this.errors = new Map();
+    this.refreshing = null;
     this.total = 0; this.ready = false; this.meta = {};
     if (notify) this.changed();
   }
@@ -44,7 +45,33 @@ export class DataWindow {
     const first = Math.floor(start / this.pageSize), last = Math.floor(Math.max(start, end - 1) / this.pageSize);
     for (let page = first; page <= last; page++) this.load(page);
   }
-  retry() { this.errors.clear(); this.changed(); }
+  /** Keep the current snapshot visible until a fresh first page can be adopted atomically. */
+  async refresh(accept = () => true) {
+    if (!this.ready || this.refreshing) return false;
+    const generation = this.generation, token = {};
+    this.refreshing = token;
+    try {
+      const result = await this.fetchPage({ ...this.query, limit: this.pageSize, offset: 0 });
+      if (generation !== this.generation || !accept()) return false;
+      if (!result || result.success === false || !Array.isArray(result.items)) throw new Error(result?.error || 'The receiver did not return a list.');
+      this.generation += 1;
+      this.pages = new Map([[0, result.items]]); this.pending = new Map(); this.errors = new Map();
+      this.snapshot = result.snapshot; this.total = Math.max(0, Number(result.totalCount) || 0); this.meta = result;
+      this.changed(); return true;
+    } catch (error) {
+      if (generation === this.generation && accept()) {
+        this.errors.set(0, error.message || 'Could not refresh files.'); this.changed();
+      }
+      return false;
+    } finally {
+      if (this.refreshing === token) this.refreshing = null;
+    }
+  }
+  retry() {
+    const staleFirstPage = this.ready && this.errors.has(0) && this.pages.has(0);
+    this.errors.clear();
+    if (staleFirstPage) this.refresh(); else this.changed();
+  }
   dispose() { this.generation += 1; this.pages.clear(); this.pending.clear(); }
 }
 

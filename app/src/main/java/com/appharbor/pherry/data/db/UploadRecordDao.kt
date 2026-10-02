@@ -89,6 +89,12 @@ interface UploadRecordDao {
     @Query("SELECT * FROM upload_records WHERE receiverId = '' AND status IN ('PENDING', 'UPLOADING')")
     suspend fun legacyPending(): List<UploadRecord>
 
+    @Query("SELECT * FROM upload_records WHERE receiverId = '' AND status = 'COMPLETED' ORDER BY uploadedAt DESC LIMIT :limit")
+    fun getLegacyCompleted(limit: Int): Flow<List<UploadRecord>>
+
+    @Query("SELECT COUNT(*) FROM upload_records WHERE receiverId = '' AND status = 'COMPLETED'")
+    fun getLegacyHistoryCount(): Flow<Int>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertNewRecords(records: List<UploadRecord>): List<Long>
 

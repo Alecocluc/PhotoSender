@@ -62,6 +62,8 @@ import com.appharbor.pherry.ui.components.PrintButtonStyle
 import com.appharbor.pherry.ui.components.SectionHeading
 import com.appharbor.pherry.ui.theme.PherryShape
 import com.appharbor.pherry.ui.theme.PherryTheme
+import com.appharbor.pherry.ui.transfer.TransferAction
+import com.appharbor.pherry.ui.transfer.transferCopy
 import com.appharbor.pherry.ui.theme.Spacing
 import kotlinx.coroutines.launch
 
@@ -129,6 +131,8 @@ internal fun TransfersNow(
     onRetry: () -> Unit,
     onConnect: () -> Unit,
     onOpenLibrary: () -> Unit,
+    onOpenSettings: () -> Unit = {},
+    onReviewUpgrade: () -> Unit = {},
     /** Runs before Resume or Retry starts sending (the shell asks for notification permission here). */
     onBeforeTransfer: () -> Unit = {},
 ) {
@@ -168,7 +172,19 @@ internal fun TransfersNow(
                         onBeforeTransfer()
                         onResume()
                     },
-                    onConnect = onConnect,
+                    onAction = { action ->
+                        when (action) {
+                            TransferAction.CONNECT -> onConnect()
+                            TransferAction.SETTINGS -> onOpenSettings()
+                            TransferAction.REVIEW_UPGRADE -> onReviewUpgrade()
+                            TransferAction.LIBRARY -> onOpenLibrary()
+                            TransferAction.RETRY -> {
+                                onBeforeTransfer()
+                                if (transfer.phase == TransferPhase.FAILED && failedCount > 0) onRetry() else onResume()
+                            }
+                            TransferAction.NONE -> Unit
+                        }
+                    },
                 )
             }
 
@@ -252,7 +268,7 @@ private fun JobEnvelope(
     connected: Boolean,
     onStop: () -> Unit,
     onResume: () -> Unit,
-    onConnect: () -> Unit,
+    onAction: (TransferAction) -> Unit,
 ) {
     val c = PherryTheme.colors
     val progress by animateFloatAsState(transfer.progressPercent.coerceIn(0f, 1f), tween(300), label = "job-progress")
@@ -264,44 +280,11 @@ private fun JobEnvelope(
         if (transfer.failedFiles > 0) add("${Fmt.count(transfer.failedFiles)} failed")
         if (transfer.skippedFiles > 0) add("${Fmt.count(transfer.skippedFiles)} already on $computer")
     }
-    val note = transfer.message?.takeIf { it.isNotBlank() } ?: when {
-        // Only this batch is known to be done: other queued or failed files may still exist.
-        phase == JobPhase.Finished && transfer.failedFiles == 0 -> "Everything in this batch is on $computer."
-        phase == JobPhase.Paused && queuedCount > 0 -> "${Fmt.plural(queuedCount, "file")} still to send."
-        phase == JobPhase.Disconnected && queuedCount > 0 ->
-            "${Fmt.plural(queuedCount, "file")} still to send. Reconnect to $computer to finish."
-        phase == JobPhase.Disconnected -> "Reconnect to $computer to finish."
-        else -> null
-    }
-    val label = when (phase) {
-        JobPhase.Starting -> "Preparing backup to $computer"
-        JobPhase.Sending -> "Sending to $computer"
-        JobPhase.Verifying -> "Verifying files on $computer"
-        JobPhase.Waiting -> "Waiting for an unmetered network"
-        JobPhase.Failed -> "Backup needs attention"
-        JobPhase.Paused -> "Paused"
-        JobPhase.Disconnected -> "Not connected to $computer"
-        JobPhase.Finished -> "Finished"
-        JobPhase.Queued -> "Waiting to send to $computer"
-    }
-    // The only live region on this screen: it speaks when the job changes phase, never on each tick.
-    val announcement = when (phase) {
-        JobPhase.Starting, JobPhase.Sending, JobPhase.Verifying, JobPhase.Waiting, JobPhase.Failed, JobPhase.Queued -> listOfNotNull(label, note).joinToString(". ")
-        JobPhase.Paused, JobPhase.Disconnected -> listOfNotNull(label, note).joinToString(". ")
-        JobPhase.Finished -> listOfNotNull(label, outcome.joinToString(", ").ifEmpty { null }, note).joinToString(". ")
-    }
-    // The data line under the count: state and destination first, then the numbers.
+    val copy = transferCopy(transfer, computer, connected)
+    val note = copy.detail
+    val announcement = "${copy.title}. ${copy.detail}"
     val data = buildList {
-        when (phase) {
-            JobPhase.Starting -> add("Preparing…")
-            JobPhase.Verifying -> add("Verifying")
-            JobPhase.Waiting -> add("Waiting for network")
-            JobPhase.Failed -> add("Needs attention")
-            JobPhase.Paused -> add("Paused")
-            JobPhase.Finished -> add("Finished")
-            else -> Unit
-        }
-        add(if (phase == JobPhase.Disconnected) "Not connected to $computer" else "to $computer")
+        add("to $computer")
         if (!queueOnly && transfer.totalBytes > 0) add("${Fmt.bytes(transfer.transferredBytes)} of ${Fmt.bytes(transfer.totalBytes)}")
         if (phase == JobPhase.Sending) {
             if (transfer.currentSpeedBytesPerSec > 0) add(Fmt.speed(transfer.currentSpeedBytesPerSec))
@@ -310,6 +293,8 @@ private fun JobEnvelope(
     }
 
     Envelope {
+        Text(copy.title, style = MaterialTheme.typography.titleMedium, color = c.onEnvelope)
+        Spacer(Modifier.height(Spacing.md))
         if (queueOnly) {
             val caption = if (queuedCount == 1) "file is queued, waiting to send" else "files are queued, waiting to send"
             Column(Modifier.semantics(mergeDescendants = true) { contentDescription = "${Fmt.count(queuedCount)} $caption" }) {
@@ -378,45 +363,22 @@ private fun JobEnvelope(
             Spacer(Modifier.height(Spacing.md))
             Text(outcome.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = c.onEnvelope)
         }
-        if (note != null) {
-            Spacer(Modifier.height(if (outcome.isEmpty()) Spacing.md else Spacing.xxs))
-            // Already spoken by the lamp's announcement.
-            Text(note, style = MaterialTheme.typography.bodyMedium, color = c.onEnvelope, modifier = Modifier.clearAndSetSemantics {})
-        }
+        Spacer(Modifier.height(if (outcome.isEmpty()) Spacing.md else Spacing.xxs))
+        // Already spoken by the lamp's announcement.
+        Text(note, style = MaterialTheme.typography.bodyMedium, color = c.onEnvelope, modifier = Modifier.clearAndSetSemantics {})
 
-        when {
-            phase == JobPhase.Disconnected && transfer.phase == TransferPhase.WAITING_FOR_COMPUTER -> {
-                Spacer(Modifier.height(Spacing.lg))
-                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md)) {
+        if (busy) {
+            Spacer(Modifier.height(Spacing.lg))
+            PrintButton("Pause", onClick = onStop, style = PrintButtonStyle.Outline, icon = Ph.Pause, onEnvelope = true)
+        } else if (copy.actionLabel != null || queuedCount > 0) {
+            Spacer(Modifier.height(Spacing.lg))
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                PrintButton(copy.actionLabel ?: "Resume sending",
+                    onClick = { if (copy.action == TransferAction.NONE) onResume() else onAction(copy.action) },
+                    onEnvelope = true)
+                if (phase in setOf(JobPhase.Waiting, JobPhase.Disconnected, JobPhase.Queued) && queuedCount > 0) {
                     PrintButton("Pause", onClick = onStop, style = PrintButtonStyle.Outline, icon = Ph.Pause, onEnvelope = true)
-                    PrintButton("Reconnect", onClick = onConnect, style = PrintButtonStyle.Outline, icon = Ph.Desktop, onEnvelope = true)
                 }
-            }
-            busy || phase == JobPhase.Waiting || phase == JobPhase.Queued -> {
-                Spacer(Modifier.height(Spacing.lg))
-                PrintButton("Pause", onClick = onStop, style = PrintButtonStyle.Outline, icon = Ph.Pause, onEnvelope = true)
-            }
-            // Resuming can't reach the computer from here: offer the way back to it instead (as Home does).
-            !connected && (queuedCount > 0 || phase == JobPhase.Disconnected) -> {
-                Spacer(Modifier.height(Spacing.lg))
-                PrintButton(
-                    text = "Reconnect",
-                    onClick = onConnect,
-                    style = PrintButtonStyle.Outline,
-                    icon = Ph.Desktop,
-                    onEnvelope = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            queuedCount > 0 -> {
-                Spacer(Modifier.height(Spacing.lg))
-                PrintButton(
-                    text = "Resume sending",
-                    onClick = onResume,
-                    icon = Ph.Play,
-                    onEnvelope = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         }
     }

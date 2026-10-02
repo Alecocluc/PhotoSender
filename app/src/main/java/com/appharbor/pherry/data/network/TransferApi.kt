@@ -26,8 +26,10 @@ suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { conti
     })
 }
 
-class TransferHttpException(val code: Int, message: String) : IOException(message) {
-    val retryable: Boolean get() = code == 408 || code == 409 || code == 410 || code == 429 || code >= 500
+class TransferHttpException(val code: Int, message: String, val protocolCode: String = "") : IOException(message) {
+    val retryable: Boolean get() = code == 408 || code == 429 || code in 500..506 || code in 508..599 ||
+        (code == 409 && protocolCode in setOf("OFFSET_CHANGED", "UPLOAD_BUSY")) ||
+        (code == 410 && protocolCode == "UPLOAD_EXPIRED")
 }
 
 class TransferApi(private val client: OkHttpClient, val connection: ReceiverConnection) {
@@ -46,9 +48,9 @@ class TransferApi(private val client: OkHttpClient, val connection: ReceiverConn
         return client.newCall(request).awaitResponse().use { response ->
             val raw = response.body?.string().orEmpty()
             val json = runCatching { JSONObject(raw) }.getOrElse { JSONObject() }
-            if (!response.isSuccessful) throw TransferHttpException(response.code, json.optString("error", "Receiver returned ${response.code}"))
+            if (!response.isSuccessful) throw TransferHttpException(response.code, json.optString("error", "Receiver returned ${response.code}"), json.optString("code"))
             if (json.optString("libraryId").let { it.isNotBlank() && it != connection.identity.libraryId }) {
-                throw TransferHttpException(409, "The computer changed its destination folder. Review and start a new backup.")
+                throw TransferHttpException(409, "The computer changed its destination folder. Review and start a new backup.", "DESTINATION_CHANGED")
             }
             json
         }

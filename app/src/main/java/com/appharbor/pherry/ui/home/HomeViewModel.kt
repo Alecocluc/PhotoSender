@@ -74,6 +74,8 @@ class HomeViewModel @Inject constructor(
 
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val serverName: StateFlow<String> = connectionManager.serverName
+    val connectionReason = connectionManager.connectionReason
+    val upgradeReviewState = uploadManager.upgradeReviewState
 
     /** The saved computer, or null when none is saved; tells "not answering" apart from "not paired". */
     val rememberedComputer: StateFlow<RememberedComputer?> = connectionManager.rememberedComputer

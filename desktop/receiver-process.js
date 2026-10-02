@@ -6,6 +6,7 @@ process.parentPort.on("message", async ({ data }) => {
     try {
       app = createServer(data.downloadPath, {
         ...data.options,
+        onRecoveryProgress: () => send({ type: "recovery-progress" }),
         onFileReceived: (entry) => send({ type: "file-received", data: entry }),
         onFilesRemoved: (info) => send({ type: "files-removed", data: info }),
         onJobsChanged: (info) => send({ type: "jobs-changed", data: info }),

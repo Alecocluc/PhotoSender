@@ -84,7 +84,7 @@ async function poll(force = false) {
 setInterval(() => poll(), 1000);
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden || state.initializing) return;
-  await Promise.all([poll(true), refreshHistory(), refreshDevices()]);
+  await Promise.all([poll(true), refreshHistory({ replaceCollection: false }), refreshDevices()]);
   renderStation(); rerender();
 });
 

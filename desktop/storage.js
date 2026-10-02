@@ -392,13 +392,13 @@ class LibraryStore {
     }
     if (options.query) {
       where.push(
-        "(name LIKE ? ESCAPE '\' OR album LIKE ? ESCAPE '\' OR device IN (SELECT id FROM devices WHERE name LIKE ? ESCAPE '\'))",
+        "(name LIKE ? ESCAPE '!' OR album LIKE ? ESCAPE '!' OR device IN (SELECT id FROM devices WHERE name LIKE ? ESCAPE '!'))",
       );
       const term =
         "%" +
         String(options.query)
           .slice(0, 200)
-          .replace(/[\\%_]/g, "\\$&") +
+          .replace(/[!%_]/g, "!$&") +
         "%";
       args.push(term, term, term);
     }

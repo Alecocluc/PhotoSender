@@ -47,12 +47,12 @@ export async function refreshDevices() {
   if (!window.api.getDevices) return;
   try { state.devices = rows(await window.api.getDevices()); } catch { /* Keep existing devices. */ }
 }
-export async function refreshHistory() {
+export async function refreshHistory({ replaceCollection = true } = {}) {
   try {
     const page = await window.api.getHistory({ limit: 100, offset: 0 });
     if (!page || page.success === false) return;
     state.history = page;
-    state.collectionEpoch += 1;
+    if (replaceCollection) state.collectionEpoch += 1;
     state.revision += 1;
   } catch { /* Keep the last known arrivals. */ }
 }

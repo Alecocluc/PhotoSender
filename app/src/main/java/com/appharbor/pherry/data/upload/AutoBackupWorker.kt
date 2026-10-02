@@ -36,6 +36,7 @@ class AutoBackupWorker @AssistedInject constructor(
 
         // Need a reachable desktop to send to; otherwise wait for the next period.
         if (!connectionManager.ensureConnectedToLast()) return Result.success()
+        if (!uploadManager.checkUpgradeReview()) return Result.success()
 
         val now = System.currentTimeMillis()
         // A timestamp checkpoint misses restored/imported originals with old modification dates.

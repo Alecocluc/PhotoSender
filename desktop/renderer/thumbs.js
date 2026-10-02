@@ -80,7 +80,9 @@ export function attachThumbs(root = document) {
 }
 export function detachThumbs(root) {
   if (!root) return;
-  for (const el of observed) if (root.contains(el)) { observer.unobserve(el); observed.delete(el); }
+  for (const el of observed) if (root.contains(el)) {
+    observer.unobserve(el); observed.delete(el); el.removeAttribute('data-thumb-bound');
+  }
 }
 export function clearThumbnails() {
   generation += 1; resolved.clear();

@@ -114,8 +114,10 @@ function render() {
   const expanded = showPair ?? (!m.paired.length && !m.live);
   const signature = JSON.stringify([state.initializing, m.address, m.token, m.stopped, state.server.error, sortedIPs(state.ips), expanded]);
   const root = document.querySelector('#view-root');
+  let carriedFrames = [];
   if (!root.querySelector('#receiver-title') || signature !== lastSignature) {
     const focus = root.contains(document.activeElement) ? document.activeElement.id : '';
+    carriedFrames = [...root.querySelectorAll('#sheet-slot .frame[data-key]')];
     detachThumbs(root);
     root.innerHTML = `
       <header class="view-head"><div><h1 class="view-title" id="receiver-title">${safe(headline(m))}</h1>
@@ -157,6 +159,7 @@ function render() {
     lastSignature = signature; lastFiles = '';
     if (focus) document.getElementById(focus)?.focus({ preventScroll: true });
   }
+  root.querySelector('.ticket')?.classList.toggle('is-quiet', m.live);
   root.querySelector('#receiver-title').textContent = headline(m);
   const jobSlot = root.querySelector('#job-slot'), jobMarkup = jobsHtml(m);
   if (jobSlot.dataset.markup !== jobMarkup) {
@@ -184,7 +187,7 @@ function render() {
   if (keys !== lastFiles) {
     const slot = root.querySelector('#sheet-slot'), active = document.activeElement;
     const focusKey = slot.contains(active) ? active.closest('.frame')?.dataset.key : null;
-    const previous = new Map([...slot.querySelectorAll('.frame[data-key]')].map((el) => [el.dataset.key, el]));
+    const previous = new Map([...carriedFrames, ...slot.querySelectorAll('.frame[data-key]')].map((el) => [el.dataset.key, el]));
     const scratch = document.createElement('div');
     scratch.innerHTML = m.files.length ? `<div class="sheet" id="arrivals-sheet">${m.files.map((entry, index) => frameHtml(entry, { number: index + 1, edgeRight: fmtStamp(entryTime(entry)), edgeBottom: [entry.deviceName, entry.bucketName].filter(Boolean).join(' / ') })).join('')}</div>` :
       emptyHtml({ title: state.initializing ? 'Opening your contact sheet…' : 'Nothing has arrived yet', body: 'Start a backup on your phone. Finished photos and videos will land here.' });

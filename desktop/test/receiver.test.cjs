@@ -11,15 +11,18 @@ async function fixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pherry-test-"));
   const root = path.join(dir, "Photos"),
     databasePath = path.join(dir, "state.sqlite");
+  let recoveryProgress = 0;
   const options = {
     databasePath,
     pairingToken: "abcdef",
     adminToken: "desktop-secret",
     deviceId: "desktop-identity",
+    onRecoveryProgress: () => { recoveryProgress += 1; },
   };
   let app, server;
-  const start = async () => {
+  const start = async (beforeReady) => {
     app = createServer(root, options);
+    beforeReady?.(app.locals.store);
     await app.locals.ready;
     server = await new Promise((r) => {
       const s = app.listen(0, "127.0.0.1", () => r(s));
@@ -127,15 +130,50 @@ async function fixture(t) {
     get store() {
       return app.locals.store;
     },
-    restart: async () => {
+    get recoveryProgress() { return recoveryProgress; },
+    cleanupExpiredUploads: (now) => app.locals.cleanupExpiredUploads(now),
+    restart: async (beforeReady) => {
       await stop();
-      await start();
+      await start(beforeReady);
     },
   };
 }
+test("legacy adoption is opt-in, returns a durable already-present receipt and keeps phones independent", async (t) => {
+  const f = await fixture(t), phone = await f.pair(), second = await f.pair();
+  const bytes = Buffer.from("legacy bytes verified before moving"), relative = path.join("Camera", "old.jpg");
+  fs.mkdirSync(path.join(f.root, "Camera"));
+  fs.writeFileSync(path.join(f.root, relative), bytes);
+  const old = f.store.saveMedia({ deviceId: "legacy", relativePath: relative, fileName: "old.jpg", bucketName: "Camera",
+    size: bytes.length, hash: crypto.createHash("md5").update(bytes).digest("hex"), hashAlgorithm: "md5", time: 100 });
+  const preflight = await f.request("/v2/preflight", { token: phone.credential, method: "POST", body: {} });
+  assert.equal(preflight.legacyMediaCount, 1); assert.equal(preflight.legacyBytes, bytes.length);
+  const jobId = await f.job(phone), uploadId = id();
+  const body = { uploadId, jobId, hash: hash(bytes), hashAlgorithm: "sha256", size: bytes.length, fileName: "old.jpg", bucketName: "Camera" };
+  const unapproved = await f.request("/v2/uploads", { token: phone.credential, method: "POST", body });
+  assert.equal(unapproved.complete, false); assert.equal(f.store.file(old.id).deviceId, "legacy");
+  await f.request(`/v2/uploads/${uploadId}`, { token: phone.credential, method: "DELETE" });
+  const adopted = await f.request("/v2/uploads", { token: phone.credential, method: "POST", body: { ...body, adoptLegacy: true } });
+  assert.equal(adopted.status, 200); assert.equal(adopted.complete, true); assert.equal(adopted.deduplicated, true);
+  assert.equal(adopted.adoptedLegacy, true); assert.equal(adopted.receiptId, String(old.id));
+  assert.equal(fs.existsSync(path.join(f.root, relative)), false);
+  assert.deepEqual(fs.readFileSync(path.join(f.root, adopted.relativePath)), bytes);
+  assert.equal(f.store.job(jobId).completedFiles, 0);
+  await f.restart();
+  const retry = await f.request("/v2/uploads", { token: phone.credential, method: "POST", body: { ...body, adoptLegacy: true } });
+  assert.equal(retry.receiptId, adopted.receiptId); assert.equal(retry.deduplicated, true);
+  const finished = await f.request(`/v2/jobs/${jobId}`, { token: phone.credential, method: "PUT",
+    body: { state: "completed", totalFiles: 1, totalBytes: bytes.length, skippedFiles: 1 } });
+  assert.equal(finished.status, 200);
+  const another = await f.request("/v2/uploads", { token: second.credential, method: "POST",
+    body: { ...body, uploadId: id(), jobId: await f.job(second), adoptLegacy: true } });
+  assert.equal(another.complete, false); assert.equal(another.offset, 0);
+  assert.equal((await f.request("/v2/preflight", { token: phone.credential, method: "POST", body: {} })).legacyMediaCount, 0);
+});
+
 test("pairing is required; phones cannot inspect or delete another phone backup", async (t) => {
   const f = await fixture(t);
   assert.equal((await f.request("/history")).status, 401);
+  assert.equal((await f.request("/upload", { method: "POST", body: {} })).status, 426);
   assert.equal(
     (await f.request("/status", { headers: { Origin: "https://example.com" } }))
       .status,
@@ -176,6 +214,47 @@ test("pairing is required; phones cannot inspect or delete another phone backup"
       .status,
     404,
   );
+});
+
+test("redundant partial uploads do not block final receipt or subsequent jobs", async (t) => {
+  const f = await fixture(t), p = await f.pair(), bytes = Buffer.from("same-content"), jobId = await f.job(p);
+  const orphan = await f.begin(p, bytes, jobId), completed = await f.begin(p, bytes, jobId);
+  await f.chunk(p, orphan, bytes.subarray(0, 4));
+  await f.chunk(p, completed, bytes);
+  await f.complete(p, completed);
+  const done = await f.request(`/v2/jobs/${jobId}`, { method: "PUT", token: p.credential,
+    body: { state: "completed", totalFiles: 1, completedFiles: 1, totalBytes: bytes.length, completedBytes: bytes.length } });
+  assert.equal(done.status, 200);
+  assert.equal(f.store.pendingUploads().length, 0);
+  assert.equal(fs.existsSync(path.join(f.root, ".pherry", "uploads", `${orphan.uploadId}.part`)), false);
+  const next = await f.begin(p, Buffer.from("next"));
+  assert.equal(next.status, 201);
+});
+
+test("expired partials are reclaimed during receiver uptime and release reservations", async (t) => {
+  const f = await fixture(t), p = await f.pair(), u = await f.begin(p, Buffer.from("expired-file"));
+  const old = f.store.upload(u.uploadId);
+  old.updatedAt = Date.now() - 8 * 86400000;
+  f.store.saveUpload(old);
+  const result = await f.request("/v2/preflight", { method: "POST", admin: true, body: { totalBytes: 1 } });
+  assert.equal(result.reservedBytes, 0);
+  assert.equal(f.store.upload(u.uploadId), null);
+  assert.equal(fs.existsSync(path.join(f.root, ".pherry", "uploads", `${u.uploadId}.part`)), false);
+  const periodic = await f.begin(p, Buffer.from("periodic"));
+  f.cleanupExpiredUploads(Date.now() + 8 * 86400000);
+  assert.equal(f.store.upload(periodic.uploadId), null);
+});
+
+test("attribute-only changes do not invalidate presence and chunks do not rewrite jobs", async (t) => {
+  const f = await fixture(t), p = await f.pair(), bytes = Buffer.from("unchanged");
+  const u = await f.begin(p, bytes);
+  const before = f.store.job(u.jobId).updatedAt;
+  await f.chunk(p, u, bytes);
+  assert.equal(f.store.job(u.jobId).updatedAt, before);
+  const saved = await f.complete(p, u);
+  f.store.q("UPDATE media SET data=json_set(data,'$.diskCtimeMs',1) WHERE id=?").run(Number(saved.receiptId));
+  const result = await f.request("/v2/files/exists", { method: "POST", token: p.credential, body: { hashes: [hash(bytes)] } });
+  assert.equal(result.files[0].exists, true);
 });
 test("the same content on two phones has independent folders and receipts", async (t) => {
   const f = await fixture(t),
@@ -319,6 +398,11 @@ test("inventory, server-side filters, and stable snapshots exceed the activity c
   });
   assert.equal(filtered.totalCount, 1);
   assert.equal(filtered.items[0].fileName, "0.jpg");
+  for (const collection of ["/v2/media", "/history"]) {
+    const search = await f.request(`${collection}?query=19879.jpg`, { admin: true });
+    assert.equal(search.status, 200);
+    assert.equal(search.totalCount, collection === "/v2/media" ? 1 : 0);
+  }
   await f.request("/history/clear", { method: "POST", admin: true, body: {} });
   assert.equal(
     (await f.request("/v2/media", { admin: true })).totalCount,
@@ -333,6 +417,17 @@ test("inventory, server-side filters, and stable snapshots exceed the activity c
     ).items[0].fileName,
     "19879.jpg",
   );
+});
+
+test("library and history search match names, albums and phone aliases with literal wildcards", async (t) => {
+  const f = await fixture(t), p = await f.pair(id(), "Mum's phone");
+  f.store.saveMedia({ deviceId: p.clientId, relativePath: "100%_done!.jpg", fileName: "100%_done!.jpg", bucketName: "Family trip", hash: hash("x"), size: 1 });
+  f.store.saveMedia({ deviceId: "legacy", relativePath: "other.jpg", fileName: "other.jpg", bucketName: "Other", hash: hash("y"), size: 1 });
+  for (const route of ["/history", "/v2/media"]) for (const query of ["100%_done!", "%", "_", "!", "Family", "Mum's"]) {
+    const result = await f.request(`${route}?query=${encodeURIComponent(query)}`, { admin: true });
+    assert.equal(result.status, 200, `${route} ${query}`);
+    assert.equal(result.totalCount, 1, query);
+  }
 });
 
 test("enrollment codes cannot impersonate an existing phone; revocation preserves ownership proof", async (t) => {
@@ -487,6 +582,70 @@ test("duplicate index aliases cannot make cleanup remove the only physical copy"
   );
 });
 
+for (const failure of ["saveMedia", "accountSavedUpload", "saveUpload"]) test(`a live ${failure} failure after rename recovers on retry without another original`, async (t) => {
+  const f = await fixture(t), phone = await f.pair(), bytes = Buffer.from(`recover after ${failure}`);
+  const u = await f.begin(phone, bytes);
+  await f.chunk(phone, u, bytes);
+  const original = f.store[failure];
+  f.store[failure] = function (...args) {
+    // The initial saveUpload persists the rename intent; fail the later completion write only.
+    if (failure !== "saveUpload" || args[0].complete) throw Object.assign(new Error("database write failed"), { code: "SQLITE_FULL" });
+    return original.apply(this, args);
+  };
+  let failed;
+  try { failed = await f.complete(phone, u); }
+  finally { f.store[failure] = original; }
+  assert.equal(failed.status, 500);
+  const intent = f.store.upload(u.uploadId);
+  assert.ok(intent.finalPath);
+  assert.equal(fs.existsSync(path.join(f.root, ".pherry", "uploads", `${u.uploadId}.part`)), false);
+  const renewed = await f.request("/v2/uploads", { method: "POST", token: phone.credential, body: {
+    uploadId: u.uploadId, jobId: u.jobId, hash: hash(bytes), hashAlgorithm: "sha256", size: bytes.length,
+    fileName: "photo.jpg", bucketName: "Camera",
+  } });
+  assert.equal(renewed.status, 200); assert.equal(renewed.offset, bytes.length);
+  const receipt = await f.complete(phone, u);
+  assert.equal(receipt.status, 200); assert.equal(receipt.complete, true);
+  assert.equal(receipt.relativePath, intent.finalPath);
+  assert.deepEqual(fs.readFileSync(path.join(f.root, receipt.relativePath)), bytes);
+  assert.equal(f.store.totals().mediaCount, 1);
+  assert.equal(f.store.query("activity", {}).totalCount, 1);
+  assert.equal(f.store.job(u.jobId).savedFiles, 1); assert.equal(f.store.job(u.jobId).savedBytes, bytes.length);
+  assert.equal(f.store.pendingUploads().length, 0);
+  assert.equal((await f.complete(phone, u)).receiptId, receipt.receiptId);
+});
+
+for (const failure of ["saveMedia", "accountSavedUpload", "saveUpload"]) test(`startup ${failure} failure preserves the committed original and acknowledged offset`, async (t) => {
+  const f = await fixture(t), phone = await f.pair(), bytes = Buffer.from(`startup recovery ${failure}`);
+  const u = await f.begin(phone, bytes);
+  await f.chunk(phone, u, bytes);
+  const intent = f.store.upload(u.uploadId);
+  intent.finalPath = path.join(phone.deviceFolder, "Camera", "photo.jpg");
+  f.store.saveUpload(intent);
+  const partial = path.join(f.root, ".pherry", "uploads", `${u.uploadId}.part`);
+  const final = path.join(f.root, intent.finalPath);
+  fs.mkdirSync(path.dirname(final), { recursive: true });
+  fs.renameSync(partial, final);
+  let restore;
+  await assert.rejects(f.restart((store) => {
+    const original = store[failure];
+    store[failure] = () => { throw Object.assign(new Error("startup database failure"), { code: "SQLITE_FULL" }); };
+    restore = () => { store[failure] = original; };
+  }), { code: "SQLITE_FULL" });
+  const pending = f.store.upload(u.uploadId);
+  assert.equal(pending.complete, false); assert.equal(pending.offset, bytes.length);
+  assert.equal(pending.finalPath, intent.finalPath);
+  assert.equal(fs.existsSync(partial), false, "receipt failure must not create a replacement empty partial");
+  assert.deepEqual(fs.readFileSync(final), bytes);
+  restore();
+  await f.restart();
+  const receipt = await f.complete(phone, u);
+  assert.equal(receipt.status, 200); assert.equal(receipt.complete, true);
+  assert.equal(receipt.relativePath, intent.finalPath);
+  assert.equal(f.store.totals().mediaCount, 1); assert.equal(f.store.job(u.jobId).savedFiles, 1);
+  assert.equal(f.store.pendingUploads().length, 0); assert.equal(fs.existsSync(partial), false);
+});
+
 test("rename intent recovers a committed file after receiver interruption", async (t) => {
   const f = await fixture(t),
     p = await f.pair(),
@@ -503,7 +662,9 @@ test("rename intent recovers a committed file after receiver interruption", asyn
     path.join(f.root, ".pherry", "uploads", `${u.uploadId}.part`),
     path.join(f.root, intent.finalPath),
   );
+  const beforeRecoveryProgress = f.recoveryProgress;
   await f.restart();
+  assert.ok(f.recoveryProgress > beforeRecoveryProgress, "verifying the committed original emits recovery progress for the startup watchdog");
   const receipt = await f.complete(p, u);
   assert.equal(receipt.status, 200);
   assert.equal(receipt.complete, true);

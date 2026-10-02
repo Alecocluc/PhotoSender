@@ -104,6 +104,8 @@ class ShareImportViewModel @Inject constructor(
                 if (result.failures.isEmpty() && ready.isNotEmpty()) _sent.emit(Unit)
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
+            } catch (_: com.appharbor.pherry.data.upload.UpgradeReviewRequiredException) {
+                _failures.value = uris.map { SharedImportFailure(it, "Shared file", "Review your existing backup, then retry. This shared copy is saved on the phone.") }
             } catch (_: Exception) {
                 _failures.value = uris.map { SharedImportFailure(it, "Shared file", "Could not prepare the transfer. Check storage and retry.") }
             } finally {

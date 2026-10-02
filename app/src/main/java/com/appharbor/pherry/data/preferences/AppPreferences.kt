@@ -55,6 +55,21 @@ class AppPreferences @Inject constructor(
     private val receiverIdKey = stringPreferencesKey("receiver_id")
     private val libraryIdKey = stringPreferencesKey("receiver_library_id")
     private val receiverEndpointsKey = stringPreferencesKey("receiver_endpoints")
+    private val reviewedLibrariesKey = stringSetPreferencesKey("reviewed_v2_libraries")
+    private val legacyAdoptionLibrariesKey = stringSetPreferencesKey("legacy_adoption_libraries")
+
+    private fun libraryKey(receiver: String, library: String) = "$receiver:$library"
+    suspend fun isLibraryReviewed(receiver: String, library: String): Boolean =
+        libraryKey(receiver, library) in context.dataStore.data.first()[reviewedLibrariesKey].orEmpty()
+    suspend fun shouldAdoptLegacy(receiver: String, library: String): Boolean =
+        libraryKey(receiver, library) in context.dataStore.data.first()[legacyAdoptionLibrariesKey].orEmpty()
+    suspend fun reviewLibrary(receiver: String, library: String, adoptLegacy: Boolean) {
+        val key = libraryKey(receiver, library)
+        context.dataStore.edit {
+            it[reviewedLibrariesKey] = it[reviewedLibrariesKey].orEmpty() + key
+            if (adoptLegacy) it[legacyAdoptionLibrariesKey] = it[legacyAdoptionLibrariesKey].orEmpty() + key
+        }
+    }
 
     val userPaused: Flow<Boolean> = context.dataStore.data.map { it[userPausedKey] ?: false }
     val receiverId: Flow<String> = context.dataStore.data.map { it[receiverIdKey].orEmpty() }

@@ -131,7 +131,7 @@ async function measure(parallel) {
   console.log(
     "Synthetic loopback + disk results; these are not phone or Wi-Fi speeds.",
   );
-  for (const parallel of [2, 4, 6])
+  for (const parallel of [2, 3, 4, 6])
     console.log(JSON.stringify(await measure(parallel)));
 })().catch((error) => {
   console.error(error);

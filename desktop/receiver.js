@@ -10,6 +10,7 @@ const {
   inside,
   bounded,
 } = require("./storage");
+const { adoptLegacy, recoverLegacy } = require("./legacy");
 const MAX_FILE = 16 * 1024 ** 3,
   MAX_CHUNK = 4 * 1024 ** 2,
   UPLOAD_TTL = 7 * 86400000;
@@ -23,10 +24,13 @@ const JOB_STATES = new Set([
   "failed",
   "cancelled",
 ]);
-const fail = (status, message) => Object.assign(new Error(message), { status });
-async function hashFile(file, algorithm = "sha256") {
+const fail = (status, message, code) => Object.assign(new Error(message), { status, code });
+async function hashFile(file, algorithm = "sha256", onProgress) {
   const h = crypto.createHash(algorithm);
-  for await (const c of fs.createReadStream(file)) h.update(c);
+  for await (const c of fs.createReadStream(file)) {
+    h.update(c);
+    onProgress?.(c.length);
+  }
   return h.digest("hex");
 }
 function equal(a, b) {
@@ -93,6 +97,7 @@ function createServer(downloadPath, options = {}) {
     locks = new Set(),
     hashes = new Map(),
     active = new Map(),
+    heartbeats = new Map(),
     attempts = new Map();
   let rebuild = {
     running: false,
@@ -144,8 +149,7 @@ function createServer(downloadPath, options = {}) {
       return (
         s.isFile() &&
         s.size === e.size &&
-        (e.diskMtimeMs == null || s.mtimeMs === e.diskMtimeMs) &&
-        (e.diskCtimeMs == null || s.ctimeMs === e.diskCtimeMs)
+        (e.diskMtimeMs == null || s.mtimeMs === e.diskMtimeMs)
       );
     } catch {
       return false;
@@ -184,7 +188,21 @@ function createServer(downloadPath, options = {}) {
   const notifyJobs = () => emit("onJobsChanged", { items: jobs() });
   const tempPath = (u) =>
     inside(root, path.join(".pherry", "uploads", `${u.uploadId}.part`));
+  const removePartial = (u) => {
+    if (locks.has(u.uploadId)) throw Object.assign(fail(409, "This upload is busy"), { code: "UPLOAD_BUSY" });
+    try { fs.unlinkSync(tempPath(u)); } catch (error) { if (error.code !== "ENOENT") throw error; }
+    hashes.delete(u.uploadId);
+    store.removeUpload(u.uploadId);
+  };
+  const cleanupExpiredUploads = (now = Date.now()) => {
+    const ttl = options.uploadTtlMs ?? UPLOAD_TTL;
+    for (const u of store.pendingUploads()) {
+      if (locks.has(u.uploadId) || u.finalPath || now - u.updatedAt <= ttl) continue;
+      try { removePartial(u); } catch (error) { console.error("Partial cleanup:", error.code || error.message); }
+    }
+  };
   const saveJob = (j) => {
+    if (["completed", "failed", "cancelled", "paused"].includes(j.state)) heartbeats.delete(j.id);
     const saved = store.saveJob(j);
     notifyJobs();
     return saved;
@@ -212,7 +230,7 @@ function createServer(downloadPath, options = {}) {
     if (++a.count > 10)
       throw fail(429, "Too many pairing attempts. Try again in a minute.");
     if (!equal(req.body.pairingCode, pairingCode))
-      throw fail(401, "Incorrect pairing code");
+      throw fail(401, "Incorrect pairing code", "PAIRING_CODE_INVALID");
     const id = String(req.body.clientId || "");
     if (!ID.test(id) || id === "legacy")
       throw fail(400, "Invalid phone identity");
@@ -246,6 +264,8 @@ function createServer(downloadPath, options = {}) {
       apiVersion: 2,
     });
   });
+  app.all(["/upload", "/exists", "/sync/delete"], (req, res) =>
+    res.status(426).json({ code: "PROTOCOL_UPDATE_REQUIRED", error: "Update Pherry on this phone to continue backing up" }));
   app.use((req, res, next) => {
     req.admin =
       ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
@@ -269,6 +289,7 @@ function createServer(downloadPath, options = {}) {
       throw fail(
         409,
         "The computer or destination folder changed. Reconnect and review the destination before continuing.",
+        "DESTINATION_CHANGED",
       );
     let reportedName = req.get("X-Device-Name");
     if (req.get("X-Device-Name-Encoded")) {
@@ -357,7 +378,7 @@ function createServer(downloadPath, options = {}) {
       (collision.device !== req.device.id ||
         collision.library !== store.libraryId)
     )
-      throw fail(409, "Job identity is already in use");
+      throw fail(409, "Job identity is already in use", "JOB_ID_CONFLICT");
     const b = req.body,
       state = JOB_STATES.has(b.state) ? b.state : old?.state || "planning";
     const j = {
@@ -385,16 +406,23 @@ function createServer(downloadPath, options = {}) {
     j.completedFiles = Math.max(j.completedFiles, j.savedFiles);
     j.completedBytes = Math.max(j.completedBytes, j.savedBytes);
     if (state === "completed") {
+      const pending = store.pendingUploads().filter((u) => u.jobId === id);
+      // A concurrent identical file can make a partial unnecessary; it must not block finalization.
+      for (const u of pending) {
+        if (!locks.has(u.uploadId) && match(u.deviceId, u.hash)?.size === u.size) removePartial(u);
+      }
+      const unfinished = store.pendingUploads().filter((u) => u.jobId === id);
       if (
-        store.pendingUploads().some((u) => u.jobId === id) ||
+        unfinished.length ||
         j.completedFiles + j.skippedFiles + j.failedFiles < j.totalFiles
       )
-        throw fail(409, "The backup still has unfinished files");
+        return res.status(409).json({ code: "JOB_HAS_PENDING_UPLOADS", error: "The backup still has unfinished files", uploadIds: unfinished.map((u) => u.uploadId) });
       j.completedAt = old?.completedAt || Date.now();
     }
     res.json(saveJob(j));
   });
   app.post("/v2/preflight", (req, res) => {
+    cleanupExpiredUploads();
     const required = bounded(req.body.totalBytes, 0),
       free = freeBytes(),
       reserved = store
@@ -403,6 +431,7 @@ function createServer(downloadPath, options = {}) {
         .reduce((s, u) => s + Math.max(0, u.size - u.offset), 0);
     res.json({
       libraryId: store.libraryId,
+      ...store.q("SELECT COUNT(*) AS legacyMediaCount,COALESCE(SUM(size),0) AS legacyBytes FROM media WHERE library=? AND device='legacy'").get(store.libraryId),
       freeBytes: free,
       reservedBytes: reserved,
       requiredBytes: required,
@@ -437,7 +466,7 @@ function createServer(downloadPath, options = {}) {
       verification: req.body.verify === true ? "checksum" : "presence",
     });
   });
-  app.post("/v2/uploads", (req, res) => {
+  app.post("/v2/uploads", async (req, res) => {
     if (req.admin) throw fail(400, "Uploads belong to paired phones");
     const b = req.body,
       uploadId = String(b.uploadId || ""),
@@ -454,20 +483,23 @@ function createServer(downloadPath, options = {}) {
       throw fail(413, "File exceeds the 16 GB limit");
     const job = owned(store.job(jobId), req);
     if (["completed", "cancelled"].includes(job.state))
-      throw fail(409, "This backup has finished");
+      throw fail(409, "This backup has finished", "JOB_FINISHED");
     let u = store.upload(uploadId);
     if (u) {
       owned(u, req);
       if (u.hash !== hash || u.size !== b.size || u.jobId !== jobId)
-        throw fail(409, "Upload identity does not match this file");
+        throw fail(409, "Upload identity does not match this file", "UPLOAD_ID_CONFLICT");
       const saved = u.complete ? currentReceipt(u) : null;
-      if (!u.complete || saved)
+      if (!u.complete || saved) {
+        if (!u.complete) { u.updatedAt = Date.now(); store.saveUpload(u); }
         return res.json({ ...u, ...(saved ? receipt(saved, uploadId) : {}) });
+      }
       store.removeUpload(uploadId);
       u = null;
     }
     if (store.q("SELECT id FROM uploads WHERE id=?").get(uploadId))
-      throw fail(409, "Upload identity is already in use");
+      throw fail(409, "Upload identity is already in use", "UPLOAD_ID_CONFLICT");
+    if (locks.has(uploadId)) throw fail(409, "This upload is busy", "UPLOAD_BUSY");
     const e = match(req.device.id, hash);
     if (e) {
       u = {
@@ -484,12 +516,6 @@ function createServer(downloadPath, options = {}) {
       store.saveUpload(u);
       return res.json({ ...u, ...receipt(e, uploadId) });
     }
-    const free = freeBytes(),
-      reserved = store
-        .pendingUploads()
-        .reduce((s, x) => s + x.size - x.offset, 0);
-    if (free !== null && b.size > Math.max(0, free - reserved))
-      throw fail(507, "Not enough free space on the computer");
     u = {
       uploadId,
       jobId,
@@ -507,6 +533,22 @@ function createServer(downloadPath, options = {}) {
       complete: false,
       updatedAt: Date.now(),
     };
+    if (b.adoptLegacy === true) {
+      locks.add(uploadId);
+      try {
+        const adopted = await adoptLegacy(store, u);
+        if (adopted) {
+          u = { ...u, offset: u.size, complete: true, receiptId: adopted.id, adoptedLegacy: true };
+          store.saveUpload(u);
+          emit("onFilesRemoved", { source: "legacy-adoption", deviceId: req.device.id });
+          return res.json({ ...u, ...receipt(adopted, uploadId) });
+        }
+      } finally { locks.delete(uploadId); }
+    }
+    cleanupExpiredUploads();
+    const free = freeBytes(), reserved = store.pendingUploads().reduce((s, x) => s + x.size - x.offset, 0);
+    if (free !== null && b.size > Math.max(0, free - reserved))
+      throw fail(507, "Not enough free space on the computer", "OUT_OF_SPACE");
     fs.writeFileSync(tempPath(u), "", { flag: "wx" });
     store.saveUpload(u);
     res.status(201).json(u);
@@ -514,7 +556,7 @@ function createServer(downloadPath, options = {}) {
   app.delete("/v2/uploads/:id", async (req, res) => {
     const u = owned(store.upload(req.params.id), req);
     if (locks.has(u.uploadId))
-      throw fail(409, "A chunk is still being written");
+      throw fail(409, "A chunk is still being written", "UPLOAD_BUSY");
     if (!u.complete)
       await fs.promises.unlink(tempPath(u)).catch((e) => {
         if (e.code !== "ENOENT") throw e;
@@ -536,13 +578,13 @@ function createServer(downloadPath, options = {}) {
       return res.json({ uploadId: u.uploadId, offset: u.size, complete: true });
     }
     if (locks.has(u.uploadId))
-      throw fail(409, "Another chunk is being written");
+      throw fail(409, "Another chunk is being written", "UPLOAD_BUSY");
     const offset = Number(req.get("Upload-Offset")),
       length = Number(req.get("Content-Length"));
     if (!Number.isSafeInteger(offset) || offset !== u.offset)
       return res
         .status(409)
-        .json({ error: "Offset changed", offset: u.offset });
+        .json({ code: "OFFSET_CHANGED", error: "Offset changed", offset: u.offset });
     if (
       !Number.isSafeInteger(length) ||
       length <= 0 ||
@@ -609,9 +651,7 @@ function createServer(downloadPath, options = {}) {
       u.updatedAt = Date.now();
       state.offset = u.offset;
       store.saveUpload(u);
-      const job = store.job(u.jobId);
-      if (job && ["running", "waiting"].includes(job.state))
-        store.saveJob({ ...job, state: "running", error: "" });
+      heartbeats.set(u.jobId, Date.now());
       // Acknowledgement also means the file handle and chunk lock are released for commit.
       await handle.close();
       handle = null;
@@ -628,6 +668,31 @@ function createServer(downloadPath, options = {}) {
       active.delete(u.uploadId);
     }
   });
+  // Rename is a durable intent, even if the following database write fails while we stay alive.
+  // A retry must finish that receipt instead of trying to read the now-moved partial forever.
+  const recoverCommittedUpload = async (u) => {
+    let final, before;
+    try {
+      final = inside(root, u.finalPath);
+      before = await fs.promises.stat(final);
+    } catch (error) {
+      if (error.code === "ENOENT") throw expired();
+      throw error;
+    }
+    if (!before.isFile() || before.size !== u.size || (await hashFile(final)) !== u.hash) throw expired();
+    const after = await fs.promises.stat(final);
+    if (after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ino !== before.ino) throw expired();
+    const existing = store.find(u.deviceId, u.hash).find((entry) => entry.relativePath === u.finalPath);
+    const saved = existing && onDisk(existing) ? existing : store.saveMedia({
+      ...u, relativePath: u.finalPath, fileName: path.basename(final), time: existing?.time || u.updatedAt,
+      integrityInvalid: false, diskMtimeMs: after.mtimeMs, diskCtimeMs: after.ctimeMs,
+    }, { arrival: !existing });
+    store.accountSavedUpload(u);
+    u.complete = true; u.receiptId = saved.id; u.updatedAt = Date.now();
+    store.saveUpload(u);
+    notifyJobs(); emit("onFileReceived", saved);
+    return saved;
+  };
   app.post("/v2/uploads/:id/complete", async (req, res) => {
     const u = owned(store.upload(req.params.id), req);
     if (u.complete) {
@@ -640,10 +705,14 @@ function createServer(downloadPath, options = {}) {
       });
     }
     if (locks.has(u.uploadId))
-      throw fail(409, "A chunk is still being written");
-    if (u.offset !== u.size) throw fail(409, "The file is not fully uploaded");
+      throw fail(409, "A chunk is still being written", "UPLOAD_BUSY");
+    if (u.offset !== u.size) throw fail(409, "The file is not fully uploaded", "UPLOAD_INCOMPLETE");
     locks.add(u.uploadId);
     try {
+      if (u.finalPath && !fs.existsSync(tempPath(u))) {
+        const saved = await recoverCommittedUpload(u);
+        return res.json({ ...receipt(saved, u.uploadId), offset: u.size });
+      }
       const file = tempPath(u),
         state = hashes.get(u.uploadId);
       hashes.delete(u.uploadId);
@@ -655,7 +724,7 @@ function createServer(downloadPath, options = {}) {
         await fs.promises.truncate(file, 0);
         u.offset = 0;
         store.saveUpload(u);
-        throw fail(422, "Checksum mismatch. Restart this file.");
+        throw fail(422, "Checksum mismatch. Restart this file.", "CHECKSUM_MISMATCH");
       }
       let saved = match(u.deviceId, u.hash);
       if (saved) {
@@ -949,11 +1018,6 @@ function createServer(downloadPath, options = {}) {
       failures,
     });
   });
-  app.all(["/upload", "/exists", "/sync/delete"], (req, res) =>
-    res.status(426).json({
-      error: "Update Pherry on this phone to use resumable, per-phone backups",
-    }),
-  );
   app.use((err, req, res, next) => {
     if (res.headersSent) return next(err);
     res.status(err.status || (err.code === "ENOSPC" ? 507 : 500)).json({
@@ -962,17 +1026,27 @@ function createServer(downloadPath, options = {}) {
         : err.code === "ENOSPC"
           ? "The computer ran out of disk space"
           : "The receiver could not finish this operation",
-      code: err.code === "UPLOAD_EXPIRED" ? err.code : undefined,
+      code: err.code,
     });
   });
   // Durable intent recovery closes the rename/DB-commit crash window. Chunks roll back to their last acknowledgement.
   const ready = (async () => {
+    let lastRecoveryProgress = 0;
+    const recoveryProgress = () => {
+      if (Date.now() - lastRecoveryProgress < 1000) return;
+      lastRecoveryProgress = Date.now();
+      emit("onRecoveryProgress", {});
+    };
+    const legacyRecovery = await recoverLegacy(store, recoveryProgress);
+    if (legacyRecovery.pending) console.error("Previous backup moves need review:", legacyRecovery.errors);
     for (const u of store.pendingUploads()) {
       if (u.complete) continue;
-      if (u.finalPath)
-        try {
+      if (u.finalPath) {
           const final = inside(root, u.finalPath);
-          if ((await hashFile(final)) === u.hash) {
+          let digest;
+          try { digest = await hashFile(final, "sha256", recoveryProgress); }
+          catch (error) { if (error.code !== "ENOENT") throw error; }
+          if (digest === u.hash) {
             const existing = store
               .find(u.deviceId, u.hash)
               .find((e) => e.relativePath === u.finalPath);
@@ -992,12 +1066,9 @@ function createServer(downloadPath, options = {}) {
             store.saveUpload(u);
             continue;
           }
-        } catch {
-          /* Rename had not completed. */
-        }
-      if (Date.now() - u.updatedAt > UPLOAD_TTL) {
-        await fs.promises.unlink(tempPath(u)).catch(() => {});
-        store.removeUpload(u.uploadId);
+      }
+      if (!u.finalPath && Date.now() - u.updatedAt > (options.uploadTtlMs ?? UPLOAD_TTL)) {
+        removePartial(u);
         continue;
       }
       try {
@@ -1017,10 +1088,11 @@ function createServer(downloadPath, options = {}) {
     }
   })();
   const timer = setInterval(() => {
+    cleanupExpiredUploads();
     for (const j of store.jobs())
       if (
         j.state === "running" &&
-        Date.now() - j.updatedAt > 45000 &&
+        Date.now() - Math.max(j.updatedAt, heartbeats.get(j.id) || 0) > 45000 &&
         ![...active.values()].some((u) => u.jobId === j.id)
       )
         saveJob({
@@ -1034,6 +1106,7 @@ function createServer(downloadPath, options = {}) {
   timer.unref();
   app.locals.ready = ready;
   app.locals.store = store;
+  app.locals.cleanupExpiredUploads = cleanupExpiredUploads;
   app.locals.close = () => {
     clearInterval(timer);
     store.close();

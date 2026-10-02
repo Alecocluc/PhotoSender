@@ -29,8 +29,8 @@ The visual metaphor is a photo lab. Product language stays literal: phone, compu
 
 - **Pairing is required.** The QR contains `ip:port?t=code`; the six-character code enrolls a phone and is exchanged for a per-phone credential. mDNS `_pherry._tcp` helps find the computer. Stable computer and library identities keep receipts separate from changing LAN addresses.
 - **Phone identity and folders.** Desktop Settings lets users rename a phone or remove its access. The display name can change without renaming its stable directory. Albums live inside that directory. Removing access preserves saved files.
-- **Backup preparation.** The phone checks source versions, computes or reuses SHA-256, checks which files the selected receiver already has, and checks required space before uploading. Scanning, waiting, sending, verification, pause, failure and completion are distinct states.
-- **Interrupted transfers.** Android persists jobs, queue records, offsets, source versions and receipts in Room. WorkManager handles background execution and retry; user pause survives process restarts. The receiver persists partial-file offsets and jobs in SQLite.
+- **Backup preparation.** The phone checks source versions, computes or reuses SHA-256, checks which files the selected receiver already has, and checks required space before uploading. Hashing overlaps sending through a bounded queue, with three transfer workers by default and six in high-speed mode. Scanning, waiting, sending, verification, pause, failure and completion are distinct states with typed reasons and app-owned wording.
+- **Interrupted transfers.** Android persists jobs, queue records, offsets, source versions and receipts in Room. Manual transfers use Android's user-initiated transfer jobs on API 34+; WorkManager handles background execution and retry. User pause survives process restarts. The receiver persists partial-file offsets and jobs in SQLite and automatically restarts after a crash, with bounded retries.
 - **Share intake.** Shared media is reviewed before sending and is filed under the sending phone's `Shared` album.
 - **Receiver.** The desktop shows a separate card for each unfinished job and receipts for recent finished jobs. Completion comes from the protocol. Pairing instructions collapse after a phone is paired or starts a job and can be reopened.
 - **Library and history.** Photos queries the permanent media inventory. History is a separate, capped list of recent transfer events. Both search and filter on the receiver by phone, album, file type, name and saved date. The DOM contains only visible rows and a small overscan window.
@@ -59,9 +59,9 @@ The visual metaphor is a photo lab. Product language stays literal: phone, compu
 
 Update both Android and desktop for protocol v2. Older upload endpoints are rejected; a new phone must complete pairing.
 
-Android Room migration 1 → 2 preserves existing records and adds destination/source/job metadata. Legacy completed records remain history, not proof that a new receiver has the file. An eligible legacy pending queue is adopted for the connected receiver and checked again.
+Android Room migration 1 → 2 preserves existing records and adds destination/source/job metadata. Legacy completed records remain separately labelled history, not proof that a new receiver has the file. Manual and automatic backup wait for an explicit upgrade review when previous backups exist. Approval belongs to the chosen computer and destination; eligible legacy pending work is then adopted and checked again.
 
-The desktop imports available legacy JSON records into its SQLite library after checking paths and file presence. Old files stay where they are and appear as previous backups; importing a history file does not grant a phone access to those files. Moving to another destination folder gives that folder its own library identity. To include moved files, keep their phone/album directory structure and rebuild the index.
+The desktop imports available legacy JSON records into its SQLite library after checking paths and file presence. Old files initially stay where they are and appear as previous backups; importing a history file does not grant a phone access to those files. A phone can explicitly adopt a previous backup: Pherry verifies each matching original with SHA-256 before moving it into that phone's folder, preserving its receipt. Unmatched files and files owned by another phone are kept. The move uses a durable journal so an interruption can be recovered without copying the library twice. Moving to another destination folder gives that folder its own library identity. To include moved files, keep their phone/album directory structure and rebuild the index.
 
 Keep the photo directory and the desktop application-data directory when making an independent backup. A history export alone contains records, not originals. Do not manually remove partial files or the database while the receiver is active.
 
@@ -91,9 +91,23 @@ node desktop/scripts/renderer-browser.cjs
 
 Set `PHERRY_RENDERER_ARTIFACTS` to a local output directory to save screenshots during that run.
 
-`npm run benchmark` runs an isolated loopback receiver with temporary files: 32 files of 256 KiB and four files of 8 MiB, at concurrency 2, 4 and 6. It reports hashing time, receiver time and loopback throughput, then removes its temporary data. Use it to compare local changes on the same computer. It does not measure phone performance or Wi-Fi throughput, and its numbers are not product speed claims.
+The real Electron integration harness uses the same Playwright module setup and the Electron executable installed by `npm ci` (or `PHERRY_ELECTRON`). It starts a hidden application with temporary user data, a temporary photo folder and a free port. It pairs a test phone, acknowledges the first 4 MiB of an upload, terminates only that application's receiver child, waits for automatic recovery, then resumes and verifies every saved byte through the actual preload and receiver. It also checks indexed search and the completed job receipt. It removes its temporary files when finished and does not change login settings or advertise a test receiver through discovery. From the repository root:
 
-Evidence from the renderer integration harness at a 1280×820 viewport: a synthetic 20,000-file collection rendered 42 photo frames and 663 total DOM nodes; the 5,000-event History rendered 13 rows and 353 nodes. Thumbnail concurrency stayed at three. The checks cover a jump to item 19,001, global search beyond the first page, phone filters, focus during arrivals, aliases, authoritative job state, and all four views at 480×560.
+```powershell
+node desktop/scripts/electron-integration.cjs
+```
+
+With an Android emulator already running, the real Kotlin/Node protocol and Room migration tests run together against an isolated receiver:
+
+```powershell
+node desktop/scripts/android-integration.cjs
+```
+
+The runner selects a running emulator, starts the receiver on a free loopback port, and uses an emulator-specific `adb reverse` tunnel. It removes that tunnel and its temporary library afterward and checks that both test classes actually ran. If several emulators are running, set `PHERRY_TEST_EMULATOR` to the desired `emulator-…` serial. Physical phones are excluded. CI runs the same command on an API 35 emulator, alongside the Windows/Linux receiver tests and Android build, unit tests and lint. This verifies the protocol through real sockets, not Wi-Fi throughput.
+
+`npm run benchmark` runs an isolated loopback receiver with temporary files: 32 files of 256 KiB and four files of 8 MiB, at concurrency 2, 3, 4 and 6. It reports hashing time, receiver time and loopback throughput, then removes its temporary data. Use it to compare local changes on the same computer. It does not measure phone performance or Wi-Fi throughput, and its numbers are not product speed claims.
+
+Evidence from the renderer integration harness at a 1280×820 viewport: a synthetic 20,000-file collection rendered 42 photo frames; the 5,000-event History rendered 13 rows. Both views stayed below 700 DOM nodes with the current fixture, and thumbnail concurrency stayed at three. The fixture loads real image data and verifies that arrival updates reuse those image nodes, never announce Loading again, preserve focused files, and keep a deep scroll position when the window returns from the background. It also checks Home/End navigation, a jump to item 19,001, global search beyond the first page, phone filters, aliases, a quiet pairing ticket during a job, authoritative job state, and all four views at 480×560.
 
 These are functional and DOM-bound checks, not measured Wi-Fi throughput, battery results, or a completed real-device 20,000-file backup. Do not invent transfer-speed claims. Receiver tests exercise ownership, resumable offsets, checksum rejection, deletion failures and inventory beyond the history cap; Android tests cover transfer policy and presentation.
 

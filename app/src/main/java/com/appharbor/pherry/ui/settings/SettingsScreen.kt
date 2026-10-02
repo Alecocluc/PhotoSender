@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -43,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.network.RememberedComputer
 import com.appharbor.pherry.data.preferences.ThemeMode
+import com.appharbor.pherry.ui.components.Notice
 import com.appharbor.pherry.ui.components.Hairline
 import com.appharbor.pherry.ui.components.Lamp
 import com.appharbor.pherry.ui.components.LampState
@@ -63,6 +65,10 @@ import com.appharbor.pherry.ui.permissions.hasFullMediaPermission
 @Composable
 fun SettingsScreen(
     onManageComputer: () -> Unit,
+    focusBackup: Boolean = false,
+    onBackupFocused: () -> Unit = {},
+    upgradeReviewRequired: Boolean = false,
+    onReviewUpgrade: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
@@ -81,6 +87,10 @@ fun SettingsScreen(
     val deviceName by viewModel.deviceName.collectAsStateWithLifecycle()
     val uploadMode = UploadMode.entries.firstOrNull { it.name == defaultUploadModeName } ?: UploadMode.ADD
 
+    val listState = rememberLazyListState()
+    LaunchedEffect(focusBackup) {
+        if (focusBackup) { listState.scrollToItem(2); onBackupFocused() }
+    }
     val c = PherryTheme.colors
     val context = LocalContext.current
     val versionName = remember(context) { context.appVersionName() }
@@ -132,7 +142,7 @@ fun SettingsScreen(
             text = {
                 Text(
                     "Pherry will send new photos and videos to $computer by itself, about every 15 minutes " +
-                        "when the phone is on Wi-Fi. Start with everything already on this phone, or only what you take from now on?"
+                        "when your network and charging settings allow it. Start with everything already on this phone, or only what you take from now on?"
                 )
             },
             confirmButton = {
@@ -192,6 +202,7 @@ fun SettingsScreen(
     }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = Spacing.screen, end = Spacing.screen, bottom = Spacing.xxl),
         verticalArrangement = Arrangement.spacedBy(Spacing.xl),
@@ -221,12 +232,18 @@ fun SettingsScreen(
 
         item(key = "backup") {
             SettingsSection("Backup") {
+                if (upgradeReviewRequired) {
+                    Notice(title = "Review your existing backup", detail = "Choose how to organize files from the previous version before automatic backups continue.",
+                        actionLabel = "Review backup", onAction = onReviewUpgrade,
+                        modifier = Modifier.padding(vertical = Spacing.md))
+                }
                 SwitchRow(
                     title = "Auto-backup",
-                    subtitle = "Sends new photos and videos to $computer every 15 minutes or so, while on Wi-Fi and $computer is on.",
+                    subtitle = if (upgradeReviewRequired) "On hold until you review your existing backup."
+                        else "Sends new photos and videos to $computer in the background, when your network and charging settings allow it.",
                     icon = Ph.Clock,
                     checked = autoBackupEnabled,
-                    onCheckedChange = { on -> if (on) askAutoBackup = true else viewModel.disableAutoBackup() },
+                    onCheckedChange = { on -> if (on && upgradeReviewRequired) onReviewUpgrade() else if (on) askAutoBackup = true else viewModel.disableAutoBackup() },
                 )
                 Hairline()
                 SwitchRow(

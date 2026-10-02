@@ -1,7 +1,7 @@
 import { state } from './state.js';
 import { DataWindow, visibleRange } from './data-window.js';
 import { escHtml, entryName, entryTime, entryKey, entryKind, fileArgs, fileIcon, fmtBytes, fmtFullTime, fmtStampDate, n } from './utils.js';
-import { frameHtml, reuseFrames } from './components.js';
+import { frameHtml, reuseFrames, reuseRowThumbnails } from './components.js';
 import { attachThumbs, detachThumbs, canThumbnail } from './thumbs.js';
 import { icon } from './icons.js';
 import { showToast } from './shell.js';
@@ -148,7 +148,7 @@ export function createMediaBrowser({ mode, title, query: preferences }) {
     const signature = JSON.stringify([start, end, columns, rowHeight, entries.map((e) => e ? [entryKey(e), e.deviceName] : null)]);
     if (signature !== lastPaint) {
       const focused = windowEl.contains(document.activeElement) ? Number(document.activeElement.closest('[data-index]')?.dataset.index) : null;
-      const previous = new Map([...windowEl.querySelectorAll('.frame[data-key]')].map((el) => [el.dataset.key, el]));
+      const previous = new Map([...windowEl.querySelectorAll('.frame[data-key], .inventory-row[data-key]')].map((el) => [el.dataset.key, el]));
       const scratch = document.createElement('div');
       let html = '';
       for (let i = 0; i < entries.length; i += columns) {
@@ -156,32 +156,42 @@ export function createMediaBrowser({ mode, title, query: preferences }) {
       }
       scratch.innerHTML = html;
       reuseFrames(scratch, previous);
+      reuseRowThumbnails(scratch, previous);
       detachThumbs(windowEl);
       windowEl.replaceChildren(...scratch.childNodes);
       windowEl.querySelectorAll('.media-cell .frame').forEach((el) => { el.tabIndex = Number(el.parentElement.dataset.index) === activeIndex ? 0 : -1; });
       attachThumbs(windowEl);
       lastPaint = signature;
-      if (focused !== null && Number.isFinite(focused)) focusItem(focused, false);
+      // A long keyboard jump owns the focus target. Do not replace it with the old,
+      // now off-screen row while the destination page is still loading.
+      if (pendingFocus === null && focused !== null && Number.isFinite(focused)) focusVisible(focused);
     }
-    if (pendingFocus != null && store.item(pendingFocus)) { const index = pendingFocus; pendingFocus = null; focusItem(index, false); }
+    if (pendingFocus != null && focusVisible(pendingFocus)) pendingFocus = null;
     if (!store.ready) store.load(0); else if (end > start) store.request(start, end);
     if (!grid && store.meta.historyCap) {
       root.querySelector('#browser-foot').textContent = `History keeps the newest ${n(store.meta.historyCap)} transfer events. Every saved file remains available in Photos and in its phone folder.`;
     }
   }
+  function focusVisible(index) {
+    const target = windowEl.querySelector(`[data-index="${index}"] .frame, [data-index="${index}"] .inventory-entry`);
+    if (!target) return false;
+    activeIndex = index;
+    windowEl.querySelectorAll('.frame, .inventory-entry, .inventory-reveal').forEach((el) => {
+      el.tabIndex = Number(el.closest('[data-index]')?.dataset.index) === activeIndex ? 0 : -1;
+    });
+    target.focus({ preventScroll: true }); return true;
+  }
   function focusItem(index, scroll = true) {
     if (!store.total) return;
     activeIndex = Math.max(0, Math.min(store.total - 1, index));
+    pendingFocus = activeIndex;
     if (scroll) {
       dimensions();
       const y = scrollOffset() + Math.floor(activeIndex / columns) * rowHeight;
       if (y < main.scrollTop + 40 || y + rowHeight > main.scrollTop + main.clientHeight) main.scrollTo({ top: Math.max(0, y - 48), behavior: 'instant' });
     }
-    windowEl.querySelectorAll('.frame, .inventory-entry, .inventory-reveal').forEach((el) => {
-      el.tabIndex = Number(el.closest('[data-index]')?.dataset.index) === activeIndex ? 0 : -1;
-    });
-    const target = windowEl.querySelector(`[data-index="${activeIndex}"] .frame, [data-index="${activeIndex}"] .inventory-entry`);
-    if (target) target.focus({ preventScroll: true }); else { pendingFocus = activeIndex; schedule(); }
+    if (focusVisible(activeIndex)) pendingFocus = null;
+    schedule();
   }
   async function open(index, reveal = false) {
     const entry = store.item(index);
@@ -249,6 +259,10 @@ export function createMediaBrowser({ mode, title, query: preferences }) {
   });
   main.addEventListener('scroll', schedule, { passive: true });
   const resize = new ResizeObserver(schedule); resize.observe(viewport);
+  function canFollowArrivals() {
+    return !disposed && pendingFocus === null && main.scrollTop < 20 &&
+      !windowEl.contains(document.activeElement) && !root.querySelector('.query-controls').contains(document.activeElement);
+  }
   reset(false);
   return {
     refresh() {
@@ -256,8 +270,14 @@ export function createMediaBrowser({ mode, title, query: preferences }) {
       if (lastEpoch !== state.collectionEpoch) { lastEpoch = state.collectionEpoch; reset(false); return; }
       if (state.revision === lastRevision) return;
       lastRevision = state.revision;
-      if (main.scrollTop < 20 && !root.querySelector('#' + filterId('query')).matches(':focus')) reset(false);
-      else root.querySelector('#browser-refresh').hidden = false;
+      const refreshButton = root.querySelector('#browser-refresh');
+      refreshButton.hidden = false;
+      if (canFollowArrivals()) {
+        const revision = state.revision;
+        store.refresh(canFollowArrivals).then((adopted) => {
+          if (!disposed && adopted && revision === state.revision) refreshButton.hidden = true;
+        });
+      }
     },
     destroy() { disposed = true; clearTimeout(timer); cancelAnimationFrame(frame); resize.disconnect(); main.removeEventListener('scroll', schedule); detachThumbs(viewport); store.dispose(); },
   };

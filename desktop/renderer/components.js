@@ -84,16 +84,30 @@ function syncDevelop(el) {
 /**
  * Swap frames already on screen in for their new copies in `fresh` (a detached, already wired
  * scratch tree), so a busy backup doesn't reload every thumbnail or rewire every frame. A frame is
- * carried over only while its edge print still matches. `previous` maps data-key to the old frame.
+ * keeps its loaded image even when a new arrival changes its ordinal or phone label.
+ * `previous` maps data-key to the old frame.
  */
 export function reuseFrames(fresh, previous) {
   if (!previous.size) return;
   fresh.querySelectorAll(".frame[data-key]").forEach((el) => {
     const old = previous.get(el.dataset.key);
     if (!old || old === el) return;
-    if ([...old.querySelectorAll('.edge')].map((edge) => edge.textContent).join('|') !== [...el.querySelectorAll('.edge')].map((edge) => edge.textContent).join('|')) return;
+    const oldEdges = old.querySelectorAll('.edge');
+    el.querySelectorAll('.edge').forEach((edge, index) => {
+      if (oldEdges[index]?.innerHTML !== edge.innerHTML) oldEdges[index].innerHTML = edge.innerHTML;
+    });
+    for (const name of ['title', 'aria-label']) old.setAttribute(name, el.getAttribute(name));
     syncDevelop(old);
     el.replaceWith(old);
+  });
+}
+
+/** Ledger rows can be rebuilt without asking Chromium to decode their loaded image again. */
+export function reuseRowThumbnails(fresh, previous) {
+  fresh.querySelectorAll('.inventory-row[data-key]').forEach((row) => {
+    const old = previous.get(row.dataset.key)?.querySelector('.shot');
+    const shot = row.querySelector('.shot');
+    if (old && shot) shot.replaceWith(old);
   });
 }
 

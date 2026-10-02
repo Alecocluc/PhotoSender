@@ -31,7 +31,7 @@ object TransferNotifications {
             (if (state.failedFiles > 0) " · ${state.failedFiles} failed" else "") +
             (if (state.pendingFiles > 0 && !ongoing) " · ${state.pendingFiles} still queued" else "")
         return NotificationCompat.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_stat_pherry)
-            .setContentTitle(title).setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText("$text\n${state.message.orEmpty()}"))
+            .setContentTitle(title).setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open).setOnlyAlertOnce(true).setOngoing(ongoing).setAutoCancel(!ongoing)
             .apply {
                 if (ongoing) setProgress(100, (state.progressPercent * 100).toInt().coerceIn(0, 100), state.phase == TransferPhase.PREPARING)

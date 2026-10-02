@@ -9,11 +9,13 @@ function walk(dir) {
     const file = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(file);
     else if (/\.(?:js|cjs|mjs)$/.test(file)) {
-      const result = spawnSync(process.execPath, ["--check", file], {
+      const rendererModule = file.startsWith(path.join(root, "renderer") + path.sep);
+      const result = spawnSync(process.execPath, rendererModule ? ["--input-type=module", "--check"] : ["--check", file], {
         encoding: "utf8",
+        ...(rendererModule ? { input: fs.readFileSync(file, "utf8") } : {}),
       });
       if (result.status !== 0) {
-        process.stderr.write(result.stderr);
+        process.stderr.write(`${path.relative(root, file)}: ${result.error?.message || result.stderr || "Syntax check failed"}\n`);
         process.exitCode = 1;
       }
       count++;

@@ -23,11 +23,39 @@ object ReceiptPolicy {
 
 enum class QueueOutcome { COMPLETE, RETRY, PAUSED, FAILED }
 enum class TransferPhase { IDLE, PREPARING, WAITING_FOR_COMPUTER, WAITING_FOR_NETWORK, UPLOADING, VERIFYING, PAUSED, COMPLETE, FAILED }
+enum class TransferReason {
+    NONE, NETWORK_REQUIRED, UNMETERED_REQUIRED, COMPUTER_UNAVAILABLE, OUT_OF_SPACE,
+    PAIRING_REQUIRED, PAIRING_CODE_INVALID, ACCESS_REVOKED, DESKTOP_UPDATE_REQUIRED, DESTINATION_CHANGED,
+    RECEIVER_BUSY, SOURCE_UNAVAILABLE, CHECKSUM_MISMATCH, UPGRADE_REVIEW_REQUIRED,
+    RECEIPT_PENDING, USER_PAUSED, ANDROID_INTERRUPTED, FILE_FAILURES, UNKNOWN,
+}
+
+internal class SourceReadException(cause: Exception) : IOException("The original could not be read", cause)
+internal class UpgradeReviewRequiredException : IOException("Review your previous backup before continuing")
+
+internal fun Exception.transferReason(): TransferReason = when (this) {
+    is UpgradeReviewRequiredException -> TransferReason.UPGRADE_REVIEW_REQUIRED
+    is SourceReadException, is FileNotFoundException, is SecurityException -> TransferReason.SOURCE_UNAVAILABLE
+    is TransferHttpException -> when {
+        protocolCode == "LEGACY_REVIEW_REQUIRED" -> TransferReason.UPGRADE_REVIEW_REQUIRED
+        protocolCode == "DESTINATION_CHANGED" -> TransferReason.DESTINATION_CHANGED
+        protocolCode == "PROTOCOL_UPDATE_REQUIRED" || code == 426 -> TransferReason.DESKTOP_UPDATE_REQUIRED
+        protocolCode == "PAIRING_CODE_INVALID" -> TransferReason.PAIRING_CODE_INVALID
+        protocolCode == "PAIRING_REQUIRED" -> TransferReason.PAIRING_REQUIRED
+        code == 401 || code == 403 -> TransferReason.ACCESS_REVOKED
+        protocolCode == "UPLOAD_BUSY" || code == 429 -> TransferReason.RECEIVER_BUSY
+        code == 507 -> TransferReason.OUT_OF_SPACE
+        code == 422 -> TransferReason.CHECKSUM_MISMATCH
+        else -> if (retryable) TransferReason.COMPUTER_UNAVAILABLE else TransferReason.UNKNOWN
+    }
+    is IOException -> TransferReason.COMPUTER_UNAVAILABLE
+    else -> TransferReason.UNKNOWN
+}
 
 /** An unavailable receiver must not turn untouched originals into permanent file failures. */
 internal fun Exception.shouldRetryTransfer(): Boolean = when (this) {
-    is FileNotFoundException, is SecurityException -> false
-    is TransferHttpException -> retryable || code == 401 || code == 403
+    is SourceReadException, is UpgradeReviewRequiredException, is FileNotFoundException, is SecurityException -> false
+    is TransferHttpException -> retryable
     is IOException -> true
     else -> false
 }

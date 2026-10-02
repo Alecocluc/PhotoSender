@@ -60,6 +60,11 @@ import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.network.RememberedComputer
 import com.appharbor.pherry.data.upload.TransferState
 import com.appharbor.pherry.data.upload.TransferPhase
+import com.appharbor.pherry.ui.components.ActionRow
+import com.appharbor.pherry.ui.transfer.TransferAction
+import com.appharbor.pherry.ui.transfer.transferCopy
+import com.appharbor.pherry.ui.transfer.reasonCopy
+import com.appharbor.pherry.data.upload.TransferReason
 import com.appharbor.pherry.ui.components.DateStamp
 import com.appharbor.pherry.ui.components.Envelope
 import com.appharbor.pherry.ui.components.EnvelopeCheck
@@ -102,11 +107,14 @@ fun HomeScreen(
     onOpenHistory: () -> Unit = onOpenTransfers,
     onOpenSettings: () -> Unit,
     onBeforeTransfer: () -> Unit = {},
+    onReviewUpgrade: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val serverName by viewModel.serverName.collectAsStateWithLifecycle()
     val transferState by viewModel.transferState.collectAsStateWithLifecycle()
+    val connectionReason by viewModel.connectionReason.collectAsStateWithLifecycle()
+    val upgradeReview by viewModel.upgradeReviewState.collectAsStateWithLifecycle()
     val completedCount by viewModel.completedCount.collectAsStateWithLifecycle()
     val failedCount by viewModel.failedCount.collectAsStateWithLifecycle()
     val queuedCount by viewModel.queuedCount.collectAsStateWithLifecycle()
@@ -208,6 +216,8 @@ fun HomeScreen(
         remembered = remembered,
         hasPermission = hasPermission,
         transfer = transferState,
+        connectionReason = connectionReason,
+        upgradeReviewRequired = upgradeReview.required,
         queuedCount = queuedCount,
         unsent = unsent,
     )
@@ -230,11 +240,15 @@ fun HomeScreen(
                 completedCount = completedCount,
                 queuedCount = queuedCount,
                 unsent = unsent,
-                transfer = transferState,
+                transfer = homeTransferState(transferState, connected, connectionReason, upgradeReview.required),
+                connected = connected,
                 lastBackupAt = lastBackupAt,
                 isPreparingSync = isPreparingSync,
                 autoBackupEnabled = autoBackupEnabled,
                 onConnect = onConnectClick,
+                onSettings = onOpenSettings,
+                onLibrary = onOpenLibrary,
+                onReviewUpgrade = onReviewUpgrade,
                 onRetryConnect = viewModel::reconnect,
                 onAllowAccess = {
                     mediaAsk.beforeLaunch()
@@ -247,9 +261,9 @@ fun HomeScreen(
                 },
                 onBackUp = {
                     onBeforeTransfer()
-                    viewModel.backUpNew()
+                    if (upgradeReview.required) onReviewUpgrade() else viewModel.backUpNew()
                 },
-                onSync = { viewModel.prepareSync() },
+                onSync = { if (upgradeReview.required) onReviewUpgrade() else viewModel.prepareSync() },
                 onRefresh = { viewModel.refreshUnsent(force = true) },
                 onViewTransfer = onOpenTransfers,
                 onStop = {
@@ -258,10 +272,18 @@ fun HomeScreen(
                 },
                 onResume = {
                     onBeforeTransfer()
-                    viewModel.resumeQueued()
+                    if (transferState.phase == TransferPhase.FAILED && transferState.failedFiles > 0) viewModel.retryFailed() else viewModel.resumeQueued()
                     onOpenTransfers()
                 },
             )
+        }
+
+        item(key = "auto-backup-entry") {
+            ActionRow(title = "Auto-backup", subtitle = when {
+                upgradeReview.required -> "On hold for backup review"
+                autoBackupEnabled -> "On. Manage when new photos are sent."
+                else -> "Off. Set up automatic backups."
+            }, icon = Ph.Clock, onClick = onOpenSettings)
         }
 
         if (access == MediaAccess.SELECTED) {
@@ -335,20 +357,36 @@ fun HomeScreen(
 // ── Envelope ─────────────────────────────────────────────────────────────────
 
 /** [Unreachable]: a saved computer that isn't answering (or the user disconnected); still paired. */
-enum class HomeState { NoNetwork, NoComputer, Unreachable, Connecting, NoAccess, Counting, Sending, Paused, Backlog, Idle }
+enum class HomeState { NoNetwork, NoComputer, Unreachable, Connecting, NoAccess, Counting, Sending, Waiting, Attention, Paused, Backlog, Idle }
 
-private fun envelopeState(
+/** A finished job must not hide a new connection problem on the Home dashboard. */
+internal fun homeTransferState(transfer: TransferState, connected: Boolean, connectionReason: TransferReason,
+    upgradeReviewRequired: Boolean = false): TransferState =
+    if (upgradeReviewRequired) TransferState(phase = TransferPhase.IDLE, reason = TransferReason.UPGRADE_REVIEW_REQUIRED)
+    else if (!connected && connectionReason != TransferReason.NONE && transfer.phase in setOf(TransferPhase.IDLE, TransferPhase.COMPLETE)) {
+        transfer.copy(phase = TransferPhase.IDLE, reason = connectionReason)
+    } else if (!connected && transfer.reason == TransferReason.NONE) transfer.copy(reason = connectionReason)
+    else transfer
+
+internal fun envelopeState(
     networkGranted: Boolean,
     connectionState: ConnectionState,
     remembered: RememberedComputer?,
     hasPermission: Boolean,
     transfer: TransferState,
+    connectionReason: TransferReason = TransferReason.NONE,
     queuedCount: Int,
     unsent: UnsentState,
+    upgradeReviewRequired: Boolean = false,
 ): HomeState = when {
-    transfer.phase in setOf(TransferPhase.PREPARING, TransferPhase.UPLOADING, TransferPhase.VERIFYING, TransferPhase.WAITING_FOR_NETWORK, TransferPhase.WAITING_FOR_COMPUTER) -> HomeState.Sending
     !networkGranted -> HomeState.NoNetwork
+    upgradeReviewRequired -> HomeState.Attention
+    transfer.phase in setOf(TransferPhase.WAITING_FOR_NETWORK, TransferPhase.WAITING_FOR_COMPUTER) -> HomeState.Waiting
+    transfer.phase == TransferPhase.FAILED -> HomeState.Attention
+    transfer.phase == TransferPhase.PAUSED -> HomeState.Paused
+    transfer.phase in setOf(TransferPhase.PREPARING, TransferPhase.UPLOADING, TransferPhase.VERIFYING) -> HomeState.Sending
     connectionState == ConnectionState.CONNECTING -> HomeState.Connecting
+    connectionState != ConnectionState.CONNECTED && connectionReason != TransferReason.NONE -> HomeState.Attention
     connectionState != ConnectionState.CONNECTED && remembered != null -> HomeState.Unreachable
     connectionState != ConnectionState.CONNECTED -> HomeState.NoComputer
     !hasPermission -> HomeState.NoAccess
@@ -373,10 +411,14 @@ private fun HomeEnvelope(
     queuedCount: Int,
     unsent: UnsentState,
     transfer: TransferState,
+    connected: Boolean,
     lastBackupAt: Long,
     isPreparingSync: Boolean,
     autoBackupEnabled: Boolean,
     onConnect: () -> Unit,
+    onSettings: () -> Unit,
+    onLibrary: () -> Unit,
+    onReviewUpgrade: () -> Unit,
     onRetryConnect: () -> Unit,
     onAllowAccess: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -398,13 +440,7 @@ private fun HomeEnvelope(
         HomeState.Connecting -> "Connecting to $computer"
         HomeState.NoAccess -> if (permissionBlocked) "Photo access is off" else "Allow photo access"
         HomeState.Counting -> "Checking your library"
-        HomeState.Sending -> transfer.message ?: when (transfer.phase) {
-            TransferPhase.PREPARING -> "Preparing your backup"
-            TransferPhase.WAITING_FOR_NETWORK -> "Waiting for an unmetered network"
-            TransferPhase.WAITING_FOR_COMPUTER -> "Waiting for $computer"
-            TransferPhase.VERIFYING -> "Verifying files on $computer"
-            else -> "Sending to $computer"
-        }
+        HomeState.Sending, HomeState.Waiting, HomeState.Attention -> transferCopy(transfer, computer, connected).title
         HomeState.Paused -> "Sending paused"
         HomeState.Backlog -> if (unsent.count > 0) {
             "${Fmt.count(unsent.count)} new to back up to $computer"
@@ -519,6 +555,39 @@ private fun HomeEnvelope(
 
                         HomeState.Sending -> SendingBody(transfer = transfer, computer = transfer.destinationName.ifBlank { computer }, onView = onViewTransfer, onStop = onStop)
 
+                        HomeState.Waiting, HomeState.Attention -> {
+                            val copy = transferCopy(transfer, computer, connected)
+                            val reviewingUpgrade = copy.action == TransferAction.REVIEW_UPGRADE
+                            if (reviewingUpgrade) {
+                                Fields(library = unsent.libraryCount.takeIf { unsent.computed }, backedUp = backedUp(unsent),
+                                    computer = computer, link = if (connected) LampState.On else link, limitedAccess = limitedAccess)
+                                Spacer(Modifier.height(Spacing.lg))
+                            }
+                            EnvelopeMessage(copy.title, copy.detail, lamp = LampState.Idle)
+                            if (transfer.pendingFiles > 0) {
+                                Spacer(Modifier.height(Spacing.md))
+                                Text("${Fmt.plural(transfer.pendingFiles, "file")} still to send. ${Fmt.count(transfer.completedFiles)} saved.",
+                                    style = MaterialTheme.typography.bodyMedium, color = c.onEnvelope)
+                            }
+                            Spacer(Modifier.height(Spacing.lg))
+                            PrintButton(copy.actionLabel ?: "Try again", onClick = {
+                                when (copy.action) {
+                                    TransferAction.CONNECT -> onConnect()
+                                    TransferAction.LIBRARY -> onLibrary()
+                                    TransferAction.SETTINGS -> onSettings()
+                                    TransferAction.REVIEW_UPGRADE -> onReviewUpgrade()
+                                    else -> if (queuedCount == 0 && transfer.pendingFiles == 0 && !connected) onRetryConnect() else onResume()
+                                }
+                            }, onEnvelope = true, modifier = Modifier.fillMaxWidth())
+                            if (!reviewingUpgrade) {
+                                Spacer(Modifier.height(Spacing.sm))
+                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                    PrintButton("See transfer", onClick = onViewTransfer, onEnvelope = true, style = PrintButtonStyle.Outline, modifier = Modifier.weight(1f))
+                                    if (s == HomeState.Waiting) PrintButton("Pause", onClick = onStop, onEnvelope = true, style = PrintButtonStyle.Outline)
+                                }
+                            }
+                        }
+
                         HomeState.Paused -> {
                             Fields(
                                 library = unsent.libraryCount.takeIf { unsent.computed },
@@ -601,7 +670,11 @@ private fun HomeEnvelope(
             Perforation(color = c.onEnvelope.copy(alpha = 0.3f))
             Spacer(Modifier.height(Spacing.md))
             Text(
-                text = if (autoBackupEnabled) "Auto-backup is on. Manage it in Settings." else "Choose photos below, or enable auto-backup in Settings.",
+                text = when {
+                    transfer.reason == TransferReason.UPGRADE_REVIEW_REQUIRED -> "Automatic backups wait for this review."
+                    autoBackupEnabled -> "New photos are backed up automatically."
+                    else -> "You choose when to back up."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = c.onEnvelope2,
             )
@@ -728,13 +801,7 @@ private fun SendingBody(transfer: TransferState, computer: String, onView: () ->
     val total = transfer.totalFiles
     Column(Modifier.fillMaxWidth()) {
         Text(
-            text = transfer.message ?: when (transfer.phase) {
-                TransferPhase.PREPARING -> "Preparing your backup"
-                TransferPhase.WAITING_FOR_COMPUTER -> "Waiting for the computer"
-                TransferPhase.WAITING_FOR_NETWORK -> "Waiting for an unmetered network"
-                TransferPhase.VERIFYING -> "Verifying files on the computer"
-                else -> "Sending your files"
-            },
+            text = transferCopy(transfer, computer, connected = true).title,
             style = MaterialTheme.typography.titleMedium,
             color = c.onEnvelope,
         )

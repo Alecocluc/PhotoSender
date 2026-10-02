@@ -11,17 +11,31 @@ import org.junit.Test
 class TransferPolicyTest {
     @Test fun receiverOutagesDuringPreparationAndSendingKeepTheQueueRetryable() {
         assertTrue(IOException("Connection reset").shouldRetryTransfer())
-        for (code in listOf(401, 403, 408, 409, 410, 429, 500, 503, 507)) {
+        for (code in listOf(408, 429, 500, 503)) {
             assertTrue("HTTP $code must preserve pending work", TransferHttpException(code, "Receiver unavailable").shouldRetryTransfer())
         }
+        assertTrue(TransferHttpException(409, "Offset moved", "OFFSET_CHANGED").shouldRetryTransfer())
+        assertTrue(TransferHttpException(409, "Chunk in progress", "UPLOAD_BUSY").shouldRetryTransfer())
+        assertTrue(TransferHttpException(410, "Upload expired", "UPLOAD_EXPIRED").shouldRetryTransfer())
     }
 
     @Test fun missingSourcesAndInvalidContentRequireExplicitCorrection() {
         assertFalse(FileNotFoundException("Original removed").shouldRetryTransfer())
         assertFalse(SecurityException("Access revoked").shouldRetryTransfer())
-        for (code in listOf(400, 404, 413, 422)) {
+        assertFalse(SourceReadException(IOException("Provider cannot read file")).shouldRetryTransfer())
+        for (code in listOf(400, 401, 403, 404, 409, 410, 413, 422, 426, 507)) {
             assertFalse(TransferHttpException(code, "Invalid file").shouldRetryTransfer())
         }
+    }
+
+    @Test fun permanentProtocolReasonsRemainActionableInsteadOfLookingOffline() {
+        assertEquals(TransferReason.PAIRING_REQUIRED, TransferHttpException(401, "Denied", "PAIRING_REQUIRED").transferReason())
+        assertEquals(TransferReason.PAIRING_CODE_INVALID, TransferHttpException(401, "Wrong ticket", "PAIRING_CODE_INVALID").transferReason())
+        assertEquals(TransferReason.ACCESS_REVOKED, TransferHttpException(403, "Revoked").transferReason())
+        assertEquals(TransferReason.DESTINATION_CHANGED, TransferHttpException(409, "Different folder", "DESTINATION_CHANGED").transferReason())
+        assertEquals(TransferReason.OUT_OF_SPACE, TransferHttpException(507, "Full").transferReason())
+        assertEquals(TransferReason.UPGRADE_REVIEW_REQUIRED, TransferHttpException(409, "Move needs attention", "LEGACY_REVIEW_REQUIRED").transferReason())
+        assertFalse(TransferHttpException(409, "Job has unfinished sessions", "JOB_HAS_PENDING_UPLOADS").shouldRetryTransfer())
     }
 
     private fun record(id: Long = 1, bytes: Long = 100, offset: Long = 0) = UploadRecord(id = id,

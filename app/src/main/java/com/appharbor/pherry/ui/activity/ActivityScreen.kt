@@ -47,6 +47,8 @@ fun ActivityScreen(
     onConnectClick: () -> Unit,
     onBeforeTransfer: () -> Unit = {},
     showHistory: Boolean = false,
+    onOpenSettings: () -> Unit = {},
+    onReviewUpgrade: () -> Unit = {},
 ) {
     val transferViewModel: TransferViewModel = hiltViewModel()
     val historyViewModel: HistoryViewModel = hiltViewModel()
@@ -114,6 +116,8 @@ fun ActivityScreen(
                 },
                 onConnect = onConnectClick,
                 onOpenLibrary = onOpenLibrary,
+                onOpenSettings = onOpenSettings,
+                onReviewUpgrade = onReviewUpgrade,
             )
 
             TransfersTab.History -> TransfersHistory(

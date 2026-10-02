@@ -8,6 +8,7 @@ import com.appharbor.pherry.data.network.DiscoveredDesktop
 import com.appharbor.pherry.data.network.NsdDiscovery
 import com.appharbor.pherry.data.network.parseConnectionTarget
 import com.appharbor.pherry.data.preferences.AppPreferences
+import com.appharbor.pherry.ui.transfer.reasonCopy
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,7 +28,6 @@ class ConnectViewModel @Inject constructor(
 
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val serverName: StateFlow<String> = connectionManager.serverName
-    val connectionError: StateFlow<String?> = connectionManager.connectionError
 
     /** Live list of "_pherry._tcp" desktops found on the LAN while the sheet is open. */
     val nearbyDesktops: StateFlow<List<DiscoveredDesktop>> = nsdDiscovery.desktops
@@ -59,8 +59,8 @@ class ConnectViewModel @Inject constructor(
      * The one pairing problem to show: a bad address or a failed scan first, then a failed
      * connection, reworded to say what to check.
      */
-    val pairingProblem: StateFlow<String?> = combine(_ipError, connectionManager.connectionError) { ipError, connectionError ->
-        ipError ?: connectionError?.let(::describeConnectionError)
+    val pairingProblem: StateFlow<String?> = combine(_ipError, connectionManager.connectionReason) { ipError, reason ->
+        ipError ?: reasonCopy(reason, serverName.value.ifBlank { "your computer" })?.let { "${it.title}. ${it.detail}" }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
@@ -133,12 +133,5 @@ class ConnectViewModel @Inject constructor(
     fun onDisconnect() {
         connectionManager.disconnect()
     }
-
-    private fun describeConnectionError(message: String): String =
-        if (message.startsWith("Could not reach server")) {
-            "Couldn't reach Pherry Desktop. Check that it's open on your computer and that this phone is on the same Wi-Fi."
-        } else {
-            message
-        }
 
 }
