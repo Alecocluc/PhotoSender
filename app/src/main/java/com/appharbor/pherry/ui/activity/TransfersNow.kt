@@ -51,6 +51,7 @@ import com.appharbor.pherry.ui.components.Fmt
 import com.appharbor.pherry.ui.components.Frame
 import com.appharbor.pherry.ui.components.Hairline
 import com.appharbor.pherry.ui.components.JobBar
+import com.appharbor.pherry.ui.components.JobCount
 import com.appharbor.pherry.ui.components.Lamp
 import com.appharbor.pherry.ui.components.LampState
 import com.appharbor.pherry.ui.components.LocalSnackbarHost
@@ -303,33 +304,18 @@ private fun JobEnvelope(
             val done = transfer.completedFiles
             val total = transfer.totalFiles
             val percent = (progress * 100).toInt()
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = if (total > 0) {
-                            "${Fmt.count(done)} of ${Fmt.plural(total, "file")} done, $percent percent"
-                        } else {
-                            "Getting the files ready"
-                        }
-                    },
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Text(Fmt.count(done), style = MaterialTheme.typography.displayLarge, color = c.onEnvelope)
-                Text(
-                    " / ${if (total > 0) Fmt.count(total) else "…"}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = c.onEnvelope2,
-                    modifier = Modifier.padding(bottom = Spacing.sm),
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "$percent%",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = c.onEnvelope,
-                    modifier = Modifier.padding(bottom = Spacing.sm),
-                )
-            }
+            JobCount(
+                done = done,
+                total = total,
+                percent = percent,
+                modifier = Modifier.semantics(mergeDescendants = true) {
+                    contentDescription = if (total > 0) {
+                        "${Fmt.count(done)} of ${Fmt.plural(total, "file")} done, $percent percent"
+                    } else {
+                        "Getting the files ready"
+                    }
+                },
+            )
             Spacer(Modifier.height(Spacing.md))
             JobBar(progress)
         }

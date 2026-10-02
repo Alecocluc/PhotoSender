@@ -73,6 +73,7 @@ import com.appharbor.pherry.ui.components.Fmt
 import com.appharbor.pherry.ui.components.Frame
 import com.appharbor.pherry.ui.components.FrameNumber
 import com.appharbor.pherry.ui.components.JobBar
+import com.appharbor.pherry.ui.components.JobCount
 import com.appharbor.pherry.ui.components.Lamp
 import com.appharbor.pherry.ui.components.LampState
 import com.appharbor.pherry.ui.components.LocalSnackbarHost
@@ -760,8 +761,6 @@ private fun EnvelopeMessage(
 private fun SendingBody(transfer: TransferState, computer: String, onView: () -> Unit, onStop: () -> Unit) {
     val c = PherryTheme.colors
     val progress by animateFloatAsState(transfer.progressPercent.coerceIn(0f, 1f), tween(300), label = "home-progress")
-    val done = transfer.completedFiles
-    val total = transfer.totalFiles
     Column(Modifier.fillMaxWidth()) {
         Text(
             text = transferCopy(transfer, computer, connected = true).title,
@@ -772,22 +771,7 @@ private fun SendingBody(transfer: TransferState, computer: String, onView: () ->
         // The same TO field as the form, lamp blinking while the job runs.
         EnvelopeField("To", computer, lamp = LampState.Busy)
         Spacer(Modifier.height(Spacing.lg))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(Fmt.count(done), style = MaterialTheme.typography.displayLarge, color = c.onEnvelope)
-            Text(
-                " / ${if (total > 0) Fmt.count(total) else "…"}",
-                style = MaterialTheme.typography.headlineMedium,
-                color = c.onEnvelope2,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                "${(progress * 100).toInt()}%",
-                style = MaterialTheme.typography.headlineMedium,
-                color = c.onEnvelope,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-        }
+        JobCount(transfer.completedFiles, transfer.totalFiles, (progress * 100).toInt())
         Spacer(Modifier.height(Spacing.md))
         JobBar(progress)
         Spacer(Modifier.height(Spacing.sm))

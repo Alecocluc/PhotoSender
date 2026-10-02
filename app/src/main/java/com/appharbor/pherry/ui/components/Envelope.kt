@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -36,11 +38,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import com.appharbor.pherry.ui.theme.PherryTheme
 import com.appharbor.pherry.ui.theme.Spacing
 
@@ -225,6 +231,49 @@ fun JobBar(
                 size = Size(tick, size.height),
             )
         }
+    }
+}
+
+/**
+ * The job's big count on the envelope: "1,204 / 4,212" with the percent at the right edge. The
+ * percent always prints whole; a count too wide for what's left shrinks to fit rather than wrap.
+ * A [total] of 0 prints "…" while the files are still being counted.
+ */
+@Composable
+fun JobCount(
+    done: Int,
+    total: Int,
+    percent: Int,
+    modifier: Modifier = Modifier,
+) {
+    val colors = PherryTheme.colors
+    val big = MaterialTheme.typography.displayLarge
+    val small = MaterialTheme.typography.headlineMedium
+    // One paragraph so both sizes share a baseline and shrink together; the total is sized in em
+    // so it stays in proportion to the count when the count shrinks.
+    val fraction = buildAnnotatedString {
+        append(Fmt.count(done))
+        withStyle(SpanStyle(fontSize = (small.fontSize.value / big.fontSize.value).em, letterSpacing = small.letterSpacing, color = colors.onEnvelope2)) {
+            append(" / ${if (total > 0) Fmt.count(total) else "…"}")
+        }
+    }
+    Row(modifier.fillMaxWidth()) {
+        Text(
+            fraction,
+            style = big.copy(lineHeight = 1.em),
+            color = colors.onEnvelope,
+            maxLines = 1,
+            autoSize = TextAutoSize.StepBased(maxFontSize = big.fontSize),
+            modifier = Modifier.weight(1f).alignByBaseline(),
+        )
+        Text(
+            "$percent%",
+            style = small,
+            color = colors.onEnvelope,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier.padding(start = Spacing.md).alignByBaseline(),
+        )
     }
 }
 
