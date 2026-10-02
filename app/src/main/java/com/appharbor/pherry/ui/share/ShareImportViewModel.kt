@@ -41,6 +41,9 @@ class ShareImportViewModel @Inject constructor(
 
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
 
+    /** The paired desktop's name; blank until a health check has answered. */
+    val serverName: StateFlow<String> = connectionManager.serverName
+
     private val _preview = MutableStateFlow(SharePreview())
     val preview: StateFlow<SharePreview> = _preview.asStateFlow()
 

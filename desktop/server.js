@@ -153,6 +153,51 @@ function safeUnlink(filePath) {
   }
 }
 
+/** A hidden upload temp file: ".<md5 or timestamp>[-<suffix>].part". */
+const PART_FILE_RE = /^\.[A-Za-z0-9-]+\.part$/;
+
+/**
+ * Delete unfinished uploads left behind by interrupted transfers (an app update, a crash, a phone
+ * that never came back). Only files untouched for [maxAgeMs] go, so a live upload is never hit.
+ */
+function sweepStaleParts(downloadPath, maxAgeMs = 10 * 60 * 1000) {
+  const dirs = [downloadPath];
+  try {
+    for (const d of fs.readdirSync(downloadPath, { withFileTypes: true })) {
+      if (d.isDirectory()) dirs.push(path.join(downloadPath, d.name));
+    }
+  } catch {
+    return;
+  }
+  const now = Date.now();
+  let count = 0;
+  let bytes = 0;
+  for (const dir of dirs) {
+    let names = [];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!PART_FILE_RE.test(name)) continue;
+      const full = path.join(dir, name);
+      try {
+        const st = fs.statSync(full);
+        if (!st.isFile() || now - st.mtimeMs < maxAgeMs) continue;
+        fs.unlinkSync(full);
+        count++;
+        bytes += st.size;
+      } catch {
+        // in use or already gone
+      }
+    }
+  }
+  if (count > 0) {
+    console.log(`Removed ${count} unfinished upload${count === 1 ? "" : "s"} (${(bytes / 1048576).toFixed(0)} MB) left by interrupted transfers.`);
+  }
+}
+
 function normalizeMd5(value) {
   return String(value || "").toLowerCase().replace(/[^a-f0-9]/g, "");
 }
@@ -471,6 +516,7 @@ function deleteSyncedFiles(downloadPath, files) {
 function createServer(downloadPath, options = {}) {
   historyStatePath = options.historyStatePath || null;
   const onFileReceived = typeof options.onFileReceived === "function" ? options.onFileReceived : null;
+  const onFilesRemoved = typeof options.onFilesRemoved === "function" ? options.onFilesRemoved : null;
   // Pairing token: when set, gates the destructive endpoints (deleting/clearing) so a random
   // device on the LAN can't wipe the user's files. Empty token = open (back-compat).
   const pairingToken = String(options.pairingToken || "").trim();
@@ -479,6 +525,72 @@ function createServer(downloadPath, options = {}) {
   const deviceId = String(options.deviceId || "").trim();
   loadHistoryState();
   saveHistoryState();
+  sweepStaleParts(downloadPath);
+
+  // Uploads being received right now. Progress is the size of each one's .part file on disk, read
+  // only, so watching it can never disturb the bytes coming in.
+  const inFlight = new Map();
+  let uploadSeq = 0;
+
+  function trackUpload(req, res, next) {
+    const id = ++uploadSeq;
+    const now = Date.now();
+    const entry = {
+      device: sanitizeDeviceName(req.headers["x-device-name"]),
+      bucket: "",
+      fileName: "",
+      total: 0,
+      tempPath: "",
+      startedAt: now,
+      received: false,
+      lastSize: 0,
+      lastAt: now,
+      rate: 0,
+    };
+    inFlight.set(id, entry);
+    req.pherryUpload = entry;
+    res.on("close", () => {
+      inFlight.delete(id);
+      // The phone went away before the whole file arrived: that partial copy can never complete.
+      // multer may hold the write stream a moment longer (Windows won't delete an open file).
+      if (!entry.received && entry.tempPath) {
+        const partial = entry.tempPath;
+        setTimeout(() => safeUnlink(partial), 1000);
+        setTimeout(() => safeUnlink(partial), 15000);
+      }
+    });
+    next();
+  }
+
+  /** In-flight uploads with live byte counts, refreshing each one's rate at most once a second. */
+  function receivingNow() {
+    const now = Date.now();
+    const list = [];
+    for (const e of inFlight.values()) {
+      if (!e.tempPath) continue;
+      let size = e.lastSize;
+      try {
+        size = fs.statSync(e.tempPath).size;
+      } catch {
+        // renamed (finished) or not created yet
+      }
+      if (now - e.lastAt >= 1000) {
+        e.rate = Math.max(0, ((size - e.lastSize) * 1000) / (now - e.lastAt));
+        e.lastSize = size;
+        e.lastAt = now;
+      }
+      list.push({
+        device: e.device,
+        bucket: e.bucket,
+        fileName: e.fileName,
+        bytes: size,
+        total: e.total,
+        startedAt: e.startedAt,
+        rate: Math.round(e.rate),
+      });
+    }
+    return list;
+  }
 
   const app = express();
 
@@ -520,7 +632,11 @@ function createServer(downloadPath, options = {}) {
     }
 
     const recentBytes = recentByteEvents.reduce((sum, e) => sum + e.size, 0);
-    const currentSpeedBytesPerSec = Math.round((recentBytes * 1000) / windowMs);
+    const receiving = receivingNow();
+    // While files stream in, speed is what's arriving now; otherwise the last 5 s of finished files.
+    const currentSpeedBytesPerSec = receiving.length
+      ? receiving.reduce((sum, r) => sum + r.rate, 0)
+      : Math.round((recentBytes * 1000) / windowMs);
     const uptimeMs = Date.now() - startTime;
     const averageSpeedBytesPerSec = uptimeMs > 0 ? Math.round((totalBytes * 1000) / uptimeMs) : 0;
 
@@ -533,6 +649,7 @@ function createServer(downloadPath, options = {}) {
       currentSpeedBytesPerSec,
       averageSpeedBytesPerSec,
       downloadPath,
+      receiving,
       recentActivity: activityLog.slice(-50).reverse(),
     });
   });
@@ -545,6 +662,8 @@ function createServer(downloadPath, options = {}) {
       historyCount: activityLog.length,
       lastTransferAt: activityLog[activityLog.length - 1]?.time || 0,
       totalCount: page.totalCount,
+      // The ledger keeps only the newest entries; totalReceived/totalBytes count everything ever.
+      historyCap: MAX_HISTORY_ENTRIES,
       offset: page.offset,
       limit: page.limit,
       returnedCount: page.returnedCount,
@@ -591,6 +710,13 @@ function createServer(downloadPath, options = {}) {
       const files = Array.isArray(req.body && req.body.files) ? req.body.files : [];
       const result = deleteSyncedFiles(downloadPath, files);
       res.json({ success: true, ...result });
+      if (result.deleted > 0 && onFilesRemoved) {
+        try {
+          onFilesRemoved({ source: "sync", deleted: result.deleted, bytesFreed: result.bytesFreed });
+        } catch {
+          // never let listener errors break the response
+        }
+      }
     } catch (err) {
       res.status(500).json({ success: false, error: String((err && err.message) || err) });
     }
@@ -642,15 +768,24 @@ function createServer(downloadPath, options = {}) {
       const bucket = sanitizePath(req.body.bucketName || "Unsorted");
       const dest = path.join(downloadPath, bucket);
       fs.mkdirSync(dest, { recursive: true });
+      if (req.pherryUpload) req.pherryUpload.bucket = bucket;
       cb(null, dest);
     },
-    filename: (_req, _file, cb) => {
+    filename: (req, file, cb) => {
       // Write to a hidden temp file first; the handler verifies the hash and only then
       // atomically renames it to the final name. This keeps truncated files (from a dropped
-      // connection) from ever appearing under a real name in the destination folder.
-      const md5 = normalizeMd5(_req.body.md5Hash);
-      const token = md5 || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      cb(null, `.${token}.part`);
+      // connection) from ever appearing under a real name in the destination folder. The random
+      // suffix keeps two copies of the same content (same md5) arriving at once from sharing a file.
+      const md5 = normalizeMd5(req.body.md5Hash);
+      const suffix = Math.random().toString(36).slice(2, 10);
+      const name = `.${md5 || Date.now()}-${suffix}.part`;
+      const u = req.pherryUpload;
+      if (u) {
+        u.fileName = file.originalname || "";
+        u.total = Number(req.body.fileSize) || 0;
+        u.tempPath = path.join(downloadPath, u.bucket || sanitizePath(req.body.bucketName || "Unsorted"), name);
+      }
+      cb(null, name);
     },
   });
 
@@ -660,7 +795,9 @@ function createServer(downloadPath, options = {}) {
   });
 
   // File upload endpoint
-  app.post("/upload", upload.single("file"), async (req, res) => {
+  app.post("/upload", trackUpload, upload.single("file"), async (req, res) => {
+    // The whole body is on disk now; a phone that hangs up during verification keeps its file.
+    if (req.pherryUpload) req.pherryUpload.received = true;
     if (!req.file) {
       return res.status(400).json({ success: false, error: "No file provided" });
     }
@@ -745,6 +882,22 @@ function createServer(downloadPath, options = {}) {
         .status(500)
         .json({ success: false, error: String((err && err.message) || err) });
     }
+  });
+
+  // A phone that disconnects mid-upload surfaces here as a multer/busboy error. On Wi-Fi that's
+  // routine (the phone sleeps, walks out of range, the app updates): log one line, not a stack trace.
+  // The phone keeps the file queued and sends it again; the partial copy is removed in trackUpload.
+  app.use((err, req, res, next) => {
+    const message = String((err && err.message) || "");
+    if (/request (aborted|closed)|unexpected end of (form|file)/i.test(message)) {
+      const u = req.pherryUpload;
+      const what = u && u.fileName ? ` ${u.fileName}` : " a file";
+      const from = u && u.device ? ` from ${u.device}` : "";
+      console.log(`Upload of${what}${from} was interrupted; the phone will send it again.`);
+      if (!res.headersSent) res.status(400).end();
+      return;
+    }
+    next(err);
   });
 
   return app;

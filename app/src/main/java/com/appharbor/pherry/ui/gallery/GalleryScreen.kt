@@ -3,98 +3,103 @@ package com.appharbor.pherry.ui.gallery
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
-import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.CameraAlt
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.Deselect
-import androidx.compose.material.icons.filled.NewReleases
-import androidx.compose.material.icons.filled.PermMedia
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.SelectAll
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.text.selection.TextSelectionColors
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.model.MediaFilter
-import com.appharbor.pherry.data.model.MediaFolder
-import com.appharbor.pherry.ui.components.EmptyState
-import com.appharbor.pherry.ui.components.PrimaryButton
+import com.appharbor.pherry.ui.components.EdgeText
+import com.appharbor.pherry.ui.components.EmptyStrip
+import com.appharbor.pherry.ui.components.FilmRow
+import com.appharbor.pherry.ui.components.Fmt
+import com.appharbor.pherry.ui.components.Frame
+import com.appharbor.pherry.ui.components.FrameNumber
+import com.appharbor.pherry.ui.components.LocalSnackbarHost
+import com.appharbor.pherry.ui.components.Ph
+import com.appharbor.pherry.ui.components.PhIcon
+import com.appharbor.pherry.ui.components.PrintButton
+import com.appharbor.pherry.ui.components.PrintButtonStyle
+import com.appharbor.pherry.ui.components.PrintSegmented
 import com.appharbor.pherry.ui.components.ScreenHeader
-import com.appharbor.pherry.ui.components.SegmentedToggle
-import com.appharbor.pherry.ui.components.SelectionActionBar
-import com.appharbor.pherry.ui.components.SyncConfirmDialog
+import com.appharbor.pherry.ui.components.SelectionTicket
+import com.appharbor.pherry.ui.components.StatusTag
+import com.appharbor.pherry.ui.components.TagKind
 import com.appharbor.pherry.ui.permissions.hasMediaPermission
+import com.appharbor.pherry.ui.permissions.rememberPermissionAsk
 import com.appharbor.pherry.ui.permissions.requiredMediaPermissions
+import com.appharbor.pherry.ui.theme.PherryShape
+import com.appharbor.pherry.ui.theme.PherryTheme
 import com.appharbor.pherry.ui.theme.Spacing
+import kotlinx.coroutines.launch
+
+/** Library frames print at 4:3, like the strip of recent sends on Home. */
+private const val StripAspect = 4f / 3f
 
 @Composable
 fun GalleryScreen(
@@ -105,525 +110,554 @@ fun GalleryScreen(
     connectionState: ConnectionState,
     viewModel: GalleryViewModel = hiltViewModel(),
 ) {
-    val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val albums by viewModel.albums.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val selectedBytes by viewModel.selectedBytes.collectAsStateWithLifecycle()
     val filter by viewModel.filter.collectAsStateWithLifecycle()
     val totalAssets by viewModel.totalAssetCount.collectAsStateWithLifecycle()
-    val uploadMode by viewModel.uploadMode.collectAsStateWithLifecycle()
-    val pendingSyncPlan by viewModel.pendingSyncPlan.collectAsStateWithLifecycle()
-    val isPreparingSync by viewModel.isPreparingSync.collectAsStateWithLifecycle()
+    val unsentCount by viewModel.unsentCount.collectAsStateWithLifecycle()
+    val libraryLoaded by viewModel.libraryLoaded.collectAsStateWithLifecycle()
+    val quickPicks by viewModel.quickPicks.collectAsStateWithLifecycle()
+    val serverName by viewModel.serverName.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
-    val confirmDestructiveSync by viewModel.confirmDestructiveSync.collectAsStateWithLifecycle()
+    val completedIds by viewModel.completedIds.collectAsStateWithLifecycle()
+
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-
-    var searchQuery by remember { mutableStateOf("") }
-    var showSearch by remember { mutableStateOf(false) }
-    var hasPermission by remember { mutableStateOf(hasMediaPermission(context)) }
+    val snackbar = LocalSnackbarHost.current
     val focusManager = LocalFocusManager.current
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
 
-    val displayFolders = remember(folders, searchQuery) {
-        if (searchQuery.isBlank()) folders
-        else folders.filter { it.bucketName.contains(searchQuery, ignoreCase = true) }
-    }
+    var hasPermission by remember { mutableStateOf(hasMediaPermission(context)) }
+    var permissionBlocked by rememberSaveable { mutableStateOf(false) }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var ticketHeight by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(syncState.summary) {
-        syncState.summary?.let { summary ->
-            Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
-            viewModel.clearSyncSummary()
-        }
-    }
-
-    LaunchedEffect(connectionState, hasPermission) {
-        if (connectionState == ConnectionState.CONNECTED && hasPermission) {
-            viewModel.loadFolders()
-        }
-    }
-
-    pendingSyncPlan?.let { plan ->
-        SyncConfirmDialog(
-            plan = plan,
-            confirmDestructive = confirmDestructiveSync,
-            onConfirm = {
-                if (!plan.isNoOp) onBeforeTransfer()
-                val hasUploads = viewModel.confirmSync()
-                if (hasUploads) onTransferClick()
-            },
-            onDismiss = { viewModel.cancelSync() },
-        )
-    }
-
+    val mediaAsk = rememberPermissionAsk(*requiredMediaPermissions())
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         hasPermission = results.values.all { it }
+        // Only a real "don't ask again" swaps Allow for app settings; a dismissed dialog asks again.
+        permissionBlocked = !hasPermission && mediaAsk.blockedAfterDenial()
         if (hasPermission) viewModel.loadFolders()
     }
 
-    fun requestMediaPermission() {
-        permissionLauncher.launch(requiredMediaPermissions())
-    }
-
-    fun openAppSettings() {
-        val intent = Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:${context.packageName}")
-        )
-        context.startActivity(intent)
-    }
-
+    // Browsing needs only media permission. Re-read on every return so new photos and finished
+    // backups show up; the ViewModel cancels a read that is still running.
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                val granted = hasMediaPermission(context)
-                hasPermission = granted
-                if (granted) viewModel.loadFolders()
+                hasPermission = hasMediaPermission(context)
+                if (hasPermission) {
+                    permissionBlocked = false
+                    viewModel.loadFolders()
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 150.dp),
-            contentPadding = PaddingValues(horizontal = Spacing.screen, vertical = Spacing.sm),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+    // Clearing the summary changes this effect's key and cancels it, so the snackbar is shown from
+    // the screen's scope; otherwise it would be dismissed the frame after it appears.
+    LaunchedEffect(syncState.summary) {
+        val summary = syncState.summary ?: return@LaunchedEffect
+        viewModel.clearSyncSummary()
+        scope.launch { snackbar.showSnackbar(summary) }
+    }
+
+    fun closeSearch() {
+        searchOpen = false
+        query = ""
+        focusManager.clearFocus()
+    }
+
+    BackHandler(enabled = selectedIds.isNotEmpty()) { viewModel.deselectAll() }
+    BackHandler(enabled = searchOpen && selectedIds.isEmpty()) { closeSearch() }
+
+    val connected = connectionState == ConnectionState.CONNECTED
+    val selecting = selectedIds.isNotEmpty()
+    // Selection keeps insertion order, so each frame's ring carries the order it was picked in.
+    val pickOrder = remember(selectedIds) {
+        HashMap<Long, Int>(selectedIds.size).apply { selectedIds.forEachIndexed { i, id -> put(id, i + 1) } }
+    }
+    val alreadyThere = remember(selectedIds, completedIds) { selectedIds.count { it in completedIds } }
+    val shownAlbums = remember(albums, query) {
+        val q = query.trim()
+        if (q.isEmpty()) albums else albums.filter { it.name.contains(q, ignoreCase = true) }
+    }
+    val noun = when (filter) {
+        MediaFilter.ALL -> "item"
+        MediaFilter.PHOTOS -> "photo"
+        MediaFilter.VIDEOS -> "video"
+    }
+    val headerData = if (hasPermission && libraryLoaded && totalAssets > 0) {
+        listOf(
+            Fmt.plural(totalAssets, noun),
+            Fmt.plural(albums.size, "album"),
+            if (unsentCount > 0) "${Fmt.count(unsentCount)} not backed up" else "all backed up",
+        ).joinToString(" · ")
+    } else {
+        null
+    }
+    // Filters stay reachable while a filter switch is loading; only a truly empty library hides them.
+    val showControls = hasPermission && !(libraryLoaded && totalAssets == 0 && filter == MediaFilter.ALL)
+
+    val send: () -> Unit = {
+        val outcome = viewModel.startTransfer()
+        if (outcome.queued > 0) {
+            onBeforeTransfer()
+            onTransferClick()
+        } else {
+            scope.launch { snackbar.showSnackbar(alreadySentMessage(outcome.alreadySent, serverName)) }
+        }
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val columns = if (maxWidth >= 600.dp) 6 else 4
+        // A hidden ticket reports no size change, so only count its height while it is up.
+        val ticketSpace = if (selecting) with(density) { ticketHeight.toDp() } else 0.dp
+        val bottomPadding = Spacing.xxl + ticketSpace
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = Spacing.screen, end = Spacing.screen, bottom = bottomPadding),
+            verticalArrangement = Arrangement.spacedBy(Spacing.md),
         ) {
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column {
-                    Spacer(Modifier.height(Spacing.sm))
-                    ScreenHeader(
-                        title = "Library",
-                        subtitle = when {
-                            connectionState != ConnectionState.CONNECTED -> "Pair with desktop to start"
-                            !hasPermission -> "Allow media access after pairing"
-                            totalAssets > 0 -> "$totalAssets items · ${folders.size} folders"
-                            else -> "Ready to browse media"
+            item(key = "header") {
+                ScreenHeader(title = "Library", data = headerData)
+            }
+
+            if (!hasPermission) {
+                item(key = "permission") {
+                    PermissionBlock(
+                        blocked = permissionBlocked,
+                        onAllow = {
+                            mediaAsk.beforeLaunch()
+                            permissionLauncher.launch(requiredMediaPermissions())
+                        },
+                        onOpenSettings = {
+                            context.startActivity(
+                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
+                            )
                         },
                     )
-                    Spacer(Modifier.height(Spacing.md))
-
-                    if (connectionState != ConnectionState.CONNECTED) {
-                        PairingSetupCard(
-                            connectionState = connectionState,
-                            onConnectClick = onConnectClick,
-                        )
-                        Spacer(Modifier.height(Spacing.md))
-                    } else if (!hasPermission) {
-                        MediaPermissionCard(
-                            onAllowClick = ::requestMediaPermission,
-                            onSettingsClick = ::openAppSettings,
-                        )
-                        Spacer(Modifier.height(Spacing.md))
-                    }
-
-                    if (connectionState != ConnectionState.CONNECTED || !hasPermission) {
-                        return@Column
-                    }
-
-                    // Filter row with inline search toggle
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-                    ) {
-                        SegmentedToggle(
-                            options = listOf(
-                                MediaFilter.ALL to "All",
-                                MediaFilter.PHOTOS to "Photos",
-                                MediaFilter.VIDEOS to "Videos",
-                            ),
-                            selected = filter,
-                            onSelect = { viewModel.setFilter(it) },
-                            fillWidth = true,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(MaterialTheme.shapes.medium)
-                                .background(
-                                    if (showSearch || searchQuery.isNotEmpty())
-                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f)
-                                    else MaterialTheme.colorScheme.surfaceContainerHigh
-                                )
-                                .clickable {
-                                    if (showSearch) {
-                                        showSearch = false
-                                        searchQuery = ""
-                                        focusManager.clearFocus()
-                                    } else {
-                                        showSearch = true
-                                    }
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                imageVector = if (showSearch || searchQuery.isNotEmpty()) Icons.Filled.Close else Icons.Filled.Search,
-                                contentDescription = if (showSearch) "Close search" else "Search folders",
-                                tint = if (showSearch || searchQuery.isNotEmpty())
-                                    MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
-
-                    // Collapsible search field
-                    AnimatedVisibility(
-                        visible = showSearch,
-                        enter = expandVertically() + fadeIn(),
-                        exit = shrinkVertically() + fadeOut(),
-                    ) {
-                        Column {
-                            Spacer(Modifier.height(Spacing.sm))
-                            OutlinedTextField(
-                                value = searchQuery,
-                                onValueChange = { searchQuery = it },
-                                placeholder = {
-                                    Text(
-                                        "Search folders…",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                    )
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Filled.Search,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
-                                ),
-                                shape = MaterialTheme.shapes.medium,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-
-                    if (totalAssets > 0) {
-                        Spacer(Modifier.height(Spacing.md))
-                        SegmentedToggle(
-                            options = listOf(
-                                UploadMode.ADD to "Add new",
-                                UploadMode.SYNC to "Sync library",
-                            ),
-                            selected = uploadMode,
-                            onSelect = { viewModel.setMode(it) },
-                            fillWidth = true,
-                        )
-                        Spacer(Modifier.height(Spacing.md))
-
-                        when (uploadMode) {
-                            UploadMode.ADD -> {
-                                val allSelected = viewModel.isAllMediaSelected()
-                                FilledTonalButton(
-                                    onClick = {
-                                        if (allSelected) viewModel.deselectAll()
-                                        else viewModel.selectAllMedia()
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = MaterialTheme.shapes.medium,
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = if (allSelected) MaterialTheme.colorScheme.primaryContainer
-                                        else MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    ),
-                                ) {
-                                    Icon(
-                                        imageVector = if (allSelected) Icons.Filled.Deselect else Icons.Filled.SelectAll,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                    Spacer(Modifier.width(Spacing.sm))
-                                    Text(
-                                        text = if (allSelected) "Deselect All ($totalAssets)" else "Select All ($totalAssets)",
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
-                                Spacer(Modifier.height(Spacing.sm))
-                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                    AssistChip(
-                                        onClick = { viewModel.selectRecent(30) },
-                                        label = { Text("Last 30 days") },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Filled.CalendarMonth,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(AssistChipDefaults.IconSize),
-                                            )
-                                        },
-                                    )
-                                    AssistChip(
-                                        onClick = { viewModel.selectNewSinceBackup() },
-                                        label = { Text("New") },
-                                        leadingIcon = {
-                                            Icon(
-                                                Icons.Filled.NewReleases,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(AssistChipDefaults.IconSize),
-                                            )
-                                        },
-                                    )
-                                }
-                            }
-                            UploadMode.SYNC -> {
-                                FilledTonalButton(
-                                    onClick = { viewModel.prepareSync() },
-                                    enabled = !isPreparingSync,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = MaterialTheme.shapes.medium,
-                                    colors = ButtonDefaults.filledTonalButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                    ),
-                                ) {
-                                    Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(Spacing.sm))
-                                    Text(
-                                        text = if (isPreparingSync) "Checking…" else "Sync Library",
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
-                                Text(
-                                    text = "Uploads new photos · removes deleted ones from PC.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(top = Spacing.xs),
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(Spacing.sm))
-                    }
                 }
+                return@LazyColumn
             }
 
-            if (displayFolders.isEmpty() && searchQuery.isNotBlank()) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    EmptyState(
-                        icon = Icons.Filled.Search,
-                        title = "No folders found",
-                        subtitle = "Try a different search term",
-                        modifier = Modifier.padding(vertical = Spacing.xxl),
-                    )
-                }
-            } else {
-                if (connectionState == ConnectionState.CONNECTED && hasPermission && displayFolders.isEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        EmptyState(
-                            icon = Icons.Filled.PermMedia,
-                            title = "No media found",
-                            subtitle = "Photos and videos you add to this device will appear here",
-                            modifier = Modifier.padding(vertical = Spacing.xxl),
-                        )
-                    }
-                } else if (connectionState == ConnectionState.CONNECTED && hasPermission && displayFolders.isNotEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        FolderCard(
-                            folder = displayFolders.first(),
-                            featured = true,
-                            onClick = { onFolderClick(displayFolders.first().bucketName) },
-                        )
-                    }
-                }
-                items(displayFolders.drop(1), key = { it.bucketName }) { folder ->
-                    FolderCard(
-                        folder = folder,
-                        featured = false,
-                        onClick = { onFolderClick(folder.bucketName) },
+            if (showControls) {
+                item(key = "controls") {
+                    LibraryControls(
+                        filter = filter,
+                        onFilter = viewModel::setFilter,
+                        searchOpen = searchOpen,
+                        query = query,
+                        onQueryChange = { query = it },
+                        onToggleSearch = { if (searchOpen) closeSearch() else searchOpen = true },
+                        onDone = { focusManager.clearFocus() },
                     )
                 }
             }
 
-            item(span = { GridItemSpan(maxLineSpan) }) { Spacer(Modifier.height(Spacing.xxl)) }
+            if (!libraryLoaded) {
+                item(key = "loading") { LoadingStrips(columns = columns) }
+                return@LazyColumn
+            }
+
+            if (totalAssets > 0) {
+                item(key = "picks") {
+                    QuickPickRow(
+                        picks = quickPicks,
+                        selectedIds = selectedIds,
+                        onNew = viewModel::selectNewSinceBackup,
+                        onRecent = { viewModel.selectRecent(GalleryViewModel.RECENT_DAYS) },
+                        onEverything = viewModel::selectAllMedia,
+                        onUnpick = viewModel::deselect,
+                    )
+                }
+            }
+
+            when {
+                totalAssets == 0 && filter == MediaFilter.ALL -> item(key = "empty") {
+                    EmptyStrip(
+                        title = "No photos or videos yet",
+                        body = "Photos and videos you take or save on this phone appear here, one strip per album.",
+                    )
+                }
+
+                totalAssets == 0 -> item(key = "empty-filter") {
+                    EmptyStrip(
+                        title = if (filter == MediaFilter.VIDEOS) "No videos on this phone" else "No photos on this phone",
+                        body = "Switch to All to see everything in your library.",
+                        action = {
+                            PrintButton("Show everything", onClick = { viewModel.setFilter(MediaFilter.ALL) }, style = PrintButtonStyle.Outline)
+                        },
+                    )
+                }
+
+                shownAlbums.isEmpty() -> item(key = "no-match") {
+                    EmptyStrip(
+                        title = "No album called “${query.trim()}”",
+                        body = "Check the spelling, or clear the search to see every album.",
+                        action = {
+                            PrintButton("Clear search", onClick = ::closeSearch, style = PrintButtonStyle.Outline)
+                        },
+                    )
+                }
+
+                // Prefixed so an album called "header" or "picks" can't collide with the fixed items.
+                else -> items(shownAlbums, key = { "album:" + it.name }) { album ->
+                    AlbumStrip(
+                        album = album,
+                        columns = columns,
+                        selectedIds = selectedIds,
+                        pickOrder = pickOrder,
+                        onClick = { onFolderClick(album.name) },
+                    )
+                }
+            }
         }
 
-        // Selection action bar — Add mode only
-        var lastSelectedCount by remember { mutableStateOf(0) }
-        if (selectedIds.isNotEmpty()) lastSelectedCount = selectedIds.size
-
+        val ticketCount = heldWhile(selecting, selectedIds.size)
+        val ticketBytes = heldWhile(selecting, selectedBytes)
+        val ticketAlreadyThere = heldWhile(selecting, alreadyThere)
         AnimatedVisibility(
-            visible = uploadMode == UploadMode.ADD && selectedIds.isNotEmpty(),
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter),
+            visible = selecting,
+            enter = slideInVertically { it } + fadeIn(),
+            exit = slideOutVertically { it } + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .onSizeChanged { ticketHeight = it.height },
         ) {
-            SelectionActionBar(
-                count = lastSelectedCount,
-                onTransfer = {
-                    onBeforeTransfer()
-                    viewModel.startTransfer()
-                    onTransferClick()
-                },
+            SelectionTicket(
+                count = ticketCount,
+                detail = ticketDetail(ticketBytes, connected, serverName, ticketAlreadyThere),
+                actionLabel = if (connected) sendLabel(ticketCount, ticketAlreadyThere) else null,
+                onAction = send,
+                onClear = viewModel::deselectAll,
+                hint = if (connected) null else "Pair a computer",
+                onHint = onConnectClick,
+                // The app's navigation bar sits below this screen and already clears the system bar.
+                applyNavigationPadding = false,
             )
         }
     }
 }
 
+// ── Permission ───────────────────────────────────────────────────────────────
+
 @Composable
-private fun PairingSetupCard(
-    connectionState: ConnectionState,
-    onConnectClick: () -> Unit,
+private fun PermissionBlock(blocked: Boolean, onAllow: () -> Unit, onOpenSettings: () -> Unit) {
+    if (blocked) {
+        EmptyStrip(
+            title = "Photo access is off",
+            body = "Android won't ask again. Open Pherry's settings, choose Permissions, then Photos and videos, and allow access.",
+            action = { PrintButton("Open app settings", onClick = onOpenSettings, icon = Ph.Gear) },
+        )
+    } else {
+        EmptyStrip(
+            title = "Allow photo access",
+            body = "Pherry reads the photos and videos on this phone so you can pick what to send. Nothing leaves the phone until you send it.",
+            action = { PrintButton("Allow access", onClick = onAllow, icon = Ph.Image) },
+        )
+    }
+}
+
+// ── Controls ─────────────────────────────────────────────────────────────────
+
+@Composable
+private fun LibraryControls(
+    filter: MediaFilter,
+    onFilter: (MediaFilter) -> Unit,
+    searchOpen: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onToggleSearch: () -> Unit,
+    onDone: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(Spacing.lg),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.Computer,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+    val c = PherryTheme.colors
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(searchOpen) {
+        // The field is composed in the same pass that opens it; focus may still race on restore.
+        if (searchOpen) runCatching { focusRequester.requestFocus() }
+    }
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            PrintSegmented(
+                options = listOf(
+                    MediaFilter.ALL to "All",
+                    MediaFilter.PHOTOS to "Photos",
+                    MediaFilter.VIDEOS to "Videos",
+                ),
+                selected = filter,
+                onSelect = onFilter,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(Spacing.xs))
+            IconButton(onClick = onToggleSearch, modifier = Modifier.size(Spacing.touch)) {
+                PhIcon(
+                    icon = if (searchOpen) Ph.X else Ph.Search,
+                    contentDescription = if (searchOpen) "Close search" else "Search albums",
+                    tint = c.ink,
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = searchOpen,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f))
-                    .padding(9.dp),
-            )
-            Spacer(Modifier.width(Spacing.md))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Pair with your desktop",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "Scan the QR code shown in Pherry Desktop before choosing media.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Spacer(Modifier.height(Spacing.md))
-        PrimaryButton(
-            onClick = onConnectClick,
-            enabled = connectionState != ConnectionState.CONNECTING,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(
-                Icons.Filled.Wifi,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(Spacing.sm))
-            Text(
-                text = if (connectionState == ConnectionState.CONNECTING) "Connecting…" else "Connect desktop",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
+                    .fillMaxWidth()
+                    .padding(top = Spacing.sm)
+                    .focusRequester(focusRequester),
+                textStyle = MaterialTheme.typography.bodyLarge,
+                // A label keeps the field named for TalkBack once a query is typed.
+                label = { Text("Search albums") },
+                placeholder = { Text("Album name", style = MaterialTheme.typography.bodyLarge) },
+                leadingIcon = { PhIcon(Ph.Search, contentDescription = null, size = 20.dp) },
+                trailingIcon = if (query.isNotEmpty()) {
+                    {
+                        IconButton(onClick = { onQueryChange("") }) {
+                            PhIcon(Ph.XBold, contentDescription = "Clear search", size = 18.dp)
+                        }
+                    }
+                } else {
+                    null
+                },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onDone() }),
+                shape = PherryShape.print,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = c.ink,
+                    unfocusedTextColor = c.ink,
+                    focusedContainerColor = c.sheet,
+                    unfocusedContainerColor = c.sheet,
+                    cursorColor = c.ink,
+                    selectionColors = TextSelectionColors(handleColor = c.ink, backgroundColor = c.envelope.copy(alpha = 0.45f)),
+                    focusedBorderColor = c.ink,
+                    unfocusedBorderColor = c.ink3,
+                    focusedLeadingIconColor = c.ink2,
+                    unfocusedLeadingIconColor = c.ink2,
+                    focusedTrailingIconColor = c.ink,
+                    unfocusedTrailingIconColor = c.ink,
+                    focusedLabelColor = c.ink2,
+                    unfocusedLabelColor = c.ink3,
+                    focusedPlaceholderColor = c.ink3,
+                    unfocusedPlaceholderColor = c.ink3,
+                ),
             )
         }
     }
 }
 
+// ── Quick picks ──────────────────────────────────────────────────────────────
+
 @Composable
-private fun MediaPermissionCard(
-    onAllowClick: () -> Unit,
-    onSettingsClick: () -> Unit,
+private fun QuickPickRow(
+    picks: QuickPicks,
+    selectedIds: Set<Long>,
+    onNew: () -> Unit,
+    onRecent: () -> Unit,
+    onEverything: () -> Unit,
+    onUnpick: (Set<Long>) -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(Spacing.lg),
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
     ) {
-        Text(
-            text = "Allow media access",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(Spacing.xs))
-        Text(
-            text = "Pherry only reads local photos and videos you choose to send.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(Spacing.md))
-        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-            FilledTonalButton(onClick = onAllowClick, shape = MaterialTheme.shapes.medium) {
-                Text("Allow media")
-            }
-            TextButton(onClick = onSettingsClick) {
-                Text("Open settings")
-            }
+        if (picks.newIds.isNotEmpty()) {
+            QuickPick(
+                label = "Not backed up (${Fmt.count(picks.newIds.size)})",
+                icon = Ph.Sparkle,
+                ids = picks.newIds,
+                selectedIds = selectedIds,
+                onPick = onNew,
+                onUnpick = onUnpick,
+            )
         }
+        if (picks.recentIds.isNotEmpty()) {
+            QuickPick(
+                label = "Last ${GalleryViewModel.RECENT_DAYS} days",
+                icon = Ph.Calendar,
+                ids = picks.recentIds,
+                selectedIds = selectedIds,
+                onPick = onRecent,
+                onUnpick = onUnpick,
+            )
+        }
+        QuickPick(
+            label = "Everything (${Fmt.count(picks.allIds.size)})",
+            icon = Ph.SelectAll,
+            ids = picks.allIds,
+            selectedIds = selectedIds,
+            onPick = onEverything,
+            onUnpick = onUnpick,
+        )
     }
 }
 
+/** A pick adds its frames to the selection; once they are all in, tapping it again takes them out. */
 @Composable
-private fun FolderCard(
-    folder: MediaFolder,
-    featured: Boolean,
+private fun QuickPick(
+    label: String,
+    @DrawableRes icon: Int,
+    ids: Set<Long>,
+    selectedIds: Set<Long>,
+    onPick: () -> Unit,
+    onUnpick: (Set<Long>) -> Unit,
+) {
+    val c = PherryTheme.colors
+    val picked = remember(ids, selectedIds) { ids.isNotEmpty() && selectedIds.containsAll(ids) }
+    FilterChip(
+        selected = picked,
+        onClick = { if (picked) onUnpick(ids) else onPick() },
+        label = { Text(label, style = MaterialTheme.typography.labelLarge) },
+        leadingIcon = {
+            PhIcon(
+                icon = if (picked) Ph.CheckBold else icon,
+                contentDescription = null,
+                tint = if (picked) c.onEnvelope else c.ink,
+                size = 18.dp,
+            )
+        },
+        shape = PherryShape.button,
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = Color.Transparent,
+            labelColor = c.ink,
+            selectedContainerColor = c.envelope,
+            selectedLabelColor = c.onEnvelope,
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = picked,
+            borderColor = c.ink,
+            selectedBorderColor = c.envelope,
+            borderWidth = 1.5.dp,
+            selectedBorderWidth = 1.5.dp,
+        ),
+    )
+}
+
+// ── Albums ───────────────────────────────────────────────────────────────────
+
+/**
+ * One album as one strip of film: its name and backup state in edge print, then its newest frames.
+ * Frames in the job carry their grease-pencil ring, as on the album's contact sheet.
+ */
+@Composable
+private fun AlbumStrip(
+    album: AlbumSummary,
+    columns: Int,
+    selectedIds: Set<Long>,
+    pickOrder: Map<Long, Int>,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
+    val c = PherryTheme.colors
+    val frames = album.preview.take(columns)
+    val picked = remember(album.ids, selectedIds) {
+        // Walk the smaller set: a big pick ("Everything") meets many small albums.
+        if (selectedIds.size < album.ids.size) selectedIds.count { it in album.ids } else album.ids.count { it in selectedIds }
+    }
+    val description = buildString {
+        append(album.name)
+        append(", ")
+        append(Fmt.plural(album.itemCount, "item"))
+        append(", ")
+        append(if (album.unsentCount > 0) "${Fmt.count(album.unsentCount)} not backed up" else "all backed up")
+        if (picked > 0) append(", ${Fmt.count(picked)} selected")
+    }
+    Column(
+        Modifier
             .fillMaxWidth()
-            .then(if (featured) Modifier.height(200.dp) else Modifier.aspectRatio(1f))
-            .clip(if (featured) MaterialTheme.shapes.large else MaterialTheme.shapes.medium)
-            .clickable(role = Role.Button, onClick = onClick),
+            .clip(PherryShape.print)
+            .background(c.film)
+            .clickable(role = Role.Button, onClickLabel = "Open album", onClick = onClick)
+            .semantics { contentDescription = description },
     ) {
-        AsyncImage(
-            model = folder.coverUri,
-            contentDescription = folder.bucketName,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = if (featured) 0.6f else 0.55f)),
-                        startY = if (featured) 80f else 60f,
-                    )
-                )
-        )
-        if (featured) {
-            Icon(
-                Icons.Filled.CameraAlt,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.8f),
+        Column(Modifier.clearAndSetSemantics { }) {
+            Row(
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(Spacing.md)
-                    .size(26.dp)
-                    .clip(MaterialTheme.shapes.extraSmall)
-                    .background(Color.White.copy(alpha = 0.2f))
-                    .padding(4.dp),
-            )
-        }
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(if (featured) Spacing.lg else Spacing.md),
-        ) {
-            Text(
-                text = folder.bucketName,
-                style = if (featured) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                maxLines = if (featured) 2 else 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "${folder.itemCount} items",
-                style = if (featured) MaterialTheme.typography.bodySmall else MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.8f),
-            )
+                    .fillMaxWidth()
+                    .padding(start = Spacing.sm, end = Spacing.xs, top = Spacing.md, bottom = Spacing.xs),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    EdgeText(album.name, modifier = Modifier.weight(1f, fill = false))
+                    Spacer(Modifier.width(Spacing.sm))
+                    EdgeText(Fmt.count(album.itemCount), dim = true)
+                }
+                Spacer(Modifier.width(Spacing.sm))
+                if (picked > 0) {
+                    StatusTag("${Fmt.count(picked)} selected", TagKind.Job)
+                } else if (album.unsentCount > 0) {
+                    StatusTag("${Fmt.count(album.unsentCount)} new", TagKind.Job)
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        PhIcon(Ph.CheckBold, contentDescription = null, tint = c.edge, size = 10.dp)
+                        Spacer(Modifier.width(3.dp))
+                        EdgeText("All backed up", dim = true)
+                    }
+                }
+                PhIcon(
+                    Ph.CaretRight,
+                    contentDescription = null,
+                    tint = c.filmInk,
+                    size = 16.dp,
+                    modifier = Modifier.padding(start = Spacing.xs),
+                )
+            }
+            FilmRow(
+                count = frames.size,
+                columns = columns,
+                sprockets = true,
+                edgeTop = { i -> FrameNumber(number = i + 1) },
+                edgeBottom = { i -> if (frames[i].backedUp) SavedMark() },
+            ) { i ->
+                val frame = frames[i]
+                Frame(
+                    model = rememberFrameModel(frame.uri, frame.isVideo),
+                    contentDescription = null,
+                    aspectRatio = StripAspect,
+                    isVideo = frame.isVideo,
+                    selectedNumber = pickOrder[frame.id],
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }
 
+/** Unexposed strips while the library is read: film, no spinners. */
+@Composable
+private fun LoadingStrips(columns: Int) {
+    val c = PherryTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = "Reading your library" },
+        verticalArrangement = Arrangement.spacedBy(Spacing.md),
+    ) {
+        repeat(3) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(PherryShape.print)
+                    .background(c.film),
+            ) {
+                Spacer(Modifier.height(Spacing.xxl))
+                FilmRow(count = columns, columns = columns, sprockets = true) {
+                    BlankFrame(aspectRatio = StripAspect)
+                }
+            }
+        }
+    }
+}

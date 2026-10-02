@@ -15,6 +15,9 @@ import androidx.work.ForegroundInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.appharbor.pherry.MainActivity
+import com.appharbor.pherry.R
+import com.appharbor.pherry.data.db.UploadStatus
+import com.appharbor.pherry.ui.components.Fmt
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.CancellationException
@@ -98,7 +101,7 @@ class UploadWorker @AssistedInject constructor(
 
         val done = state.completedFiles + state.failedFiles
         val percent = (state.progressPercent * 100).toInt().coerceIn(0, 100)
-        val title = "Transferring photos"
+        val title = "Sending to your computer"
         val text = if (state.totalFiles > 0) {
             "$done/${state.totalFiles} files · $percent%"
         } else {
@@ -119,29 +122,43 @@ class UploadWorker @AssistedInject constructor(
         return NotificationCompat.Builder(appContext, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_sys_upload)
+            .setSmallIcon(R.drawable.ic_stat_pherry)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(openIntent)
             .setProgress(100, percent, state.totalFiles == 0)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Cancel", cancelIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", cancelIntent)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
 
-    /** One-shot summary shown after a batch finishes, e.g. "142 files · 2.3 GB backed up". */
+    /**
+     * One-shot summary shown after a batch ends, e.g. "142 files · 2.3 GB sent". When the connection
+     * dropped mid-batch the files go back to the queue, so say the backup paused, not that it finished.
+     */
     @Suppress("MissingPermission")
     private fun postSummaryNotification(state: TransferState) {
-        val backedUp = state.completedFiles
-        if (backedUp <= 0 && state.failedFiles <= 0) return
+        val remaining = state.activeTransfers.count {
+            it.status == UploadStatus.PENDING || it.status == UploadStatus.UPLOADING
+        }
+        if (state.completedFiles <= 0 && state.failedFiles <= 0 && remaining <= 0) return
         ensureChannel()
 
-        val sent = (backedUp - state.skippedFiles).coerceAtLeast(0)
-        val title = if (state.failedFiles > 0) "Backup finished with issues" else "Backup complete"
-        val text = buildString {
-            append("$sent file${if (sent == 1) "" else "s"} · ${formatBytes(state.transferredBytes)} backed up")
-            if (state.skippedFiles > 0) append(" · ${state.skippedFiles} already on PC")
-            if (state.failedFiles > 0) append(" · ${state.failedFiles} failed")
+        val sent = (state.completedFiles - state.skippedFiles).coerceAtLeast(0)
+        val title = when {
+            remaining > 0 -> "Backup paused"
+            state.failedFiles > 0 -> "Backup finished with issues"
+            else -> "Backup complete"
+        }
+        val text = if (remaining > 0) {
+            "Sent ${Fmt.count(state.completedFiles)} of ${Fmt.count(state.totalFiles)}. " +
+                "Lost the connection to your computer; ${Fmt.plural(remaining, "file")} still to send."
+        } else {
+            buildString {
+                append("${Fmt.plural(sent, "file")} · ${Fmt.bytes(state.sentBytes)} sent")
+                if (state.skippedFiles > 0) append(" · ${Fmt.count(state.skippedFiles)} already on your computer")
+                if (state.failedFiles > 0) append(" · ${Fmt.count(state.failedFiles)} failed")
+            }
         }
 
         val openIntent = androidx.core.app.PendingIntentCompat.getActivity(
@@ -156,20 +173,13 @@ class UploadWorker @AssistedInject constructor(
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setSmallIcon(android.R.drawable.stat_sys_upload_done)
+            .setSmallIcon(R.drawable.ic_stat_pherry)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
             .setContentIntent(openIntent)
             .build()
 
         NotificationManagerCompat.from(appContext).notify(SUMMARY_NOTIFICATION_ID, notification)
-    }
-
-    private fun formatBytes(bytes: Long): String = when {
-        bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
-        bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
-        bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
-        else -> "$bytes B"
     }
 
     private fun ensureChannel() {

@@ -2,67 +2,47 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: http://127.0.0.1:* http://localhost:*; connect-src http://127.0.0.1:* http://localhost:*; script-src 'self';" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Pherry Desktop</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800;900&display=swap" rel="stylesheet" />
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: http://127.0.0.1:* http://localhost:*; connect-src http://127.0.0.1:* http://localhost:*; script-src 'self';" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pherry</title>
+<link rel="icon" href="pherry-icon.svg" />
 <link rel="stylesheet" href="styles.css" />
+<link rel="stylesheet" href="views/receiver.css" />
+<link rel="stylesheet" href="views/photos.css" />
+<link rel="stylesheet" href="views/history.css" />
+<link rel="stylesheet" href="views/settings.css" />
 </head>
 <body>
-  <div class="scrim" id="scrim"></div>
   <div class="app">
-    <aside class="sidebar" id="sidebar">
-      <div class="sidebar-brand">
-        <img class="brand-logo" src="pherry-icon.svg" width="38" height="38" alt="Pherry" />
-        <div class="brand-text">
-          <div class="brand-name">Pherry</div>
+    <nav class="rail" aria-label="Pherry">
+      <div class="brand">
+        <img class="brand-tile" src="pherry-icon.svg" width="30" height="30" alt="" />
+        <span class="brand-word">Pherry</span>
+      </div>
+      <button class="nav-item" data-view="receiver" title="Receiver" data-icon="tray" aria-current="page"><span class="label-text">Receiver</span></button>
+      <button class="nav-item" data-view="photos" title="Photos" data-icon="images-square"><span class="label-text">Photos</span><span class="count" id="nav-photos-count"></span></button>
+      <button class="nav-item" data-view="history" title="History" data-icon="clock-counter-clockwise"><span class="label-text">History</span></button>
+      <button class="nav-item" data-view="settings" title="Settings" data-icon="gear-six"><span class="label-text">Settings</span></button>
+      <div class="rail-spacer"></div>
+      <div class="station" id="station">
+        <div class="station-line"><span class="lamp" id="station-lamp"></span><span class="station-text" id="station-text" aria-live="polite">Starting…</span></div>
+        <div class="station-addr" id="station-addr"></div>
+        <div class="station-actions">
+          <button class="btn quiet sm icon-only" id="open-folder-btn" title="Open the Pherry folder" aria-label="Open the Pherry folder"></button>
+          <button class="btn quiet sm icon-only" id="theme-toggle" title="Switch theme" aria-label="Switch theme"></button>
         </div>
       </div>
-      <button class="nav-item active" data-view="dashboard" aria-current="page"><span class="icon sm">qr_code_2</span>Receiver</button>
-      <button class="nav-item" data-view="activity"><span class="icon sm">graphic_eq</span>Transfers</button>
-      <button class="nav-item" data-view="gallery"><span class="icon sm">photo_library</span>Gallery</button>
-      <button class="nav-item" data-view="history"><span class="icon sm">history</span>History</button>
-      <button class="nav-item" data-view="settings"><span class="icon sm">settings</span>Settings</button>
-      <div class="nav-spacer"></div>
-      <div class="sidebar-card" id="sidebar-devices">
-        <div class="label"><span class="pulse"></span>Sources</div>
-        <div class="devices" id="device-list">
-          <div class="device" title="No sources"><span class="icon xs">phonelink_off</span></div>
-        </div>
-      </div>
-    </aside>
+    </nav>
 
-    <header class="topbar">
-      <button class="icon-btn hamburger" id="hamburger" aria-label="Open menu"><span class="icon">menu</span></button>
-      <h1 id="page-title">Receiver</h1>
-      <span class="topbar-tag" id="page-tag" hidden><span class="pulse"></span><span id="page-tag-text">LIVE</span></span>
-      <div class="topbar-actions">
-        <span class="status-chip" id="server-chip"><span class="dot"></span>Active</span>
-        <button class="icon-btn" id="open-folder-btn" title="Open download folder" aria-label="Open download folder"><span class="icon">folder_open</span></button>
-        <button class="icon-btn" id="theme-toggle" title="Toggle theme" aria-label="Toggle theme"><span class="icon" id="theme-icon">dark_mode</span></button>
-      </div>
-    </header>
-
-    <main class="main">
+    <main class="main" id="main">
       <div class="main-inner" id="view-root"></div>
     </main>
+  </div>
 
-    <footer class="footer">
-      <span class="dot" id="server-dot"></span>
-      <span class="label-key">Local IP:</span>
-      <span class="value" id="server-ip">-</span>
-      <span class="sep">/</span>
-      <span class="label-key">Status:</span>
-      <span class="value" id="server-status-text">CONNECTED</span>
-      <div class="right">
-        <span class="label-key hide-sm">Port</span>
-        <span class="value" id="server-port">-</span>
-        <span class="pill hide-sm" id="link-pill">All good</span>
-      </div>
-    </footer>
+  <!-- Toast live regions exist from the start, so the first message of a session is announced. -->
+  <div class="toast-root" id="toast-root">
+    <div class="toast-stack" id="toast-status" role="status" aria-live="polite"></div>
+    <div class="toast-stack" id="toast-alert" role="alert" aria-live="assertive"></div>
   </div>
 
 <script type="module" src="app.js"></script>

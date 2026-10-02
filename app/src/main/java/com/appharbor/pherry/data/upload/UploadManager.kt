@@ -1,16 +1,21 @@
 package com.appharbor.pherry.data.upload
 
+import android.Manifest
 import android.content.ContentResolver
 import android.content.Context
+import android.content.pm.PackageManager
 import android.content.res.AssetFileDescriptor
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
+import androidx.core.content.ContextCompat
 import com.appharbor.pherry.data.db.UploadRecord
 import com.appharbor.pherry.data.db.UploadRecordDao
 import com.appharbor.pherry.data.db.UploadStatus
 import com.appharbor.pherry.data.model.MediaItem
 import com.appharbor.pherry.data.network.ConnectionManager
 import com.appharbor.pherry.data.preferences.AppPreferences
+import com.appharbor.pherry.ui.components.Fmt
 import androidx.work.BackoffPolicy
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -29,7 +34,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import java.util.concurrent.TimeUnit
 import okhttp3.MediaType.Companion.toMediaType
@@ -42,6 +49,7 @@ import okio.BufferedSink
 import okio.source
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -50,6 +58,9 @@ import javax.inject.Singleton
 // One resend allowed on an MD5 mismatch (422) before the file is treated as a hard failure.
 private const val MAX_UPLOAD_ATTEMPTS = 2
 private const val MAX_SKIPPED_BATCH = 100
+// Sync holds deletes back when at least this many backed-up phone files vanish at once and they are
+// more than half of them: that reads as a scan that can't see the library (SD card out), not a cleanup.
+private const val SUSPICIOUS_MISSING_MIN = 20
 
 /** Outcome of a single POST /upload attempt. */
 private sealed interface UploadAttempt {
@@ -88,6 +99,8 @@ data class TransferState(
     val skippedFiles: Int = 0,
     val totalBytes: Long = 0,
     val transferredBytes: Long = 0,
+    // Bytes actually sent over the wire this batch: real uploads only, no dedup skips.
+    val sentBytes: Long = 0,
     val currentSpeedBytesPerSec: Long = 0,
     val activeTransfers: List<FileTransferProgress> = emptyList(),
     val skippedDuplicates: List<DedupSkip> = emptyList(),
@@ -113,10 +126,25 @@ data class VerifyState(
     val isVerifying: Boolean = false,
     val checked: Int = 0,
     val total: Int = 0,
+    /** Records the server answered "not here" for; only these are re-queued. */
     val missing: Int = 0,
+    /** Records the server gave no usable answer for (network/HTTP error); neither present nor missing. */
+    val unknown: Int = 0,
+    /** Records with no stored hash whose file is gone from the phone, so they couldn't be asked about. */
+    val unreadable: Int = 0,
+    /** The pass stopped early because the server stopped answering. */
+    val interrupted: Boolean = false,
+    /** The pass couldn't start because there was no computer to ask. */
+    val unreachable: Boolean = false,
     /** Human-readable summary once a pass finishes; null while idle or running. */
     val summary: String? = null,
 )
+
+/** What the server said about one hash during a verify pass. */
+private enum class Presence { PRESENT, ABSENT, UNKNOWN }
+
+/** A verify pass gives up after this many unanswered checks in a row (the computer went away). */
+private const val VERIFY_MAX_UNKNOWN_IN_A_ROW = 3
 
 /** A file the server should delete in Sync mode, identified by its content hash. */
 data class SyncDeleteEntry(
@@ -135,6 +163,12 @@ data class SyncPlan(
     val deleteEntries: List<SyncDeleteEntry>,
     /** Every completed record whose media is gone from the phone — removed from the DB after sync. */
     val deletedRecordIds: List<Long>,
+    /**
+     * True when deletions were held back because the scan can't be trusted to show what's gone:
+     * partial media access, an empty scan, or most backed-up photos suddenly missing (an SD card
+     * out). Nothing is proposed for deletion then.
+     */
+    val deletesWithheld: Boolean = false,
 ) {
     val uploadCount: Int get() = uploadItems.size
     val deleteCount: Int get() = deleteEntries.size
@@ -154,7 +188,7 @@ private data class SyncDeleteResult(
     val deleted: Int = 0,
     val bytesFreed: Long = 0,
     val notFound: Int = 0,
-    /** Server rejected the delete because we lack the pairing token (need a QR pairing). */
+    /** Server rejected the delete because we lack the pairing token (scan the pairing ticket again). */
     val unauthorized: Boolean = false,
 )
 
@@ -168,6 +202,9 @@ class UploadManager @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val contentResolver: ContentResolver = context.contentResolver
+    // Two enqueues racing (a double tap, auto-backup, a sync) could both pass the already-queued
+    // check and insert every file twice; the table has no unique index on mediaStoreId.
+    private val enqueueMutex = Mutex()
 
     private val _transferState = MutableStateFlow(TransferState())
     val transferState: StateFlow<TransferState> = _transferState.asStateFlow()
@@ -241,37 +278,67 @@ class UploadManager @Inject constructor(
         scope.launch {
             val baseUrl = connectionManager.getBaseUrl()
             if (baseUrl.isBlank()) {
-                _verifyState.value = VerifyState(summary = "Connect to the desktop first to verify.")
+                _verifyState.value = VerifyState(
+                    unreachable = true,
+                    summary = "Pair a computer first to check your backups.",
+                )
                 return@launch
             }
+            val computer = connectionManager.serverName.value.ifBlank { "your computer" }
 
             val completed = uploadRecordDao.getCompletedSnapshot()
             _verifyState.value = VerifyState(isVerifying = true, total = completed.size)
 
             val checked = java.util.concurrent.atomic.AtomicInteger(0)
+            val unknown = java.util.concurrent.atomic.AtomicInteger(0)
+            val unreadable = java.util.concurrent.atomic.AtomicInteger(0)
+            val unknownInARow = java.util.concurrent.atomic.AtomicInteger(0)
+            val interrupted = java.util.concurrent.atomic.AtomicBoolean(false)
             val missingRecords = java.util.concurrent.ConcurrentHashMap.newKeySet<UploadRecord>()
             val semaphore = Semaphore(parallelSlots())
             coroutineScope {
                 completed.map { record ->
                     launch {
                         semaphore.withPermit {
-                            // No stored hash (e.g. legacy record) → recompute so we can still check.
-                            val md5 = record.md5Hash.ifBlank {
-                                runCatching { computeMd5(Uri.parse(record.contentUri)) }.getOrDefault("")
-                            }
-                            if (md5.isNotBlank() && !serverHasFile(baseUrl, md5)) {
-                                missingRecords.add(record)
-                            }
-                            val done = checked.incrementAndGet()
-                            _verifyState.update {
-                                it.copy(checked = done, missing = missingRecords.size)
+                            // Once the computer stops answering, skip the rest instead of guessing about them.
+                            if (!interrupted.get()) {
+                                // No stored hash (e.g. legacy record) → recompute so we can still check.
+                                val md5 = record.md5Hash.ifBlank {
+                                    runCatching { computeMd5(Uri.parse(record.contentUri)) }.getOrDefault("")
+                                }
+                                if (md5.isBlank()) {
+                                    unreadable.incrementAndGet()
+                                } else {
+                                    when (serverPresence(baseUrl, md5)) {
+                                        Presence.PRESENT -> unknownInARow.set(0)
+                                        Presence.ABSENT -> {
+                                            unknownInARow.set(0)
+                                            missingRecords.add(record)
+                                        }
+                                        Presence.UNKNOWN -> {
+                                            unknown.incrementAndGet()
+                                            if (unknownInARow.incrementAndGet() >= VERIFY_MAX_UNKNOWN_IN_A_ROW) {
+                                                interrupted.set(true)
+                                            }
+                                        }
+                                    }
+                                }
+                                val done = checked.incrementAndGet()
+                                _verifyState.update {
+                                    it.copy(
+                                        checked = done,
+                                        missing = missingRecords.size,
+                                        unknown = unknown.get(),
+                                        unreadable = unreadable.get(),
+                                    )
+                                }
                             }
                         }
                     }
                 }.forEach { it.join() }
             }
 
-            // Re-queue anything the server turned out not to have, then re-arm the worker.
+            // Re-queue only what the server confirmed it doesn't have, then re-arm the worker.
             for (record in missingRecords) {
                 uploadRecordDao.update(record.copy(status = UploadStatus.PENDING, progress = 0))
             }
@@ -279,18 +346,50 @@ class UploadManager @Inject constructor(
             if (missingCount > 0) {
                 scheduleWork(ExistingWorkPolicy.APPEND_OR_REPLACE)
             }
+            val unknownCount = unknown.get()
+            val unreadableCount = unreadable.get()
+            val wasInterrupted = interrupted.get()
+            val checkedCount = checked.get()
             _verifyState.value = VerifyState(
                 isVerifying = false,
-                checked = completed.size,
+                checked = checkedCount,
                 total = completed.size,
                 missing = missingCount,
-                summary = if (missingCount == 0) {
-                    "All ${completed.size} files confirmed on the desktop."
-                } else {
-                    "$missingCount of ${completed.size} were missing — re-queued for upload."
-                },
+                unknown = unknownCount,
+                unreadable = unreadableCount,
+                interrupted = wasInterrupted,
+                summary = verifySummary(
+                    computer = computer,
+                    total = completed.size,
+                    checked = checkedCount,
+                    missing = missingCount,
+                    unconfirmed = unknownCount + unreadableCount,
+                    interrupted = wasInterrupted,
+                ),
             )
         }
+    }
+
+    /** The one-line result of a verify pass, naming the computer that was asked. */
+    private fun verifySummary(
+        computer: String,
+        total: Int,
+        checked: Int,
+        missing: Int,
+        unconfirmed: Int,
+        interrupted: Boolean,
+    ): String = when {
+        interrupted -> "Lost $computer after checking ${Fmt.count(checked)} of ${Fmt.count(total)}."
+        missing == 1 ->
+            "1 of ${Fmt.count(total)} was missing from $computer. It's queued to send again."
+        missing > 0 ->
+            "${Fmt.count(missing)} of ${Fmt.count(total)} were missing from $computer. They're queued to send again."
+        unconfirmed == 0 -> when (total) {
+            0 -> "Nothing to check yet. No files have been sent to $computer."
+            1 -> "The 1 file is on $computer."
+            else -> "All ${Fmt.count(total)} files are on $computer."
+        }
+        else -> "${Fmt.count(total - unconfirmed)} of ${Fmt.count(total)} confirmed on $computer."
     }
 
     /**
@@ -309,7 +408,19 @@ class UploadManager @Inject constructor(
             .filter { it.mediaStoreId in liveIds && it.md5Hash.isNotBlank() }
             .mapTo(HashSet()) { it.md5Hash }
 
-        val deletedRecords = completed.filter { it.mediaStoreId !in liveIds }
+        // Only phone-library records can be "deleted from this phone". Media shared in from other
+        // apps carries negative synthetic ids and never appears in a MediaStore scan, so it is
+        // never proposed for deletion.
+        val phoneRecords = completed.filter { it.mediaStoreId >= 0 }
+        val missing = phoneRecords.filter { it.mediaStoreId !in liveIds }
+        // A scan that can't see the whole library would read as mass deletion. Hold deletes back
+        // when access is partial, the scan is empty, or most backed-up photos vanished at once.
+        val withhold = missing.isNotEmpty() && (
+            !hasFullMediaAccess() ||
+                liveItems.isEmpty() ||
+                (missing.size >= SUSPICIOUS_MISSING_MIN && missing.size * 2 > phoneRecords.size)
+            )
+        val deletedRecords = if (withhold) emptyList() else missing
         val deleteEntries = deletedRecords.asSequence()
             .filter { it.md5Hash.isNotBlank() && it.md5Hash !in aliveMd5s }
             .distinctBy { it.md5Hash }
@@ -326,7 +437,17 @@ class UploadManager @Inject constructor(
             uploadBytes = uploadItems.sumOf { it.size },
             deleteEntries = deleteEntries,
             deletedRecordIds = deletedRecords.map { it.id },
+            deletesWithheld = withhold,
         )
+    }
+
+    private fun hasFullMediaAccess(): Boolean {
+        val perms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            listOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        } else {
+            listOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        return perms.all { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
     }
 
     /**
@@ -334,7 +455,14 @@ class UploadManager @Inject constructor(
      * desktop to delete the removed ones. Local records for gone-from-phone media are dropped only
      * after the desktop confirms, so a failed/offline delete stays retryable on the next sync.
      */
-    fun executeSync(plan: SyncPlan) {
+    fun executeSync(confirmed: SyncPlan) {
+        // Without the pairing token the desktop is certain to refuse the delete (401): run only
+        // the upload half and keep the records, so a later sync with the token can delete them.
+        val plan = if (!connectionManager.canDelete.value && confirmed.deleteEntries.isNotEmpty()) {
+            confirmed.copy(deleteEntries = emptyList(), deletedRecordIds = emptyList())
+        } else {
+            confirmed
+        }
         if (plan.uploadItems.isNotEmpty()) {
             start(plan.uploadItems)
         }
@@ -342,6 +470,7 @@ class UploadManager @Inject constructor(
 
         scope.launch {
             _syncState.value = SyncState(isSyncing = true)
+            val computer = connectionManager.serverName.value.ifBlank { "your computer" }
             val result = deleteServerFiles(plan.deleteEntries)
             if (result.ok) {
                 uploadRecordDao.deleteByIds(plan.deletedRecordIds)
@@ -349,18 +478,18 @@ class UploadManager @Inject constructor(
                     isSyncing = false,
                     deleted = result.deleted,
                     summary = if (result.deleted > 0) {
-                        "Removed ${result.deleted} file(s) from the desktop."
+                        "Deleted ${Fmt.plural(result.deleted, "file")} from $computer."
                     } else {
-                        "Desktop already matched — nothing to remove."
+                        "Nothing to delete. $computer already matches this phone."
                     },
                 )
             } else {
                 _syncState.value = SyncState(
                     isSyncing = false,
                     summary = if (result.unauthorized) {
-                        "Scan the desktop QR code to allow removing files from your PC."
+                        "To delete files on $computer, scan its pairing ticket again."
                     } else {
-                        "Couldn't reach the desktop to remove files — try again when connected."
+                        "Couldn't reach $computer. Nothing was deleted. Try again when it's connected."
                     },
                 )
             }
@@ -438,7 +567,7 @@ class UploadManager @Inject constructor(
      * Persist the selection as PENDING upload records. Uses set-based dedup + a single batched
      * insert so even a 20k+ selection is one transaction rather than tens of thousands.
      */
-    private suspend fun enqueueRecords(items: List<MediaItem>) {
+    private suspend fun enqueueRecords(items: List<MediaItem>) = enqueueMutex.withLock {
         uploadRecordDao.resetUploadingToPending()
         // Re-arm prior hard failures so any new transfer also retries them. This both gives
         // failed files another chance and prevents orphaned FAILED rows when a failed item is
@@ -493,7 +622,15 @@ class UploadManager @Inject constructor(
         val batch = uploadRecordDao.getPendingAndUploading()
 
         if (batch.isEmpty()) {
-            _transferState.update { it.copy(isTransferring = false, activeTransfers = emptyList()) }
+            // Nothing was queued (e.g. everything picked was already on the computer): close the
+            // job at what actually ran, so it never reads as a paused "0 / 12" with nothing to resume.
+            _transferState.update {
+                it.copy(
+                    isTransferring = false,
+                    activeTransfers = emptyList(),
+                    totalFiles = it.completedFiles + it.failedFiles,
+                )
+            }
             return
         }
 
@@ -517,20 +654,28 @@ class UploadManager @Inject constructor(
             activeTransfers = initialTransfers,
         )
 
-        val semaphore = Semaphore(parallelSlots())
-        coroutineScope {
-            batch.map { record ->
-                launch {
-                    semaphore.withPermit {
-                        uploadFile(record)
+        try {
+            val semaphore = Semaphore(parallelSlots())
+            coroutineScope {
+                batch.map { record ->
+                    launch {
+                        semaphore.withPermit {
+                            uploadFile(record)
+                        }
                     }
-                }
-            }.forEach { it.join() }
+                }.forEach { it.join() }
+            }
+        } catch (e: CancellationException) {
+            // The worker was stopped from outside the app (notification Stop, lost constraint,
+            // system stop): leave the same state as cancelTransfer(). uploadFile already put the
+            // in-flight records back to PENDING.
+            _transferState.update { it.copy(isTransferring = false, activeTransfers = emptyList()) }
+            throw e
+        } finally {
+            // Keep activeTransfers visible after completion so the user can see the final state.
+            // The list is cleared when the next batch starts (see start() / runQueue init above).
+            _transferState.update { it.copy(isTransferring = false) }
         }
-
-        // Keep activeTransfers visible after completion so the user can see the final state.
-        // The list is cleared when the next batch starts (see start() / runQueue init above).
-        _transferState.update { it.copy(isTransferring = false) }
     }
 
     private suspend fun uploadFile(record: UploadRecord) {
@@ -643,7 +788,7 @@ class UploadManager @Inject constructor(
                         // Mark item COMPLETED in the stable batch list (in-place, no removal).
                         updateActiveTransfer(working.id, working.fileName, working.contentUri, working.fileSize, working.fileSize, UploadStatus.COMPLETED)
                         _transferState.update { st ->
-                            st.copy(completedFiles = st.completedFiles + 1)
+                            st.copy(completedFiles = st.completedFiles + 1, sentBytes = st.sentBytes + working.fileSize)
                         }
                         return
                     }
@@ -658,19 +803,28 @@ class UploadManager @Inject constructor(
             uploadRecordDao.update(working.copy(status = UploadStatus.PENDING))
             updateActiveTransfer(working.id, working.fileName, working.contentUri, working.fileSize, 0, UploadStatus.PENDING)
             throw e
+        } catch (e: FileNotFoundException) {
+            // The source is gone (deleted from the phone, or a pruned share). Retrying can't help,
+            // so surface it as a hard failure instead of leaving it PENDING to loop forever. It
+            // only comes back on an explicit retry or a new batch (resetFailedToPending).
+            markFailed(working)
         } catch (e: IOException) {
             // Network/read timeouts can happen after the server already persisted the file.
             // Keep this retryable instead of marking it as a hard failure.
             uploadRecordDao.update(working.copy(status = UploadStatus.PENDING))
             updateActiveTransfer(working.id, working.fileName, working.contentUri, working.fileSize, 0, UploadStatus.PENDING)
         } catch (e: Exception) {
-            uploadRecordDao.update(working.copy(status = UploadStatus.FAILED))
-            updateActiveTransfer(working.id, working.fileName, working.contentUri, working.fileSize, 0, UploadStatus.FAILED)
-            _transferState.update { st ->
-                st.copy(failedFiles = st.failedFiles + 1)
-            }
+            markFailed(working)
         }
         // No removeActiveTransfer — items stay in the stable list with their final status.
+    }
+
+    private suspend fun markFailed(working: UploadRecord) {
+        uploadRecordDao.update(working.copy(status = UploadStatus.FAILED))
+        updateActiveTransfer(working.id, working.fileName, working.contentUri, working.fileSize, 0, UploadStatus.FAILED)
+        _transferState.update { st ->
+            st.copy(failedFiles = st.failedFiles + 1)
+        }
     }
 
     // Ask the server whether it already stores this content. Failures default to false so we
@@ -692,6 +846,21 @@ class UploadManager @Inject constructor(
             )
         }
     }.getOrDefault(ServerFileMatch())
+
+    // The verify pass needs to tell "not there" apart from "couldn't ask": any failure is UNKNOWN,
+    // never ABSENT, so a dropped connection is not reported (or re-queued) as missing files.
+    private fun serverPresence(baseUrl: String, md5: String): Presence = runCatching {
+        val request = Request.Builder().url("$baseUrl/exists?md5=$md5").build()
+        okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@runCatching Presence.UNKNOWN
+            val json = JSONObject(response.body?.string().orEmpty())
+            when {
+                !json.has("exists") -> Presence.UNKNOWN
+                json.optBoolean("exists", false) -> Presence.PRESENT
+                else -> Presence.ABSENT
+            }
+        }
+    }.getOrDefault(Presence.UNKNOWN)
 
     // Mark a record done without transferring bytes (used by both local and server dedup).
     private suspend fun completeWithoutUpload(
@@ -740,7 +909,11 @@ class UploadManager @Inject constructor(
 
     private fun computeMd5(uri: Uri): String {
         val digest = MessageDigest.getInstance("MD5")
-        contentResolver.openInputStream(uri)?.use { input ->
+        // A null stream means the provider has nothing behind this URI any more: treat it as gone,
+        // never as an empty file (that would hash to d41d8cd9... and dedup against nothing).
+        val stream = contentResolver.openInputStream(uri)
+            ?: throw FileNotFoundException("Cannot open $uri")
+        stream.use { input ->
             val buffer = ByteArray(8192)
             var read: Int
             while (input.read(buffer).also { read = it } != -1) {

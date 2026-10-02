@@ -1,513 +1,276 @@
 package com.appharbor.pherry.ui.connect
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.QrCodeScanner
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.appharbor.pherry.data.model.ConnectionState
-import com.appharbor.pherry.data.network.DiscoveredDesktop
-import com.appharbor.pherry.ui.components.PrimaryButton
+import com.appharbor.pherry.ui.components.Lamp
+import com.appharbor.pherry.ui.components.LampState
+import com.appharbor.pherry.ui.components.Notice
+import com.appharbor.pherry.ui.components.Ph
+import com.appharbor.pherry.ui.components.PhIcon
+import com.appharbor.pherry.ui.components.PrintButton
+import com.appharbor.pherry.ui.components.PrintButtonStyle
+import com.appharbor.pherry.ui.theme.PherryShape
+import com.appharbor.pherry.ui.theme.PherryTheme
 import com.appharbor.pherry.ui.theme.Spacing
 
+/**
+ * "Your computer": the bottom sheet behind the top bar's computer chip. Shows the paired computer,
+ * or every way to pair one. While connected, the ticket can be scanned again and another computer
+ * paired without disconnecting first; [startExpanded] opens that "Pair a different computer" part
+ * straight away (Settings' "Change computer").
+ */
 @Composable
 fun ConnectSheet(
     onDismiss: () -> Unit,
+    startExpanded: Boolean = false,
     viewModel: ConnectViewModel = hiltViewModel(),
 ) {
+    val c = PherryTheme.colors
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
-    val ipAddress by viewModel.ipAddress.collectAsStateWithLifecycle()
-    val ipError by viewModel.ipError.collectAsStateWithLifecycle()
     val serverName by viewModel.serverName.collectAsStateWithLifecycle()
-    val connectionError by viewModel.connectionError.collectAsStateWithLifecycle()
-    val recentTargets by viewModel.recentDesktopTargets.collectAsStateWithLifecycle()
-    val nearbyDesktops by viewModel.nearbyDesktops.collectAsStateWithLifecycle()
-    val focusManager = LocalFocusManager.current
-    val context = LocalContext.current
+    val endpoint by viewModel.connectedEndpoint.collectAsStateWithLifecycle()
+    val problem by viewModel.pairingProblem.collectAsStateWithLifecycle()
+    val autoBackupEnabled by viewModel.autoBackupEnabled.collectAsStateWithLifecycle()
+    val scanTicket = rememberTicketScanner(viewModel)
+    var pairOther by rememberSaveable { mutableStateOf(startExpanded) }
+    var askDisconnect by rememberSaveable { mutableStateOf(false) }
 
-    // Discover "_pherry._tcp" desktops only while this sheet is open.
-    DisposableEffect(Unit) {
-        viewModel.startDiscovery()
-        onDispose { viewModel.stopDiscovery() }
+    // The link can drop on its own while the dialog is open; there is nothing left to disconnect then.
+    LaunchedEffect(connectionState) {
+        if (connectionState == ConnectionState.DISCONNECTED) askDisconnect = false
     }
-    fun launchQrScanner() {
-        val options = GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-            .build()
-        GmsBarcodeScanning.getClient(context, options).startScan()
-            .addOnSuccessListener { barcode ->
-                viewModel.onScannedPayload(barcode.rawValue)
-            }
-            .addOnCanceledListener { /* user dismissed */ }
-            .addOnFailureListener { e ->
-                viewModel.onQrScanError(e.localizedMessage)
-            }
+
+    if (askDisconnect) {
+        val computer = serverName.ifBlank { "your computer" }
+        AlertDialog(
+            onDismissRequest = { askDisconnect = false },
+            containerColor = c.sheet,
+            title = { Text("Disconnect from $computer?") },
+            text = {
+                // Disconnect only drops the live link: the pairing stays, so Pherry reconnects by itself.
+                Text(
+                    if (autoBackupEnabled) {
+                        "Pherry reconnects to $computer the next time it opens or auto-backup runs. " +
+                            "To stop backups, turn off auto-backup."
+                    } else {
+                        "Pherry reconnects to $computer the next time it opens."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // After disconnecting, the sheet stays open on the pairing options.
+                        viewModel.onDisconnect()
+                        askDisconnect = false
+                    },
+                    // Nothing is removed, so the confirm prints in ink; red is kept for deletions.
+                    colors = ButtonDefaults.textButtonColors(contentColor = c.ink),
+                ) { Text("Disconnect") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { askDisconnect = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = c.ink),
+                ) { Text("Cancel") }
+            },
+        )
     }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .imePadding()
+            .verticalScroll(rememberScrollState())
             .padding(start = Spacing.screen, end = Spacing.screen, bottom = Spacing.xl),
-        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Drag handle visual affordance
-        Box(
-            modifier = Modifier
-                .size(width = 40.dp, height = 4.dp)
-                .clip(MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        Text(
+            text = "Your computer",
+            style = MaterialTheme.typography.headlineSmall,
+            color = c.ink,
+            modifier = Modifier.semantics { heading() },
         )
 
-        Spacer(Modifier.height(Spacing.lg))
-
-        // Compact status row
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            PulsingStatusDot(connectionState)
-            Spacer(Modifier.width(Spacing.sm))
-            Column {
-                Text(
-                    text = when (connectionState) {
-                        ConnectionState.CONNECTED -> "Connected"
-                        ConnectionState.CONNECTING -> "Connecting…"
-                        ConnectionState.DISCONNECTED -> "Not connected"
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                if (connectionState == ConnectionState.CONNECTED && serverName.isNotEmpty()) {
-                    Text(
-                        text = serverName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(Spacing.lg))
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                .padding(Spacing.lg),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.QrCodeScanner,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(MaterialTheme.shapes.small)
-                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f))
-                        .padding(8.dp),
-                )
-                Spacer(Modifier.width(Spacing.md))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Pair from desktop QR",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "Open Pherry Desktop and scan the dashboard code.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Spacer(Modifier.height(Spacing.md))
-            PrimaryButton(
-                onClick = {
-                    focusManager.clearFocus()
-                    launchQrScanner()
-                },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    Icons.Filled.QrCodeScanner,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(Spacing.sm))
-                Text(
-                    text = "Scan desktop QR",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
-
-        if (nearbyDesktops.isNotEmpty()) {
-            Spacer(Modifier.height(Spacing.md))
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Wifi,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(Modifier.width(Spacing.xs))
-                    Text(
-                        text = "Nearby desktops",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                Spacer(Modifier.height(Spacing.sm))
-                nearbyDesktops.forEach { desktop ->
-                    NearbyDesktopRow(
-                        desktop = desktop,
-                        onClick = {
-                            focusManager.clearFocus()
-                            viewModel.onDiscoveredSelected(desktop)
-                        },
-                    )
-                    Spacer(Modifier.height(Spacing.xs))
-                }
-            }
-        }
-
-        if (recentTargets.isNotEmpty()) {
-            Spacer(Modifier.height(Spacing.md))
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.History,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(Modifier.width(Spacing.xs))
-                    Text(
-                        text = "Recent desktops",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                Spacer(Modifier.height(Spacing.sm))
-                recentTargets.forEach { target ->
-                    AssistChip(
-                        onClick = { viewModel.onRecentTargetSelected(target) },
-                        label = { Text(target) },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Filled.Computer,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                            )
-                        },
-                        modifier = Modifier.padding(bottom = Spacing.xs),
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(Spacing.md))
-
-        // Manual fallback
-        OutlinedTextField(
-            value = ipAddress,
-            onValueChange = viewModel::onIpChanged,
-            label = { Text("Desktop address") },
-            placeholder = {
-                Text(
-                    "192.168.1.15:3210",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                )
-            },
-            leadingIcon = {
-                Icon(
-                    Icons.Filled.Link,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-            },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Uri,
-                imeAction = ImeAction.Done,
-            ),
-            keyboardActions = KeyboardActions(
-                onDone = {
-                    focusManager.clearFocus()
-                    viewModel.onConnect()
-                }
-            ),
-            isError = ipError != null,
-            supportingText = when {
-                ipError != null -> {
-                    { Text(ipError!!, color = MaterialTheme.colorScheme.error) }
-                }
-                connectionError != null -> {
-                    { Text(connectionError!!, color = MaterialTheme.colorScheme.error) }
-                }
-                else -> null
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-            ),
-            shape = MaterialTheme.shapes.medium,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        Spacer(Modifier.height(Spacing.md))
-
-        // Connect / Disconnect
         if (connectionState == ConnectionState.CONNECTED) {
-            TextButton(
-                onClick = {
-                    viewModel.onDisconnect()
-                    onDismiss()
-                },
+            Spacer(Modifier.height(Spacing.lg))
+            ConnectedBlock(
+                name = serverName.ifBlank { "Your computer" },
+                endpoint = endpoint,
+                onDisconnect = { askDisconnect = true },
+                onDone = onDismiss,
+            )
+            Spacer(Modifier.height(Spacing.lg))
+            // Picks up a rotated pairing code without dropping the link (or an upload in flight).
+            PrintButton(
+                text = "Scan the ticket again",
+                onClick = scanTicket,
+                style = PrintButtonStyle.Outline,
+                icon = Ph.Scan,
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Disconnect", color = MaterialTheme.colorScheme.error)
+            )
+            // With the pairing options open, they show the problem themselves.
+            val shownProblem = problem
+            if (shownProblem != null && !pairOther) {
+                Spacer(Modifier.height(Spacing.sm))
+                Notice(
+                    title = shownProblem,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            PairOtherToggle(expanded = pairOther, onToggle = { pairOther = !pairOther })
+            // Switching computers connects to the new one from here; no disconnect first.
+            // PairingOptions looks for computers on the Wi-Fi only while it is shown.
+            AnimatedVisibility(visible = pairOther) {
+                PairingOptions(viewModel = viewModel, modifier = Modifier.padding(top = Spacing.md))
             }
         } else {
-            PrimaryButton(
-                onClick = {
-                    focusManager.clearFocus()
-                    viewModel.onConnect()
-                },
-                enabled = connectionState != ConnectionState.CONNECTING,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    Icons.Filled.Bolt,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
+            Spacer(Modifier.height(Spacing.xs))
+            Text(
+                text = "Open Pherry Desktop on your computer and scan the pairing ticket it shows.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = c.ink2,
+            )
+            Spacer(Modifier.height(Spacing.lg))
+            if (connectionState == ConnectionState.CONNECTING) {
+                ConnectingLine(target = serverName.ifBlank { endpoint.ifBlank { "your computer" } })
+                Spacer(Modifier.height(Spacing.lg))
+            }
+            PairingOptions(viewModel = viewModel)
+            Spacer(Modifier.height(Spacing.xl))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                PhIcon(Ph.Wifi, contentDescription = null, tint = c.ink3, size = 18.dp)
                 Spacer(Modifier.width(Spacing.sm))
                 Text(
-                    text = if (connectionState == ConnectionState.CONNECTING) "Connecting…" else "Connect",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-        }
-
-        Spacer(Modifier.height(Spacing.lg))
-
-        // "Where to find it" hint
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(MaterialTheme.shapes.medium)
-                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.13f))
-                .padding(Spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Filled.Wifi,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
-                    .padding(8.dp),
-            )
-            Spacer(Modifier.width(Spacing.md))
-            Column {
-                Text(
-                    text = "Same network required",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "Open Pherry Desktop on your PC. The dashboard shows the QR code and the exact address to enter here.",
+                    text = "Phone and computer need to be on the same Wi-Fi.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        // Device diagram
-        Spacer(Modifier.height(Spacing.md))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Filled.Computer,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(26.dp),
-                )
-            }
-            HorizontalDivider(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = Spacing.sm),
-                thickness = 1.5.dp,
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(MaterialTheme.shapes.small)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    Icons.Filled.PhoneAndroid,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(26.dp),
+                    color = c.ink2,
                 )
             }
         }
     }
 }
 
+/** Quiet disclosure row: "Pair a different computer" with a caret that turns when open. */
 @Composable
-private fun NearbyDesktopRow(
-    desktop: DiscoveredDesktop,
-    onClick: () -> Unit,
-) {
+private fun PairOtherToggle(expanded: Boolean, onToggle: () -> Unit) {
+    val c = PherryTheme.colors
+    val caretTurn by animateFloatAsState(if (expanded) 180f else 0f, tween(200), label = "pair-other-caret")
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .clickable(onClick = onClick)
-            .padding(Spacing.md),
+            .heightIn(min = Spacing.touch)
+            .clip(PherryShape.button)
+            .clickable(role = Role.Button) { onToggle() }
+            .semantics { stateDescription = if (expanded) "Open" else "Closed" },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            Icons.Filled.Computer,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier
-                .size(36.dp)
-                .clip(MaterialTheme.shapes.small)
-                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.22f))
-                .padding(8.dp),
-        )
+        PhIcon(Ph.Desktop, contentDescription = null, tint = c.ink2, size = 20.dp)
         Spacer(Modifier.width(Spacing.md))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = desktop.name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = desktop.endpoint,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Icon(
-            Icons.Filled.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
+        Text(
+            text = "Pair a different computer",
+            style = MaterialTheme.typography.labelLarge,
+            color = c.ink,
+            modifier = Modifier.weight(1f),
         )
+        PhIcon(Ph.CaretDown, contentDescription = null, tint = c.ink2, size = 18.dp, modifier = Modifier.rotate(caretTurn))
     }
 }
 
+/** The paired computer as a raised print: green lamp, its name, its address, and what to do next. */
 @Composable
-private fun PulsingStatusDot(state: ConnectionState) {
-    val color by animateColorAsState(
-        targetValue = when (state) {
-            ConnectionState.CONNECTED -> MaterialTheme.colorScheme.tertiary
-            ConnectionState.CONNECTING -> MaterialTheme.colorScheme.secondary
-            ConnectionState.DISCONNECTED -> MaterialTheme.colorScheme.error
-        },
-        label = "dot_color",
-    )
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (state == ConnectionState.CONNECTING) 1.35f else 1f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "dot_scale",
-    )
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (state == ConnectionState.CONNECTING) 0.5f else 1f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "dot_alpha",
-    )
-    Box(
+private fun ConnectedBlock(
+    name: String,
+    endpoint: String,
+    onDisconnect: () -> Unit,
+    onDone: () -> Unit,
+) {
+    val c = PherryTheme.colors
+    Column(
         modifier = Modifier
-            .size(12.dp)
-            .scale(scale)
-            .alpha(alpha)
-            .clip(CircleShape)
-            .background(color),
-    )
+            .fillMaxWidth()
+            .clip(PherryShape.print)
+            .background(c.sheet)
+            .border(1.dp, c.rule, PherryShape.print)
+            .padding(Spacing.lg),
+    ) {
+        Row(
+            modifier = Modifier.semantics(mergeDescendants = true) {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = "Connected"
+            },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Lamp(LampState.On)
+            Spacer(Modifier.width(Spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = c.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (endpoint.isNotBlank()) {
+                    Text(
+                        text = endpoint,
+                        style = PherryTheme.text.mono,
+                        color = c.ink2,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Spacer(Modifier.width(Spacing.md))
+            PhIcon(Ph.Desktop, contentDescription = null, tint = c.ink3)
+        }
+        Spacer(Modifier.height(Spacing.lg))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            // Disconnect only drops the link and keeps the pairing: quiet ink, not safelight red.
+            PrintButton("Disconnect", onClick = onDisconnect, style = PrintButtonStyle.Quiet)
+            Spacer(Modifier.weight(1f))
+            PrintButton("Done", onClick = onDone)
+        }
+    }
 }

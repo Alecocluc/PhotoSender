@@ -197,7 +197,7 @@ export function renderQrCode(canvas, text) {
   canvas.height = size;
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = "#061225";
+  ctx.fillStyle = "#151412";
 
   modules.forEach((row, r) => {
     row.forEach((dark, c) => {

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Android 12+ system splash in dark theme: the film-P on an envelope-yellow disc over the darkroom. -->
+    <style name="Theme.Pherry" parent="Base.Theme.Pherry">
+        <item name="android:windowSplashScreenBackground">@color/pherry_darkroom</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/pherry_envelope</item>
+    </style>
+</resources>

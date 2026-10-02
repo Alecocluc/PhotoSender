@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -39,6 +40,21 @@ class ConnectViewModel @Inject constructor(
 
     val recentDesktopTargets: StateFlow<List<String>> = appPreferences.recentDesktopTargets
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Whether auto-backup is on: the disconnect confirmation says whether it will reconnect by itself. */
+    val autoBackupEnabled: StateFlow<Boolean> = appPreferences.autoBackupEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** The address the phone is linked to, or trying to reach, e.g. "192.168.1.42:3210". */
+    val connectedEndpoint: StateFlow<String> = connectionManager.connectedEndpoint
+
+    /**
+     * The one pairing problem to show: a bad address or a failed scan first, then a failed
+     * connection, reworded to say what to check.
+     */
+    val pairingProblem: StateFlow<String?> = combine(_ipError, connectionManager.connectionError) { ipError, connectionError ->
+        ipError ?: connectionError?.let(::describeConnectionError)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     init {
         viewModelScope.launch {
@@ -107,5 +123,12 @@ class ConnectViewModel @Inject constructor(
     fun onDisconnect() {
         connectionManager.disconnect()
     }
+
+    private fun describeConnectionError(message: String): String =
+        if (message.startsWith("Could not reach server")) {
+            "Couldn't reach Pherry Desktop. Check that it's open on your computer and that this phone is on the same Wi-Fi."
+        } else {
+            message
+        }
 
 }

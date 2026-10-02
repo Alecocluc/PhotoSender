@@ -1,14 +1,21 @@
 package com.appharbor.pherry.ui.home
 
-import android.widget.Toast
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,26 +25,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CloudDone
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.Computer
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.PermMedia
-import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,32 +37,59 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.appharbor.pherry.data.db.UploadRecord
 import com.appharbor.pherry.data.model.ConnectionState
-import com.appharbor.pherry.ui.components.GradientProgressBar
-import com.appharbor.pherry.ui.components.PrimaryButton
-import com.appharbor.pherry.ui.components.SectionCard
-import com.appharbor.pherry.ui.components.StatCard
+import com.appharbor.pherry.data.network.RememberedComputer
+import com.appharbor.pherry.data.upload.TransferState
+import com.appharbor.pherry.ui.components.DateStamp
+import com.appharbor.pherry.ui.components.Envelope
+import com.appharbor.pherry.ui.components.EnvelopeCheck
+import com.appharbor.pherry.ui.components.EnvelopeField
+import com.appharbor.pherry.ui.components.Fmt
+import com.appharbor.pherry.ui.components.Frame
+import com.appharbor.pherry.ui.components.FrameNumber
+import com.appharbor.pherry.ui.components.JobBar
+import com.appharbor.pherry.ui.components.Lamp
+import com.appharbor.pherry.ui.components.LampState
+import com.appharbor.pherry.ui.components.LocalSnackbarHost
+import com.appharbor.pherry.ui.components.Notice
+import com.appharbor.pherry.ui.components.Perforation
+import com.appharbor.pherry.ui.components.Ph
+import com.appharbor.pherry.ui.components.PhIcon
+import com.appharbor.pherry.ui.components.PrintButton
+import com.appharbor.pherry.ui.components.PrintButtonStyle
+import com.appharbor.pherry.ui.components.ScrollingStrip
+import com.appharbor.pherry.ui.components.SectionHeading
 import com.appharbor.pherry.ui.components.SyncConfirmDialog
+import com.appharbor.pherry.ui.gallery.rememberFrameModel
+import com.appharbor.pherry.ui.permissions.LocalNetworkAccess
 import com.appharbor.pherry.ui.permissions.hasMediaPermission
+import com.appharbor.pherry.ui.permissions.rememberPermissionAsk
+import com.appharbor.pherry.ui.permissions.rememberLocalNetworkAccess
 import com.appharbor.pherry.ui.permissions.requiredMediaPermissions
+import com.appharbor.pherry.ui.settings.SettingsViewModel
+import com.appharbor.pherry.ui.theme.PherryShape
+import com.appharbor.pherry.ui.theme.PherryTheme
 import com.appharbor.pherry.ui.theme.Spacing
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
@@ -81,6 +99,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onBeforeTransfer: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
+    settingsViewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val serverName by viewModel.serverName.collectAsStateWithLifecycle()
@@ -97,47 +116,76 @@ fun HomeScreen(
     val pendingSyncPlan by viewModel.pendingSyncPlan.collectAsStateWithLifecycle()
     val isPreparingSync by viewModel.isPreparingSync.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    val recentSent by viewModel.recentSent.collectAsStateWithLifecycle()
+    val remembered by viewModel.rememberedComputer.collectAsStateWithLifecycle()
+    val canDelete by viewModel.canDelete.collectAsStateWithLifecycle()
+    val isQueueing by viewModel.isQueueing.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val snackbar = LocalSnackbarHost.current
+    val scope = rememberCoroutineScope()
     var hasPermission by remember { mutableStateOf(hasMediaPermission(context)) }
+    var permissionBlocked by rememberSaveable { mutableStateOf(false) }
+    var askAutoBackup by remember { mutableStateOf(false) }
+    val network = rememberLocalNetworkAccess(onGranted = { viewModel.reconnect() })
+    val mediaAsk = rememberPermissionAsk(*requiredMediaPermissions())
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { results -> hasPermission = results.values.all { it } }
+    ) { results ->
+        hasPermission = results.values.all { it }
+        // Only a real "don't ask again" swaps Allow for app settings; a dismissed dialog asks again.
+        permissionBlocked = !hasPermission && mediaAsk.blockedAfterDenial()
+    }
 
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) hasPermission = hasMediaPermission(context)
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasPermission = hasMediaPermission(context)
+                if (hasPermission) permissionBlocked = false
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val connected = connectionState == ConnectionState.CONNECTED
+    // serverName clears when the link drops; the saved name still says which computer this is.
+    val computer = serverName.ifBlank { remembered?.name.orEmpty() }.ifBlank { "your computer" }
+
+    // "Back up N now" reports back once the files are queued; open Transfers from here so the
+    // NavController never runs inside the ViewModel's scope.
+    LaunchedEffect(viewModel) {
+        viewModel.queued.collect { onOpenTransfers() }
+    }
 
     // Refresh the unsent count on open, on connect, on permission grant, and when a transfer ends.
     // The ViewModel's staleness guard keeps this from re-scanning a large library on every recomposition.
     LaunchedEffect(connectionState, hasPermission, transferState.isTransferring) {
-        if (connected && hasPermission && !transferState.isTransferring) {
-            viewModel.refreshUnsent()
-        }
+        if (connected && hasPermission && !transferState.isTransferring) viewModel.refreshUnsent()
     }
 
-    // Toast the result of a sync's desktop-deletion step, then force a recompute so the tile reflects
-    // the now-matching state (the delete step doesn't go through transferState's refresh trigger).
+    // The desktop-deletion half of a sync reports back here; force a recount so the envelope matches.
+    // Clearing the summary changes this effect's key and cancels it, so the snackbar is shown from
+    // the screen's scope; otherwise it would be dismissed the frame after it appears.
     LaunchedEffect(syncState.summary) {
-        syncState.summary?.let { summary ->
-            Toast.makeText(context, summary, Toast.LENGTH_LONG).show()
-            viewModel.clearSyncSummary()
-            if (connected && hasPermission) viewModel.refreshUnsent(force = true)
-        }
+        val summary = syncState.summary ?: return@LaunchedEffect
+        viewModel.clearSyncSummary()
+        if (connected && hasPermission) viewModel.refreshUnsent(force = true)
+        scope.launch { snackbar.showSnackbar(summary) }
     }
 
     pendingSyncPlan?.let { plan ->
         SyncConfirmDialog(
             plan = plan,
+            computerName = computer,
             confirmDestructive = confirmDestructiveSync,
+            canDelete = canDelete,
+            onScanTicket = {
+                viewModel.cancelSync()
+                onConnectClick()
+            },
             onConfirm = {
                 if (!plan.isNoOp) onBeforeTransfer()
                 val hasUploads = viewModel.confirmSync()
@@ -147,429 +195,647 @@ fun HomeScreen(
         )
     }
 
-    val headerSubtitle = when {
-        connected && serverName.isNotBlank() -> "Linked with $serverName"
-        connected -> "Linked with your desktop"
-        connectionState == ConnectionState.CONNECTING -> "Connecting…"
-        else -> "Not connected"
+    if (askAutoBackup) {
+        AlertDialog(
+            onDismissRequest = { askAutoBackup = false },
+            containerColor = PherryTheme.colors.sheet,
+            title = { Text("Turn on auto-backup") },
+            text = {
+                Text(
+                    "Pherry will send new photos and videos to $computer by itself, about every 15 minutes " +
+                        "when the phone is on Wi-Fi. Start with everything already on this phone, or only what you take from now on?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        settingsViewModel.enableAutoBackup(includeExisting = true)
+                        askAutoBackup = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = PherryTheme.colors.ink),
+                ) { Text("Everything") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        settingsViewModel.enableAutoBackup(includeExisting = false)
+                        askAutoBackup = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = PherryTheme.colors.ink),
+                ) { Text("Only new") }
+            },
+        )
     }
+
+    val state = envelopeState(
+        networkGranted = network.granted,
+        connectionState = connectionState,
+        remembered = remembered,
+        hasPermission = hasPermission,
+        transfer = transferState,
+        queuedCount = queuedCount,
+        unsent = unsent,
+    )
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = Spacing.screen),
-        verticalArrangement = Arrangement.spacedBy(Spacing.md),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = Spacing.screen, end = Spacing.screen, top = Spacing.sm, bottom = Spacing.xxl),
+        verticalArrangement = Arrangement.spacedBy(Spacing.lg),
     ) {
-        item {
-            Spacer(Modifier.height(Spacing.sm))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Home",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
+        item(key = "envelope") {
+            HomeEnvelope(
+                state = state,
+                network = network,
+                permissionBlocked = permissionBlocked,
+                computer = computer,
+                remembered = remembered,
+                canDelete = canDelete,
+                isQueueing = isQueueing,
+                completedCount = completedCount,
+                queuedCount = queuedCount,
+                unsent = unsent,
+                transfer = transferState,
+                lastBackupAt = lastBackupAt,
+                isPreparingSync = isPreparingSync,
+                autoBackupEnabled = autoBackupEnabled,
+                wifiOnly = wifiOnly,
+                requiresCharging = autoBackupRequiresCharging,
+                onConnect = onConnectClick,
+                onRetryConnect = viewModel::reconnect,
+                onAllowAccess = {
+                    mediaAsk.beforeLaunch()
+                    permissionLauncher.launch(requiredMediaPermissions())
+                },
+                onOpenAppSettings = {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
                     )
-                    Text(
-                        text = headerSubtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (connected && hasPermission) {
-                    IconButton(
-                        onClick = { viewModel.refreshUnsent(force = true) },
-                        enabled = !unsent.isLoading,
-                    ) {
-                        Icon(
-                            Icons.Filled.Refresh,
-                            contentDescription = "Re-check for new media",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(Spacing.xs))
-        }
-
-        // ── Adaptive primary action ────────────────────────────────────────────
-        item {
-            when {
-                !connected -> ActionHero(
-                    icon = Icons.Filled.CloudOff,
-                    iconTint = MaterialTheme.colorScheme.error,
-                    title = if (connectionState == ConnectionState.CONNECTING) "Connecting…" else "Desktop not connected",
-                    subtitle = "Pair with Pherry Desktop on your computer to start backing up.",
-                    actionLabel = if (connectionState == ConnectionState.CONNECTING) null else "Connect desktop",
-                    actionIcon = Icons.Filled.Computer,
-                    onAction = onConnectClick,
-                )
-
-                !hasPermission -> ActionHero(
-                    icon = Icons.Filled.PermMedia,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    title = "Allow media access",
-                    subtitle = "Pherry needs permission to read the photos and videos you back up.",
-                    actionLabel = "Allow access",
-                    actionIcon = Icons.Filled.PermMedia,
-                    onAction = { permissionLauncher.launch(requiredMediaPermissions()) },
-                )
-
-                transferState.isTransferring -> LiveProgressCard(
-                    progressPercent = transferState.progressPercent,
-                    completedFiles = transferState.completedFiles,
-                    totalFiles = transferState.totalFiles,
-                    transferredBytes = transferState.transferredBytes,
-                    totalBytes = transferState.totalBytes,
-                    speedBytesPerSec = transferState.currentSpeedBytesPerSec,
-                    etaSeconds = transferState.estimatedSecondsRemaining,
-                    onView = onOpenTransfers,
-                    formatBytes = viewModel::formatBytes,
-                    formatSpeed = viewModel::formatSpeed,
-                    formatTime = viewModel::formatTime,
-                )
-
-                unsent.isLoading && !unsent.computed -> ActionHero(
-                    icon = Icons.Filled.CloudSync,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    title = "Checking your library…",
-                    subtitle = "Looking for photos that aren't on your desktop yet.",
-                    actionLabel = null,
-                    actionIcon = null,
-                    onAction = {},
-                    showSpinner = true,
-                )
-
-                // Sync mode: route through a full sync (uploads + desktop deletes) so files removed
-                // from the phone don't get silently treated as "all caught up". The confirm dialog
-                // gates the destructive half.
-                unsent.syncMode && (unsent.count > 0 || unsent.deleteCount > 0) -> ActionHero(
-                    icon = Icons.Filled.CloudSync,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    title = "Sync needed",
-                    subtitle = syncTileSubtitle(unsent, viewModel::formatBytes),
-                    actionLabel = if (isPreparingSync) "Checking…" else "Sync now",
-                    actionIcon = Icons.Filled.Sync,
-                    onAction = { viewModel.prepareSync() },
-                )
-
-                unsent.count > 0 -> ActionHero(
-                    icon = Icons.Filled.CloudUpload,
-                    iconTint = MaterialTheme.colorScheme.primary,
-                    title = "${unsent.count} item${if (unsent.count == 1) "" else "s"} to back up",
-                    subtitle = "${viewModel.formatBytes(unsent.bytes)} not yet on your desktop.",
-                    actionLabel = "Back up now",
-                    actionIcon = Icons.Filled.CloudUpload,
-                    onAction = {
-                        onBeforeTransfer()
-                        viewModel.backUpNew(onQueued = onOpenTransfers)
-                    },
-                )
-
-                else -> ActionHero(
-                    icon = Icons.Filled.CheckCircle,
-                    iconTint = MaterialTheme.colorScheme.tertiary,
-                    title = "You're all caught up",
-                    subtitle = "Every photo and video is backed up to your desktop.",
-                    actionLabel = null,
-                    actionIcon = null,
-                    onAction = {},
-                )
-            }
-        }
-
-        // ── Failed retry ───────────────────────────────────────────────────────
-        if (failedCount > 0 && !transferState.isTransferring) {
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(MaterialTheme.shapes.medium)
-                        .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f))
-                        .padding(Spacing.md),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Filled.ErrorOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(22.dp),
-                    )
-                    Spacer(Modifier.width(Spacing.md))
-                    Text(
-                        text = "$failedCount file${if (failedCount == 1) "" else "s"} failed to send.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    OutlinedButton(
-                        onClick = { viewModel.retryFailed() },
-                        shape = MaterialTheme.shapes.extraLarge,
-                    ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(Spacing.xs))
-                        Text("Retry", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-            }
-        }
-
-        // ── At-a-glance stats ────────────────────────────────────────────────────
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-            ) {
-                StatCard(
-                    icon = Icons.Filled.Schedule,
-                    label = "Queued",
-                    value = "$queuedCount",
-                    modifier = Modifier.weight(1f),
-                )
-                StatCard(
-                    icon = Icons.Filled.CloudDone,
-                    label = "Backed up",
-                    value = "$completedCount",
-                    modifier = Modifier.weight(1f),
-                    tint = MaterialTheme.colorScheme.tertiary,
-                )
-            }
-        }
-
-        // ── Auto-backup status ──────────────────────────────────────────────────
-        item {
-            SectionCard(title = "Auto-backup") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        if (autoBackupEnabled) Icons.Filled.CloudSync else Icons.Filled.CloudOff,
-                        contentDescription = null,
-                        tint = if (autoBackupEnabled) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp),
-                    )
-                    Spacer(Modifier.width(Spacing.md))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (autoBackupEnabled) "On" else "Off",
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                            text = if (autoBackupEnabled) {
-                                autoBackupConditions(wifiOnly, autoBackupRequiresCharging)
-                            } else {
-                                "Turn on to send new photos automatically."
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (!autoBackupEnabled) {
-                        TextButton(onClick = onOpenSettings) { Text("Settings") }
-                    }
-                }
-                Spacer(Modifier.height(Spacing.sm))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Filled.Bolt,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Spacer(Modifier.width(Spacing.xs))
-                    Text(
-                        text = "Last backup · ${formatRelativeTime(lastBackupAt)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
-        // ── Browse library ───────────────────────────────────────────────────────
-        item {
-            OutlinedButton(
-                onClick = onOpenLibrary,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.medium,
-            ) {
-                Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(Spacing.sm))
-                Text("Browse library", fontWeight = FontWeight.Medium)
-                Spacer(Modifier.width(Spacing.xs))
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-            }
-        }
-
-        item { Spacer(Modifier.height(Spacing.xxl)) }
-    }
-}
-
-@Composable
-private fun ActionHero(
-    icon: ImageVector,
-    iconTint: Color,
-    title: String,
-    subtitle: String,
-    actionLabel: String?,
-    actionIcon: ImageVector?,
-    onAction: () -> Unit,
-    showSpinner: Boolean = false,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(Spacing.lg),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(MaterialTheme.shapes.medium)
-                    .background(iconTint.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (showSpinner) {
-                    CircularProgressIndicator(
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.size(22.dp),
-                        color = iconTint,
-                    )
-                } else {
-                    Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(26.dp))
-                }
-            }
-            Spacer(Modifier.width(Spacing.md))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        if (actionLabel != null) {
-            Spacer(Modifier.height(Spacing.lg))
-            PrimaryButton(onClick = onAction, modifier = Modifier.fillMaxWidth()) {
-                if (actionIcon != null) {
-                    Icon(actionIcon, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(Spacing.sm))
-                }
-                Text(actionLabel, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            }
-        }
-    }
-}
-
-@Composable
-private fun LiveProgressCard(
-    progressPercent: Float,
-    completedFiles: Int,
-    totalFiles: Int,
-    transferredBytes: Long,
-    totalBytes: Long,
-    speedBytesPerSec: Long,
-    etaSeconds: Long,
-    onView: () -> Unit,
-    formatBytes: (Long) -> String,
-    formatSpeed: (Long) -> String,
-    formatTime: (Long) -> String,
-) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = progressPercent,
-        animationSpec = tween(300),
-        label = "home_progress",
-    )
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.large)
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(Spacing.lg),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            Column {
-                Text(
-                    text = "Backing up…",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = "$completedFiles / $totalFiles files",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                text = "${(animatedProgress * 100).toInt()}%",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
+                },
+                onBackUp = {
+                    onBeforeTransfer()
+                    viewModel.backUpNew()
+                },
+                onSync = { viewModel.prepareSync() },
+                onRefresh = { viewModel.refreshUnsent(force = true) },
+                onViewTransfer = onOpenTransfers,
+                onStop = {
+                    viewModel.stopTransfer()
+                    scope.launch { snackbar.showSnackbar("Stopped. The rest stay queued until you resume.") }
+                },
+                onResume = {
+                    onBeforeTransfer()
+                    viewModel.resumeQueued()
+                    onOpenTransfers()
+                },
+                onAutoBackupChange = { on -> if (on) askAutoBackup = true else settingsViewModel.disableAutoBackup() },
+                onWifiOnlyChange = settingsViewModel::onWifiOnlyTransferChanged,
+                onChargingChange = settingsViewModel::onAutoBackupChargingChanged,
             )
         }
-        Spacer(Modifier.height(Spacing.sm))
-        GradientProgressBar(progress = animatedProgress, height = 6.dp, animated = true)
-        Spacer(Modifier.height(Spacing.sm))
-        Text(
-            text = buildString {
-                append("${formatBytes(transferredBytes)} / ${formatBytes(totalBytes)}")
-                if (speedBytesPerSec > 0) append(" · ${formatSpeed(speedBytesPerSec)}")
-                val eta = formatTime(etaSeconds)
-                if (eta.isNotEmpty()) append(" · $eta")
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(Spacing.md))
-        OutlinedButton(
-            onClick = onView,
-            modifier = Modifier.align(Alignment.End),
-            shape = MaterialTheme.shapes.extraLarge,
-        ) {
-            Text("View transfers", style = MaterialTheme.typography.labelMedium)
+
+        // First steps only for a phone that has never paired; a saved computer that isn't
+        // answering gets its own envelope instead.
+        if ((state == HomeState.NoComputer || state == HomeState.NoNetwork) && remembered == null) {
+            item(key = "how") { HowItWorks() }
+        }
+
+        if (failedCount > 0 && !transferState.isTransferring) {
+            item(key = "failed") {
+                // A dropped link never fails a file (it goes back to the queue): FAILED means the
+                // computer answered with an error, or this phone couldn't read the file.
+                Notice(
+                    title = "${Fmt.plural(failedCount, "file")} didn't reach $computer",
+                    detail = "${computer.replaceFirstChar { it.uppercase() }} couldn't save them, or this phone couldn't read them. Nothing was lost on this phone.",
+                    actionLabel = "Retry ${Fmt.count(failedCount)}",
+                    onAction = {
+                        onBeforeTransfer()
+                        viewModel.retryFailed()
+                        onOpenTransfers()
+                    },
+                )
+            }
+        }
+
+        if (recentSent.isNotEmpty()) {
+            item(key = "recent-head") {
+                SectionHeading(
+                    text = "Recently sent",
+                    trailing = {
+                        TextButton(onClick = onOpenTransfers) {
+                            Text("History", style = MaterialTheme.typography.labelLarge, color = PherryTheme.colors.ink)
+                        }
+                    },
+                )
+            }
+            item(key = "recent-strip") {
+                RecentStrip(records = recentSent, total = completedCount)
+            }
+        }
+
+        if (state == HomeState.Idle || state == HomeState.Backlog) {
+            item(key = "library") {
+                TextButton(onClick = onOpenLibrary, modifier = Modifier.fillMaxWidth()) {
+                    PhIcon(Ph.Images, contentDescription = null, size = 18.dp, tint = PherryTheme.colors.ink)
+                    Spacer(Modifier.width(Spacing.sm))
+                    Text("Pick photos to send from the Library", style = MaterialTheme.typography.labelLarge, color = PherryTheme.colors.ink)
+                }
+            }
         }
     }
 }
 
-private fun syncTileSubtitle(unsent: UnsentState, formatBytes: (Long) -> String): String = when {
-    unsent.count > 0 && unsent.deleteCount > 0 ->
-        "${unsent.count} to upload · ${unsent.deleteCount} to remove from your desktop."
-    unsent.deleteCount > 0 -> {
-        val n = unsent.deleteCount
-        "$n item${if (n == 1) "" else "s"} removed from this phone — sync to delete " +
-            "${if (n == 1) "it" else "them"} from your desktop."
-    }
-    else -> "${formatBytes(unsent.bytes)} to upload to your desktop."
+// ── Envelope ─────────────────────────────────────────────────────────────────
+
+/** [Unreachable]: a saved computer that isn't answering (or the user disconnected); still paired. */
+enum class HomeState { NoNetwork, NoComputer, Unreachable, Connecting, NoAccess, Counting, Sending, Paused, Backlog, Idle }
+
+private fun envelopeState(
+    networkGranted: Boolean,
+    connectionState: ConnectionState,
+    remembered: RememberedComputer?,
+    hasPermission: Boolean,
+    transfer: TransferState,
+    queuedCount: Int,
+    unsent: UnsentState,
+): HomeState = when {
+    transfer.isTransferring -> HomeState.Sending
+    !networkGranted -> HomeState.NoNetwork
+    connectionState == ConnectionState.CONNECTING -> HomeState.Connecting
+    connectionState != ConnectionState.CONNECTED && remembered != null -> HomeState.Unreachable
+    connectionState != ConnectionState.CONNECTED -> HomeState.NoComputer
+    !hasPermission -> HomeState.NoAccess
+    queuedCount > 0 -> HomeState.Paused
+    unsent.isLoading && !unsent.computed -> HomeState.Counting
+    unsent.count > 0 || unsent.deleteCount > 0 -> HomeState.Backlog
+    unsent.computed -> HomeState.Idle
+    else -> HomeState.Counting
 }
 
-private fun autoBackupConditions(wifiOnly: Boolean, requiresCharging: Boolean): String {
-    val parts = buildList {
-        add(if (wifiOnly) "over Wi-Fi" else "on any network")
-        if (requiresCharging) add("while charging")
+@Composable
+private fun HomeEnvelope(
+    state: HomeState,
+    network: LocalNetworkAccess,
+    permissionBlocked: Boolean,
+    computer: String,
+    remembered: RememberedComputer?,
+    canDelete: Boolean,
+    isQueueing: Boolean,
+    completedCount: Int,
+    queuedCount: Int,
+    unsent: UnsentState,
+    transfer: TransferState,
+    lastBackupAt: Long,
+    isPreparingSync: Boolean,
+    autoBackupEnabled: Boolean,
+    wifiOnly: Boolean,
+    requiresCharging: Boolean,
+    onConnect: () -> Unit,
+    onRetryConnect: () -> Unit,
+    onAllowAccess: () -> Unit,
+    onOpenAppSettings: () -> Unit,
+    onBackUp: () -> Unit,
+    onSync: () -> Unit,
+    onRefresh: () -> Unit,
+    onViewTransfer: () -> Unit,
+    onStop: () -> Unit,
+    onResume: () -> Unit,
+    onAutoBackupChange: (Boolean) -> Unit,
+    onWifiOnlyChange: (Boolean) -> Unit,
+    onChargingChange: (Boolean) -> Unit,
+) {
+    val c = PherryTheme.colors
+    val byUser = remembered?.disconnectedByUser == true
+    // One short sentence per state for TalkBack. It lives on its own leaf above the content, a node that
+    // stays put across states, so each change is announced once; the progress numbers below never are.
+    val announcement = when (state) {
+        HomeState.NoNetwork -> if (network.blocked) "Wi-Fi access is off" else "Pherry needs Wi-Fi access"
+        HomeState.NoComputer -> "Pair a computer to start"
+        HomeState.Unreachable -> if (byUser) "Disconnected from $computer" else "Can't reach $computer"
+        HomeState.Connecting -> "Connecting to $computer"
+        HomeState.NoAccess -> if (permissionBlocked) "Photo access is off" else "Allow photo access"
+        HomeState.Counting -> "Checking your library"
+        HomeState.Sending -> "Sending to $computer"
+        HomeState.Paused -> "Sending paused"
+        HomeState.Backlog -> if (unsent.count > 0) {
+            "${Fmt.count(unsent.count)} new to back up to $computer"
+        } else {
+            "${Fmt.count(unsent.deleteCount)} to sync with $computer"
+        }
+        HomeState.Idle -> "Everything is on $computer"
     }
-    return "Runs " + parts.joinToString(" ") + " · checks every 15 min"
+    Envelope {
+        // The announcement's leaf: no caption, nothing drawn. A thin full-width strip that never moves or
+        // resizes; the swapped-out content below can't carry it, and a container would re-announce on
+        // every relayout of the numbers inside it.
+        Spacer(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .semantics {
+                    contentDescription = announcement
+                    liveRegion = LiveRegionMode.Polite
+                },
+        )
+
+        Box(Modifier.fillMaxWidth()) {
+            AnimatedContent(
+                targetState = state,
+                transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
+                label = "envelope",
+            ) { s ->
+                val link = linkLamp(s)
+                Column(Modifier.fillMaxWidth()) {
+                    when (s) {
+                        HomeState.NoNetwork -> if (network.blocked) {
+                            EnvelopeMessage(
+                                title = "Wi-Fi access is off",
+                                body = "Android won't ask again. Open Pherry's settings, choose Permissions, then Nearby devices, and allow it.",
+                                lamp = link,
+                            ) {
+                                PrintButton("Open app settings", onClick = network::openSettings, icon = Ph.Gear, onEnvelope = true, modifier = Modifier.fillMaxWidth())
+                            }
+                        } else {
+                            EnvelopeMessage(
+                                title = "Let Pherry use your Wi-Fi",
+                                body = "Android asks before an app talks to other devices on your Wi-Fi. Pherry needs it to reach Pherry Desktop, and talks to nothing else.",
+                                lamp = link,
+                            ) {
+                                PrintButton("Allow", onClick = network::request, icon = Ph.Wifi, onEnvelope = true, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+
+                        HomeState.NoComputer -> EnvelopeMessage(
+                            title = "Pair a computer to start",
+                            body = "Pherry sends your photos and videos to Pherry Desktop on your own computer, over your Wi-Fi. No account, no cloud.",
+                            lamp = link,
+                        ) {
+                            PrintButton("Pair a computer", onClick = onConnect, icon = Ph.Desktop, onEnvelope = true, modifier = Modifier.fillMaxWidth())
+                        }
+
+                        HomeState.Unreachable -> EnvelopeMessage(
+                            title = if (byUser) "Disconnected from $computer" else "Can't reach $computer",
+                            body = if (byUser) {
+                                "Pherry reconnects the next time it opens. Connect now to keep backing up."
+                            } else {
+                                "Make sure Pherry Desktop is open on it and both are on the same Wi-Fi."
+                            },
+                            lamp = link,
+                        ) {
+                            PrintButton(
+                                if (byUser) "Connect" else "Try again",
+                                onClick = onRetryConnect,
+                                icon = Ph.Refresh,
+                                onEnvelope = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(Spacing.sm))
+                            PrintButton("Pair another computer", onClick = onConnect, style = PrintButtonStyle.Outline, onEnvelope = true, modifier = Modifier.fillMaxWidth())
+                        }
+
+                        HomeState.Connecting -> EnvelopeMessage(
+                            title = "Connecting…",
+                            body = "Make sure Pherry Desktop is open on ${computer} and both are on the same Wi-Fi.",
+                            lamp = link,
+                        ) {
+                            PrintButton("Choose another computer", onClick = onConnect, style = PrintButtonStyle.Outline, onEnvelope = true, modifier = Modifier.fillMaxWidth())
+                        }
+
+                        HomeState.NoAccess -> if (permissionBlocked) {
+                            EnvelopeMessage(
+                                title = "Photo access is off",
+                                body = "Android won't ask again. Open Pherry's settings, choose Permissions, then Photos and videos, and allow access.",
+                            ) {
+                                PrintButton("Open app settings", onClick = onOpenAppSettings, icon = Ph.Gear, onEnvelope = true, modifier = Modifier.fillMaxWidth())
+                            }
+                        } else {
+                            EnvelopeMessage(
+                                title = "Allow photo access",
+                                body = "Pherry reads the photos and videos on this phone so it can back them up. They only travel to $computer.",
+                            ) {
+                                PrintButton("Allow access", onClick = onAllowAccess, icon = Ph.Image, onEnvelope = true, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+
+                        HomeState.Counting -> {
+                            Fields(library = null, backedUp = backedUp(unsent, completedCount), computer = computer, link = link)
+                            Spacer(Modifier.height(Spacing.lg))
+                            // The link is live (TO stays green); this lamp blinks for the scan.
+                            EnvelopeMessage(title = "Checking your library…", body = "Looking for photos that aren't on $computer yet.", lamp = LampState.Busy)
+                        }
+
+                        HomeState.Sending -> SendingBody(transfer = transfer, computer = computer, onView = onViewTransfer, onStop = onStop)
+
+                        HomeState.Paused -> {
+                            Fields(
+                                library = unsent.libraryCount.takeIf { unsent.computed },
+                                backedUp = backedUp(unsent, completedCount, pending = queuedCount),
+                                computer = computer,
+                                link = link,
+                            )
+                            BigCount(value = queuedCount, caption = "${if (queuedCount == 1) "file is" else "files are"} queued, waiting to send")
+                            Spacer(Modifier.height(Spacing.lg))
+                            PrintButton("Resume sending", onClick = onResume, icon = Ph.Play, onEnvelope = true, modifier = Modifier.fillMaxWidth())
+                        }
+
+                        HomeState.Backlog -> {
+                            Fields(library = unsent.libraryCount, backedUp = backedUp(unsent, completedCount), computer = computer, link = link)
+                            if (unsent.count > 0) {
+                                BigCount(
+                                    value = unsent.count,
+                                    caption = "new ${if (unsent.count == 1) "photo or video" else "photos and videos"} · ${Fmt.bytes(unsent.bytes)}",
+                                )
+                            }
+                            if (unsent.syncMode && unsent.deleteCount > 0) {
+                                Spacer(Modifier.height(Spacing.md))
+                                DeleteLine(count = unsent.deleteCount, computer = computer, canDelete = canDelete)
+                            }
+                            Spacer(Modifier.height(Spacing.lg))
+                            if (unsent.syncMode) {
+                                PrintButton(
+                                    text = if (isPreparingSync) "Checking…" else "Sync now",
+                                    onClick = onSync,
+                                    enabled = !isPreparingSync,
+                                    icon = Ph.Refresh,
+                                    onEnvelope = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            } else {
+                                PrintButton(
+                                    text = if (isQueueing) "Preparing…" else "Back up ${Fmt.count(unsent.count)} now",
+                                    onClick = onBackUp,
+                                    enabled = !isQueueing,
+                                    icon = Ph.Upload,
+                                    onEnvelope = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+
+                        HomeState.Idle -> {
+                            Fields(library = unsent.libraryCount, backedUp = backedUp(unsent, completedCount), computer = computer, link = link)
+                            Spacer(Modifier.height(Spacing.lg))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                PhIcon(Ph.SealCheck, contentDescription = null, tint = c.onEnvelope, size = 34.dp)
+                                Spacer(Modifier.width(Spacing.md))
+                                Text(
+                                    "Everything is on $computer",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = c.onEnvelope,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Check again by hand: top end, level with the form's first row. Kept outside the swapped
+            // content so TalkBack focus stays on it when Idle and Backlog trade places.
+            if (state == HomeState.Idle || state == HomeState.Backlog) {
+                IconButton(onClick = onRefresh, modifier = Modifier.align(Alignment.TopEnd).size(RefreshButtonSize)) {
+                    PhIcon(Ph.Refresh, contentDescription = "Check for new photos", tint = c.onEnvelope, size = 20.dp)
+                }
+            }
+        }
+
+        // The order form: how Pherry works by itself. Only once there's a computer to send to.
+        if (state !in setOf(HomeState.NoNetwork, HomeState.NoComputer, HomeState.Unreachable, HomeState.Connecting, HomeState.NoAccess)) {
+            Spacer(Modifier.height(Spacing.lg))
+            Perforation(color = c.onEnvelope.copy(alpha = 0.3f))
+            Spacer(Modifier.height(Spacing.xs))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                EnvelopeCheck("Auto-backup", checked = autoBackupEnabled, onCheckedChange = onAutoBackupChange)
+                EnvelopeCheck("Wi-Fi only", checked = wifiOnly, onCheckedChange = onWifiOnlyChange)
+                EnvelopeCheck(
+                    "While charging",
+                    checked = requiresCharging,
+                    onCheckedChange = onChargingChange,
+                    enabled = autoBackupEnabled,
+                    disabledReason = "Turn on auto-backup to use this",
+                )
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                DateStamp(if (lastBackupAt > 0) "Last backup ${Fmt.stamp(lastBackupAt)}" else "No backup yet")
+            }
+        }
+    }
 }
 
-private fun formatRelativeTime(timestamp: Long): String {
-    if (timestamp <= 0) return "No backups yet"
-    val diff = System.currentTimeMillis() - timestamp
-    return when {
-        diff < 60_000L -> "Just now"
-        diff < 3_600_000L -> "${diff / 60_000L}m ago"
-        diff < 86_400_000L -> "${diff / 3_600_000L}h ago"
-        diff < 172_800_000L -> "Yesterday"
-        else -> SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()).format(Date(timestamp))
+/**
+ * The envelope's BACKED UP figure, measured against this phone: once a scan has run it is "on this
+ * phone minus not yet sent", so it can never read more than ON THIS PHONE (the ledger also counts files
+ * since deleted here). Before the first scan, the ledger's count is the best there is. [pending] is the
+ * queue: "Back up N now" zeroes the unsent count as it queues, so queued files must not read as sent.
+ */
+private fun backedUp(unsent: UnsentState, completedCount: Int, pending: Int = 0): Int =
+    if (unsent.computed) {
+        (unsent.libraryCount - maxOf(unsent.count, pending)).coerceAtLeast(0)
+    } else {
+        completedCount
+    }
+
+private val RefreshButtonSize = 40.dp
+
+/** The computer's lamp: blinking while connecting or sending, hollow with no link, green on a live one. */
+private fun linkLamp(state: HomeState): LampState = when (state) {
+    HomeState.Sending, HomeState.Connecting -> LampState.Busy
+    HomeState.NoComputer, HomeState.NoNetwork, HomeState.Unreachable -> LampState.Idle
+    else -> LampState.On
+}
+
+/**
+ * The envelope's printed form, first thing on it: what is on this phone, what is backed up, and the
+ * computer it goes TO, with its lamp. A long name wraps TO onto a line of its own rather than squeezing
+ * the counts.
+ */
+@Composable
+private fun Fields(library: Int?, backedUp: Int, computer: String, link: LampState) {
+    FlowRow(
+        // Room at the end for the refresh button (Idle, Backlog). Kept in every state, so the form
+        // doesn't reflow when the count lands.
+        modifier = Modifier.fillMaxWidth().padding(end = RefreshButtonSize + Spacing.xs),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.xl),
+        verticalArrangement = Arrangement.spacedBy(Spacing.md),
+    ) {
+        EnvelopeField("On this phone", library?.let(Fmt::count) ?: "…")
+        EnvelopeField("Backed up", Fmt.count(backedUp))
+        EnvelopeField("To", computer, lamp = link)
+    }
+}
+
+@Composable
+private fun BigCount(value: Int, caption: String) {
+    val c = PherryTheme.colors
+    Column(
+        Modifier
+            .padding(top = Spacing.lg)
+            .semantics(mergeDescendants = true) { contentDescription = "${Fmt.count(value)} $caption" },
+    ) {
+        Text(Fmt.count(value), style = MaterialTheme.typography.displayLarge, color = c.onEnvelope)
+        Text(caption, style = MaterialTheme.typography.bodyMedium, color = c.onEnvelope)
+    }
+}
+
+@Composable
+private fun DeleteLine(count: Int, computer: String, canDelete: Boolean) {
+    val c = PherryTheme.colors
+    Row(
+        Modifier
+            .clip(PherryShape.print)
+            .background(c.onEnvelope.copy(alpha = 0.08f))
+            .padding(horizontal = Spacing.md, vertical = Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (canDelete) {
+            Box(Modifier.size(18.dp).clip(PherryShape.frame).background(c.red), contentAlignment = Alignment.Center) {
+                PhIcon(Ph.XBold, contentDescription = null, tint = MaterialTheme.colorScheme.onError, size = 11.dp)
+            }
+        } else {
+            // Nothing will be deleted without the ticket, so no red mark.
+            PhIcon(Ph.Info, contentDescription = null, tint = c.onEnvelope, size = 18.dp)
+        }
+        Spacer(Modifier.width(Spacing.sm))
+        Text(
+            if (canDelete) {
+                "${Fmt.count(count)} no longer on this phone will also be deleted from $computer"
+            } else {
+                "${Fmt.count(count)} no longer on this phone. To delete them on $computer, scan its pairing ticket once."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = c.onEnvelope,
+        )
+    }
+}
+
+/** A titled message on the envelope. A [lamp] prints before the title, centred on its first line. */
+@Composable
+private fun EnvelopeMessage(
+    title: String,
+    body: String,
+    lamp: LampState? = null,
+    actions: (@Composable () -> Unit)? = null,
+) {
+    val c = PherryTheme.colors
+    val titleStyle = MaterialTheme.typography.headlineMedium
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.Top) {
+            if (lamp != null) {
+                // A box one title line tall, so a name that wraps keeps the lamp beside its first line.
+                val firstLine = with(LocalDensity.current) { titleStyle.lineHeight.toDp() }
+                Box(Modifier.height(firstLine), contentAlignment = Alignment.Center) {
+                    Lamp(lamp, onEnvelope = true, modifier = Modifier.size(14.dp))
+                }
+                Spacer(Modifier.width(Spacing.md))
+            }
+            Text(title, style = titleStyle, color = c.onEnvelope, modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(Spacing.sm))
+        Text(body, style = MaterialTheme.typography.bodyMedium, color = c.onEnvelope)
+        if (actions != null) {
+            Spacer(Modifier.height(Spacing.lg))
+            actions()
+        }
+    }
+}
+
+@Composable
+private fun SendingBody(transfer: TransferState, computer: String, onView: () -> Unit, onStop: () -> Unit) {
+    val c = PherryTheme.colors
+    val progress by animateFloatAsState(transfer.progressPercent.coerceIn(0f, 1f), tween(300), label = "home-progress")
+    val done = transfer.completedFiles
+    val total = transfer.totalFiles
+    Column(Modifier.fillMaxWidth()) {
+        // The same TO field as the form, lamp blinking while the job runs.
+        EnvelopeField("To", computer, lamp = LampState.Busy)
+        Spacer(Modifier.height(Spacing.lg))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(Fmt.count(done), style = MaterialTheme.typography.displayLarge, color = c.onEnvelope)
+            Text(
+                " / ${if (total > 0) Fmt.count(total) else "…"}",
+                style = MaterialTheme.typography.headlineMedium,
+                color = c.onEnvelope2,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "${(progress * 100).toInt()}%",
+                style = MaterialTheme.typography.headlineMedium,
+                color = c.onEnvelope,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+        }
+        Spacer(Modifier.height(Spacing.md))
+        JobBar(progress)
+        Spacer(Modifier.height(Spacing.sm))
+        Text(
+            text = buildList {
+                if (transfer.totalBytes > 0) add("${Fmt.bytes(transfer.transferredBytes)} of ${Fmt.bytes(transfer.totalBytes)}")
+                if (transfer.currentSpeedBytesPerSec > 0) add(Fmt.speed(transfer.currentSpeedBytesPerSec))
+                Fmt.remaining(transfer.estimatedSecondsRemaining).takeIf { it.isNotEmpty() }?.let(::add)
+                if (transfer.skippedFiles > 0) add("${Fmt.count(transfer.skippedFiles)} already there")
+            }.joinToString(" · ").uppercase(),
+            style = PherryTheme.text.monoCaps,
+            color = c.onEnvelope2,
+        )
+        Spacer(Modifier.height(Spacing.lg))
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            PrintButton("See transfer", onClick = onView, onEnvelope = true, modifier = Modifier.weight(1f))
+            PrintButton("Stop", onClick = onStop, style = PrintButtonStyle.Outline, icon = Ph.Stop, onEnvelope = true)
+        }
+    }
+}
+
+// ── First steps ──────────────────────────────────────────────────────────────
+
+/** Three numbered steps for someone who skipped pairing: what to install, what to scan, what happens. */
+@Composable
+private fun HowItWorks() {
+    val c = PherryTheme.colors
+    Column(Modifier.fillMaxWidth()) {
+        SectionHeading("How it works")
+        listOf(
+            "Install Pherry Desktop on your computer and open it.",
+            "It shows a pairing ticket with a QR code. Tap Pair a computer here and scan it.",
+            "Back up everything once, then only what's new. Files go straight to a folder on your computer.",
+        ).forEachIndexed { i, step ->
+            Row(Modifier.fillMaxWidth().padding(vertical = Spacing.md), verticalAlignment = Alignment.Top) {
+                Box(
+                    Modifier.size(28.dp).clip(PherryShape.frame).background(c.film),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("${i + 1}", style = PherryTheme.text.edge, color = c.edge)
+                }
+                Spacer(Modifier.width(Spacing.md))
+                Text(step, style = MaterialTheme.typography.bodyMedium, color = c.ink, modifier = Modifier.weight(1f).padding(top = 4.dp))
+            }
+            if (i < 2) com.appharbor.pherry.ui.components.Hairline()
+        }
+    }
+}
+
+// ── Recently sent ────────────────────────────────────────────────────────────
+
+@Composable
+private fun RecentStrip(records: List<UploadRecord>, total: Int) {
+    ScrollingStrip(
+        count = records.size,
+        frameWidth = 128.dp,
+        edgeTop = { i -> FrameNumber(number = (total - i).coerceAtLeast(1), trailing = Fmt.clock(records[i].uploadedAt)) },
+    ) { i ->
+        val r = records[i]
+        val isVideo = Fmt.isVideoName(r.fileName)
+        // Videos need the MediaStore thumbnail: the image loader can't decode a video stream.
+        val model = r.contentUri.takeIf { it.isNotBlank() }?.let { rememberFrameModel(Uri.parse(it), isVideo) }
+        Frame(
+            model = model,
+            contentDescription = "${r.fileName}, ${Fmt.bytes(r.fileSize)}, sent ${Fmt.ago(r.uploadedAt)}",
+            aspectRatio = 4f / 3f,
+            isVideo = isVideo,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }

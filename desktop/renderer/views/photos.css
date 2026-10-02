@@ -1,0 +1,36 @@
+/* Photos: everything received, as contact sheets grouped by day under sticky guide words. */
+.photos { min-width: 0; }
+.photos-days { display: grid; gap: 30px; }
+
+/* The day's name sits in the guide line itself; the guide's mono caps carry it. */
+.photos-day-name { margin: 0; font: inherit; letter-spacing: inherit; }
+.photos-day .guide > span { white-space: nowrap; }
+.photos-day .sheet { --frame-min: 156px; }
+
+/* Loading: blank film while the ledger arrives. */
+.photos-loading { --frame-min: 156px; }
+.photos-loading .frame { cursor: default; }
+.photos-loading .shot {
+  background: var(--film-2);
+  animation: photos-film-load 1.4s var(--ease-std) infinite alternate;
+}
+@keyframes photos-film-load { from { opacity: 1; } to { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) {
+  .photos-loading .shot { animation: none; }
+}
+
+.photos .empty { border: 1px dashed var(--rule-strong); border-radius: var(--r); padding: 48px 24px; }
+.photos .empty p strong { color: var(--ink); font-weight: 700; }
+
+.photos-foot {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin-top: 28px; padding-top: 16px; border-top: 1px solid var(--rule);
+}
+.photos .empty + .photos-foot { border-top: 0; padding-top: 0; margin-top: 20px; justify-content: center; }
+.photos-hint { margin: 0 0 0 auto; color: var(--ink-3); font-size: 12.5px; }
+.photos-foot .btn[aria-busy="true"] { cursor: progress; }
+
+@media (max-width: 600px) {
+  .photos-day .sheet, .photos-loading { --frame-min: 120px; }
+  .photos-hint { margin-left: 0; }
+}

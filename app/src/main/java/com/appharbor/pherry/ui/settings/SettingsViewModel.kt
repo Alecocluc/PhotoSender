@@ -2,6 +2,9 @@ package com.appharbor.pherry.ui.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.appharbor.pherry.data.model.ConnectionState
+import com.appharbor.pherry.data.network.ConnectionManager
+import com.appharbor.pherry.data.network.RememberedComputer
 import com.appharbor.pherry.data.preferences.AppPreferences
 import com.appharbor.pherry.data.preferences.ThemeMode
 import com.appharbor.pherry.data.upload.BackupScheduler
@@ -18,7 +21,17 @@ import javax.inject.Inject
 class SettingsViewModel @Inject constructor(
     private val appPreferences: AppPreferences,
     private val backupScheduler: BackupScheduler,
+    private val connectionManager: ConnectionManager,
 ) : ViewModel() {
+
+    val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
+
+    val serverName: StateFlow<String> = connectionManager.serverName
+
+    val connectedEndpoint: StateFlow<String> = connectionManager.connectedEndpoint
+
+    /** The saved computer, or null when none is saved; lets Settings say "not answering", not "not paired". */
+    val rememberedComputer: StateFlow<RememberedComputer?> = connectionManager.rememberedComputer
 
     val themeMode: StateFlow<ThemeMode> = appPreferences.themeMode
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.SYSTEM)
@@ -117,4 +130,15 @@ class SettingsViewModel @Inject constructor(
             appPreferences.saveDefaultUploadMode(mode.name)
         }
     }
+
+    /**
+     * Drop the live link to the computer. The pairing is kept, so the next app start or auto-backup
+     * run reconnects by itself.
+     */
+    fun disconnect() {
+        connectionManager.disconnect()
+    }
+
+    /** Try the saved computer again (it may have been asleep, or the user disconnected). */
+    fun reconnect() = connectionManager.autoReconnect()
 }

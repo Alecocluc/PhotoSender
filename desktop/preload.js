@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("api", {
   getHistory: (options) => ipcRenderer.invoke("get-history", options),
   getLocalIPs: () => ipcRenderer.invoke("get-local-ips"),
   getSettings: () => ipcRenderer.invoke("get-settings"),
+  getHostInfo: () => ipcRenderer.invoke("get-host-info"),
+  getServerState: () => ipcRenderer.invoke("get-server-state"),
 
   // Mutations
   clearHistory: () => ipcRenderer.invoke("clear-history"),
@@ -35,5 +37,15 @@ contextBridge.exposeInMainWorld("api", {
     const handler = (_e, data) => cb(data);
     ipcRenderer.on("server-state", handler);
     return () => ipcRenderer.removeListener("server-state", handler);
+  },
+  onFilesRemoved: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on("files-removed", handler);
+    return () => ipcRenderer.removeListener("files-removed", handler);
+  },
+  onIpsChanged: (cb) => {
+    const handler = (_e, data) => cb(data);
+    ipcRenderer.on("ips-changed", handler);
+    return () => ipcRenderer.removeListener("ips-changed", handler);
   },
 });

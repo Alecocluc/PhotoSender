@@ -23,3 +23,8 @@ desktop/node_modules/
 desktop/dist/
 desktop/out/
 desktop/package-lock.json
+
+# Design review scratch (screenshots, browser automation logs)
+.impeccable/review/
+.playwright-mcp/
+.impeccable/questions/

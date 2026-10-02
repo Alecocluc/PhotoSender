@@ -57,7 +57,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.material.icons.extended)
 
     // Navigation
     implementation(libs.androidx.navigation.compose)
@@ -85,9 +84,6 @@ dependencies {
 
     // DataStore
     implementation(libs.datastore.preferences)
-
-    // Google Fonts
-    implementation(libs.ui.text.google.fonts)
 
     // QR / barcode scanner (uses Google Play Services — no CAMERA permission needed in app)
     implementation(libs.play.services.code.scanner)

@@ -2,11 +2,13 @@ package com.appharbor.pherry.ui.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.appharbor.pherry.data.db.UploadRecord
 import com.appharbor.pherry.data.db.UploadRecordDao
 import com.appharbor.pherry.data.media.MediaRepository
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.model.MediaFilter
 import com.appharbor.pherry.data.network.ConnectionManager
+import com.appharbor.pherry.data.network.RememberedComputer
 import com.appharbor.pherry.data.preferences.AppPreferences
 import com.appharbor.pherry.data.upload.SyncPlan
 import com.appharbor.pherry.data.upload.TransferState
@@ -14,12 +16,15 @@ import com.appharbor.pherry.data.upload.UploadManager
 import com.appharbor.pherry.ui.gallery.UploadMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -38,6 +43,8 @@ data class UnsentState(
     val deleteCount: Int = 0,
     /** The mode this snapshot was computed under, so the tile picks "Sync" vs "Back up" consistently. */
     val syncMode: Boolean = false,
+    /** Photos and videos on this phone at the time of the scan (the envelope's ON PHONE field). */
+    val libraryCount: Int = 0,
     val isLoading: Boolean = false,
     /** False until the first real scan completes, so the UI can tell "unknown" from "zero". */
     val computed: Boolean = false,
@@ -55,16 +62,23 @@ class HomeViewModel @Inject constructor(
     private val uploadManager: UploadManager,
     private val mediaRepository: MediaRepository,
     uploadRecordDao: UploadRecordDao,
-    connectionManager: ConnectionManager,
+    private val connectionManager: ConnectionManager,
     private val appPreferences: AppPreferences,
 ) : ViewModel() {
 
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val serverName: StateFlow<String> = connectionManager.serverName
 
+    /** The saved computer, or null when none is saved; tells "not answering" apart from "not paired". */
+    val rememberedComputer: StateFlow<RememberedComputer?> = connectionManager.rememberedComputer
+
+    /** Whether this link carries the pairing token, without which the desktop refuses Sync deletes. */
+    val canDelete: StateFlow<Boolean> = connectionManager.canDelete
+
+    // Seeded with the live value so the first frame shows the running job, not an empty one.
     val transferState: StateFlow<TransferState> = uploadManager.transferState
         .sample(250L)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TransferState())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), uploadManager.transferState.value)
 
     val completedCount: StateFlow<Int> = uploadRecordDao.getCompletedCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -77,6 +91,10 @@ class HomeViewModel @Inject constructor(
 
     val totalTransferredBytes: StateFlow<Long> = uploadRecordDao.getTotalTransferredBytes()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    /** The last frames that reached the computer, newest first (Home's film strip). */
+    val recentSent: StateFlow<List<UploadRecord>> = uploadRecordDao.getRecentCompleted(12)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val lastBackupAt: StateFlow<Long> = uploadRecordDao.getLastSyncTimestamp()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -105,6 +123,17 @@ class HomeViewModel @Inject constructor(
 
     private val _isPreparingSync = MutableStateFlow(false)
     val isPreparingSync: StateFlow<Boolean> = _isPreparingSync.asStateFlow()
+
+    /** True while "Back up N now" scans the library and queues it, so a second tap can't double-queue. */
+    private val _isQueueing = MutableStateFlow(false)
+    val isQueueing: StateFlow<Boolean> = _isQueueing.asStateFlow()
+
+    // One-shot "queued, open Transfers" events. The screen collects them, so the NavController
+    // never leaks into viewModelScope across a configuration change; with Home off screen the event
+    // is simply dropped rather than navigating later.
+    private val _queued = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val queued: SharedFlow<Unit> = _queued.asSharedFlow()
+    private var backUpJob: Job? = null
 
     private var unsentJob: Job? = null
     private var lastComputedAt = 0L
@@ -148,6 +177,7 @@ class HomeViewModel @Inject constructor(
                     bytes = plan.uploadBytes,
                     deleteCount = plan.deleteCount,
                     syncMode = true,
+                    libraryCount = liveItems.size,
                     isLoading = false,
                     computed = true,
                 )
@@ -158,6 +188,7 @@ class HomeViewModel @Inject constructor(
                     count = items.size,
                     bytes = items.sumOf { it.size },
                     syncMode = false,
+                    libraryCount = liveItems.size,
                     isLoading = false,
                     computed = true,
                 )
@@ -201,17 +232,32 @@ class HomeViewModel @Inject constructor(
      * Queue everything not yet on the desktop. Recomputes from a fresh scan so just-taken photos are
      * included, hands the set to the normal upload pipeline, then optimistically zeroes the count.
      */
-    fun backUpNew(onQueued: () -> Unit) {
-        viewModelScope.launch {
-            val items = uploadManager.filterUnsent(mediaRepository.loadAllMedia(MediaFilter.ALL))
-            if (items.isNotEmpty()) uploadManager.start(items)
-            lastComputedAt = System.currentTimeMillis()
-            _unsent.value = UnsentState(count = 0, bytes = 0, isLoading = false, computed = true)
-            onQueued()
+    fun backUpNew() {
+        if (backUpJob?.isActive == true) return
+        backUpJob = viewModelScope.launch {
+            _isQueueing.value = true
+            try {
+                val items = uploadManager.filterUnsent(mediaRepository.loadAllMedia(MediaFilter.ALL))
+                if (items.isNotEmpty()) uploadManager.start(items)
+                lastComputedAt = System.currentTimeMillis()
+                _unsent.update { it.copy(count = 0, bytes = 0, isLoading = false, computed = true) }
+                _queued.tryEmit(Unit)
+            } finally {
+                _isQueueing.value = false
+            }
         }
     }
 
     fun retryFailed() = uploadManager.retryFailed()
+
+    /** Stop the running transfer. Unsent files stay queued and resume when Pherry next starts. */
+    fun stopTransfer() = uploadManager.cancelTransfer()
+
+    /** Try the last computer again, e.g. right after Android grants local network access. */
+    fun reconnect() = connectionManager.autoReconnect()
+
+    /** Restart a queue that was stopped (or interrupted) without waiting for the next app start. */
+    fun resumeQueued() = uploadManager.resumeIfPending()
 
     fun formatBytes(bytes: Long): String = when {
         bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)

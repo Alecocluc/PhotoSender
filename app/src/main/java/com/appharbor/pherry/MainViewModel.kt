@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.network.ConnectionManager
+import com.appharbor.pherry.data.network.RememberedComputer
 import com.appharbor.pherry.data.preferences.AppPreferences
 import com.appharbor.pherry.data.preferences.ThemeMode
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -34,6 +35,9 @@ class MainViewModel @Inject constructor(
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
 
     val serverName: StateFlow<String> = connectionManager.serverName
+
+    /** The saved computer while it isn't answering (the top-bar chip says "offline", not "not paired"). */
+    val rememberedComputer: StateFlow<RememberedComputer?> = connectionManager.rememberedComputer
 
     // null = still loading from DataStore (avoids an onboarding flash for returning users)
     val onboardingCompleted: StateFlow<Boolean?> = appPreferences.onboardingCompleted

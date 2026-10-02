@@ -2,8 +2,8 @@ package com.appharbor.pherry.ui.transfer
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.appharbor.pherry.data.db.UploadRecord
 import com.appharbor.pherry.data.db.UploadRecordDao
+import com.appharbor.pherry.data.network.ConnectionManager
 import com.appharbor.pherry.data.upload.TransferState
 import com.appharbor.pherry.data.upload.UploadManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -16,44 +16,25 @@ import javax.inject.Inject
 @HiltViewModel
 class TransferViewModel @Inject constructor(
     private val uploadManager: UploadManager,
-    private val uploadRecordDao: UploadRecordDao,
+    uploadRecordDao: UploadRecordDao,
+    connectionManager: ConnectionManager,
 ) : ViewModel() {
 
-    // Throttle to 4 updates/sec so per-byte progress storms don't thrash the LazyColumn.
+    // Throttle to 4 updates/sec so per-byte progress storms don't thrash the list. Seeded with the
+    // live value so opening the screen mid-transfer never flashes the empty state.
     val transferState: StateFlow<TransferState> = uploadManager.transferState
         .sample(250L)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TransferState())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), uploadManager.transferState.value)
 
-    val recentBatch: StateFlow<List<UploadRecord>> = uploadRecordDao.getRecentCompleted(10)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val serverName: StateFlow<String> = connectionManager.serverName
 
-    fun cancelTransfer() {
-        uploadManager.cancelTransfer()
-    }
+    /** Files queued in the database (pending or mid-upload), including ones left by a stopped run. */
+    val queuedCount: StateFlow<Int> = uploadRecordDao.getQueuedCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    fun formatBytes(bytes: Long): String {
-        return when {
-            bytes >= 1_073_741_824 -> "%.1f GB".format(bytes / 1_073_741_824.0)
-            bytes >= 1_048_576 -> "%.1f MB".format(bytes / 1_048_576.0)
-            bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
-            else -> "$bytes B"
-        }
-    }
+    /** Stop the running transfer. Unsent files stay queued. */
+    fun cancelTransfer() = uploadManager.cancelTransfer()
 
-    fun formatSpeed(bytesPerSec: Long): String {
-        return when {
-            bytesPerSec >= 1_048_576 -> "%.1f MB/s".format(bytesPerSec / 1_048_576.0)
-            bytesPerSec >= 1024 -> "%.1f KB/s".format(bytesPerSec / 1024.0)
-            else -> "$bytesPerSec B/s"
-        }
-    }
-
-    fun formatTime(seconds: Long): String {
-        return when {
-            seconds >= 3600 -> "%dh %dm".format(seconds / 3600, (seconds % 3600) / 60)
-            seconds >= 60 -> "%dm %ds".format(seconds / 60, seconds % 60)
-            seconds > 0 -> "${seconds}s left"
-            else -> ""
-        }
-    }
+    /** Restart a queue that was stopped or interrupted. */
+    fun resumeQueued() = uploadManager.resumeIfPending()
 }

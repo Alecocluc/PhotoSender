@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
+import com.appharbor.pherry.data.db.UploadRecordDao
 import com.appharbor.pherry.data.model.MediaItem
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,7 @@ data class SharedItem(
 @Singleton
 class SharedMediaImporter @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val uploadRecordDao: UploadRecordDao,
 ) {
     private val resolver: ContentResolver = context.contentResolver
 
@@ -97,16 +99,28 @@ class SharedMediaImporter @Inject constructor(
     /**
      * Drop cached shares older than [maxAgeMs]. Files survive long enough to be uploaded (and to be
      * re-tried after a process restart); anything older has already been sent or abandoned. Called on
-     * launch so the cache can't grow without bound.
+     * launch so the cache can't grow without bound. A file still queued (a PENDING or UPLOADING
+     * record points at it) is kept whatever its age, so a long-paused queue never loses its source.
      */
-    fun pruneCache(maxAgeMs: Long = DEFAULT_MAX_AGE_MS) {
-        runCatching {
-            val cutoff = System.currentTimeMillis() - maxAgeMs
-            cacheDir().listFiles()?.forEach { file ->
-                if (file.isFile && file.lastModified() < cutoff) file.delete()
+    suspend fun pruneCache(maxAgeMs: Long = DEFAULT_MAX_AGE_MS) {
+        withContext(Dispatchers.IO) {
+            // If the queue can't be read, keep everything: a stale cache is cheaper than a lost share.
+            val queued = runCatching { queuedCachePaths() }.getOrNull() ?: return@withContext
+            runCatching {
+                val cutoff = System.currentTimeMillis() - maxAgeMs
+                cacheDir().listFiles()?.forEach { file ->
+                    if (file.isFile && file.lastModified() < cutoff && file.absolutePath !in queued) file.delete()
+                }
             }
         }
     }
+
+    /** Absolute paths of cached shares that a PENDING or UPLOADING record still needs. */
+    private suspend fun queuedCachePaths(): Set<String> =
+        uploadRecordDao.getPendingAndUploading().mapNotNullTo(HashSet()) { record ->
+            val uri = Uri.parse(record.contentUri)
+            if (uri.scheme == ContentResolver.SCHEME_FILE) uri.path?.let { File(it).absolutePath } else null
+        }
 
     private fun queryNameAndSize(uri: Uri): Pair<String?, Long> {
         return runCatching {

@@ -1,17 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 108 108" role="img" aria-label="Pherry">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="108" y2="108" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#13B5A6"/>
-      <stop offset="1" stop-color="#0B7E72"/>
-    </linearGradient>
-  </defs>
-  <rect width="108" height="108" rx="24" fill="url(#g)"/>
-  <!-- water / wave (the "ferry" crosses) -->
-  <path d="M32,75 C38,69 44,81 50,75 C56,69 62,81 68,75 C71,72 74,73 76,75"
-        fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".92"/>
-  <!-- forward chevrons (motion / send) -->
-  <path d="M41,33 L57,49 L41,65"
-        fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M57,33 L73,49 L57,65"
-        fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" stroke-opacity=".5"/>
+  <rect width="108" height="108" rx="24.00" fill="#FFC629"/>
+  <path fill="#151412" fill-rule="evenodd" transform="translate(4.120 7.560) scale(0.8600)" d="M30 21h33a23 23 0 0 1 0 46H53v20H30Z M57 32h7a2 2 0 0 1 2 2v20a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2V34a2 2 0 0 1 2-2Z M36.5 27h10a1.6 1.6 0 0 1 1.6 1.6v3.4a1.6 1.6 0 0 1-1.6 1.6h-10a1.6 1.6 0 0 1-1.6-1.6v-3.4a1.6 1.6 0 0 1 1.6-1.6Z M36.5 39h10a1.6 1.6 0 0 1 1.6 1.6v3.4a1.6 1.6 0 0 1-1.6 1.6h-10a1.6 1.6 0 0 1-1.6-1.6v-3.4a1.6 1.6 0 0 1 1.6-1.6Z M36.5 51h10a1.6 1.6 0 0 1 1.6 1.6v3.4a1.6 1.6 0 0 1-1.6 1.6h-10a1.6 1.6 0 0 1-1.6-1.6v-3.4a1.6 1.6 0 0 1 1.6-1.6Z M36.5 63h10a1.6 1.6 0 0 1 1.6 1.6v3.4a1.6 1.6 0 0 1-1.6 1.6h-10a1.6 1.6 0 0 1-1.6-1.6v-3.4a1.6 1.6 0 0 1 1.6-1.6Z M36.5 75h10a1.6 1.6 0 0 1 1.6 1.6v3.4a1.6 1.6 0 0 1-1.6 1.6h-10a1.6 1.6 0 0 1-1.6-1.6v-3.4a1.6 1.6 0 0 1 1.6-1.6Z"/>
 </svg>

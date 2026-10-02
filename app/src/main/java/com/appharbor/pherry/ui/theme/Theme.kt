@@ -11,155 +11,186 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
+// Material roles carry the print world: primary is ink (filled buttons print in ink), the primary
+// container is envelope yellow (the job), surfaces are paper and sheet.
 private val LightColorScheme = lightColorScheme(
-    primary = PrimaryLight,
-    onPrimary = OnPrimaryLight,
-    primaryContainer = PrimaryTintLight,
-    onPrimaryContainer = OnPrimaryContainerLight,
-    secondary = SecondaryLight,
-    onSecondary = OnSecondaryLight,
-    secondaryContainer = SecondaryContainerLight,
-    onSecondaryContainer = OnSecondaryContainerLight,
-    tertiary = TertiaryLight,
-    onTertiary = OnTertiaryLight,
-    tertiaryContainer = TertiaryContainerLight,
-    onTertiaryContainer = OnTertiaryContainerLight,
-    error = ErrorLight,
-    onError = OnErrorLight,
-    errorContainer = ErrorContainerLight,
-    onErrorContainer = OnErrorContainerLight,
-    surface = SurfaceLight,
-    onSurface = OnSurfaceLight,
-    surfaceDim = SurfaceDimLight,
-    surfaceBright = SurfaceBrightLight,
-    surfaceContainerLowest = SurfaceContainerLowestLight,
-    surfaceContainerLow = SurfaceContainerLowLight,
-    surfaceContainer = SurfaceContainerLight,
-    surfaceContainerHigh = SurfaceContainerHighLight,
-    surfaceContainerHighest = SurfaceContainerHighestLight,
-    onSurfaceVariant = OnSurfaceVariantLight,
-    outline = OutlineLight,
-    outlineVariant = OutlineVariantLight,
-    inverseSurface = InverseSurfaceLight,
-    inverseOnSurface = InverseOnSurfaceLight,
-    inversePrimary = InversePrimaryLight,
+    primary = InkLight,
+    onPrimary = PaperLight,
+    primaryContainer = EnvelopeYellow,
+    onPrimaryContainer = OnEnvelope,
+    inversePrimary = EnvelopeYellow,
+    secondary = Ink2Light,
+    onSecondary = SheetLight,
+    secondaryContainer = Well2Light,
+    onSecondaryContainer = InkLight,
+    tertiary = GreenLight,
+    onTertiary = SheetLight,
+    tertiaryContainer = Color(0xFFDDEFE3),
+    onTertiaryContainer = Color(0xFF0B3D20),
+    error = RedLight,
+    onError = SheetLight,
+    errorContainer = RedWashLight,
+    onErrorContainer = OnRedWashLight,
+    background = PaperLight,
+    onBackground = InkLight,
+    surface = PaperLight,
+    onSurface = InkLight,
+    surfaceVariant = WellLight,
+    onSurfaceVariant = Ink2Light,
+    surfaceTint = Color.Transparent,
+    surfaceBright = SheetLight,
+    surfaceDim = Well2Light,
+    surfaceContainerLowest = SheetLight,
+    surfaceContainerLow = Color(0xFFF0F0EC),
+    surfaceContainer = WellLight,
+    surfaceContainerHigh = Color(0xFFE4E4DE),
+    surfaceContainerHighest = Color(0xFFDDDDD6),
+    outline = RuleStrongLight,
+    outlineVariant = RuleLight,
+    inverseSurface = InkLight,
+    inverseOnSurface = PaperLight,
+    scrim = Color.Black,
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryDark,
-    onPrimary = OnPrimaryDark,
-    primaryContainer = PrimaryContainerDark,
-    onPrimaryContainer = OnPrimaryContainerDark,
-    secondary = SecondaryDark,
-    onSecondary = OnSecondaryDark,
-    secondaryContainer = SecondaryContainerDark,
-    onSecondaryContainer = OnSecondaryContainerDark,
-    tertiary = TertiaryDark,
-    onTertiary = OnTertiaryDark,
-    tertiaryContainer = TertiaryContainerDark,
-    onTertiaryContainer = OnTertiaryContainerDark,
-    error = ErrorDark,
-    onError = OnErrorDark,
-    errorContainer = ErrorContainerDark,
-    onErrorContainer = OnErrorContainerDark,
-    surface = SurfaceDark,
-    onSurface = OnSurfaceDark,
-    surfaceDim = SurfaceDimDark,
-    surfaceBright = SurfaceBrightDark,
-    surfaceContainerLowest = SurfaceContainerLowestDark,
-    surfaceContainerLow = SurfaceContainerLowDark,
-    surfaceContainer = SurfaceContainerDark,
-    surfaceContainerHigh = SurfaceContainerHighDark,
-    surfaceContainerHighest = SurfaceContainerHighestDark,
-    onSurfaceVariant = OnSurfaceVariantDark,
-    outline = OutlineDark,
-    outlineVariant = OutlineVariantDark,
-    inverseSurface = InverseSurfaceDark,
-    inverseOnSurface = InverseOnSurfaceDark,
-    inversePrimary = InversePrimaryDark,
+    primary = InkDark,
+    onPrimary = PaperDark,
+    primaryContainer = EnvelopeYellow,
+    onPrimaryContainer = OnEnvelope,
+    inversePrimary = InkLight,
+    secondary = Ink2Dark,
+    onSecondary = PaperDark,
+    secondaryContainer = Well2Dark,
+    onSecondaryContainer = InkDark,
+    tertiary = GreenDark,
+    onTertiary = Color(0xFF062012),
+    tertiaryContainer = Color(0xFF173A26),
+    onTertiaryContainer = Color(0xFFC6F0D4),
+    error = RedDark,
+    onError = Color(0xFF1A0505),
+    errorContainer = RedWashDark,
+    onErrorContainer = OnRedWashDark,
+    background = PaperDark,
+    onBackground = InkDark,
+    surface = PaperDark,
+    onSurface = InkDark,
+    surfaceVariant = WellDark,
+    onSurfaceVariant = Ink2Dark,
+    surfaceTint = Color.Transparent,
+    surfaceBright = Well2Dark,
+    surfaceDim = Color(0xFF0F0E0D),
+    surfaceContainerLowest = Color(0xFF0F0E0D),
+    surfaceContainerLow = Color(0xFF1A1917),
+    surfaceContainer = SheetDark,
+    surfaceContainerHigh = WellDark,
+    surfaceContainerHighest = Well2Dark,
+    outline = RuleStrongDark,
+    outlineVariant = RuleDark,
+    inverseSurface = InkDark,
+    inverseOnSurface = PaperDark,
+    scrim = Color.Black,
 )
 
+/** Colours Material has no role for: film, edge print, the envelope, lamps, washes. */
 @Immutable
-data class ExtendedColors(
-    val primaryFixed: Color = Color.Unspecified,
-    val primaryFixedDim: Color = Color.Unspecified,
-    val tertiaryFixed: Color = Color.Unspecified,
-    val tertiaryFixedDim: Color = Color.Unspecified,
-    val progressGradient: Brush = Brush.horizontalGradient(listOf(Color.Unspecified, Color.Unspecified)),
-    val buttonGradient: Brush = Brush.horizontalGradient(listOf(Color.Unspecified, Color.Unspecified)),
-    val progressGlowColor: Color = Color.Unspecified,
+data class PherryColors(
+    val paper: Color,
+    val sheet: Color,
+    val well: Color,
+    val well2: Color,
+    val rule: Color,
+    val ruleStrong: Color,
+    val ink: Color,
+    val ink2: Color,
+    val ink3: Color,
+    val film: Color,
+    val film2: Color,
+    val filmRule: Color,
+    val filmInk: Color,
+    val edge: Color,
+    val envelope: Color,
+    val envelopePressed: Color,
+    val onEnvelope: Color,
+    val onEnvelope2: Color,
+    val red: Color,
+    val redWash: Color,
+    val onRedWash: Color,
+    val green: Color,
+    val isDark: Boolean,
 )
 
-val LocalExtendedColors = staticCompositionLocalOf { ExtendedColors() }
-
-private fun pherryButtonGradient(isDark: Boolean) = Brush.linearGradient(
-    if (isDark) listOf(PrimaryDark, PrimaryDeepDark) else listOf(PrimaryBrightLight, PrimaryLight)
+private fun pherryColors(dark: Boolean, scheme: ColorScheme, dynamic: Boolean) = PherryColors(
+    paper = scheme.surface,
+    sheet = scheme.surfaceContainerLowest.takeIf { !dark } ?: scheme.surfaceContainer,
+    well = scheme.surfaceVariant,
+    well2 = scheme.secondaryContainer,
+    rule = scheme.outlineVariant,
+    ruleStrong = scheme.outline,
+    ink = scheme.onSurface,
+    ink2 = scheme.onSurfaceVariant,
+    ink3 = if (dark) Ink3Dark else Ink3Light,
+    film = if (dark) FilmDark else FilmLight,
+    film2 = Film2,
+    filmRule = FilmRule,
+    filmInk = FilmInk,
+    edge = EdgePrint,
+    // With wallpaper colours on, the envelope follows the wallpaper's primary container.
+    envelope = if (dynamic) scheme.primaryContainer else EnvelopeYellow,
+    envelopePressed = if (dynamic) scheme.primaryContainer else EnvelopeYellowPressed,
+    onEnvelope = if (dynamic) scheme.onPrimaryContainer else OnEnvelope,
+    onEnvelope2 = if (dynamic) scheme.onPrimaryContainer.copy(alpha = 0.78f) else OnEnvelope2,
+    red = scheme.error,
+    redWash = scheme.errorContainer,
+    onRedWash = scheme.onErrorContainer,
+    green = if (dark) GreenDark else GreenLight,
+    isDark = dark,
 )
 
-private fun pherryProgressGradient(isDark: Boolean) = Brush.linearGradient(
-    if (isDark) listOf(PrimaryDark, PrimaryDeepDark) else listOf(PrimaryBrightLight, PrimaryDeepLight)
-)
-
-private fun buildExtendedColors(
-    colorScheme: ColorScheme,
-    isDynamic: Boolean,
-    isDark: Boolean,
-): ExtendedColors {
-    val buttonGradient = if (isDynamic) {
-        Brush.horizontalGradient(listOf(colorScheme.primary, colorScheme.primaryContainer))
-    } else {
-        pherryButtonGradient(isDark)
-    }
-    val progressGradient = if (isDynamic) {
-        Brush.horizontalGradient(listOf(colorScheme.primary, colorScheme.secondary))
-    } else {
-        pherryProgressGradient(isDark)
-    }
-    val glowColor = if (isDynamic) colorScheme.primary else if (isDark) PrimaryDark else PrimaryLight
-
-    return ExtendedColors(
-        primaryFixed = PrimaryFixedLight,
-        primaryFixedDim = PrimaryFixedDimLight,
-        tertiaryFixed = TertiaryFixedLight,
-        tertiaryFixedDim = TertiaryFixedDimLight,
-        progressGradient = progressGradient,
-        buttonGradient = buttonGradient,
-        progressGlowColor = glowColor,
-    )
-}
+val LocalPherryColors = staticCompositionLocalOf { pherryColors(false, LightColorScheme, false) }
 
 @Composable
 fun PherryTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
-    content: @Composable () -> Unit
+    content: @Composable () -> Unit,
 ) {
     val isDynamic = dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val colorScheme = when {
-        isDynamic -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
+    val base = if (darkTheme) DarkColorScheme else LightColorScheme
+    // Wallpaper colours replace only the envelope (primary container). Paper, ink, rules and the
+    // safelight red stay Pherry's, as the Settings switch promises.
+    val colorScheme = if (isDynamic) {
+        val context = LocalContext.current
+        val dyn = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        base.copy(
+            primaryContainer = dyn.primaryContainer,
+            onPrimaryContainer = dyn.onPrimaryContainer,
+            inversePrimary = dyn.inversePrimary,
+        )
+    } else {
+        base
     }
-    val extendedColors = buildExtendedColors(
-        colorScheme = colorScheme,
-        isDynamic = isDynamic,
-        isDark = darkTheme,
-    )
-
-    CompositionLocalProvider(LocalExtendedColors provides extendedColors) {
+    CompositionLocalProvider(
+        LocalPherryColors provides pherryColors(darkTheme, colorScheme, isDynamic),
+        LocalPherryText provides PherryTextStyles(),
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,
             shapes = PherryShapes,
-            content = content
+            content = content,
         )
     }
+}
+
+/** Accessors: `PherryTheme.colors.film`, `PherryTheme.text.edge`. */
+object PherryTheme {
+    val colors: PherryColors
+        @Composable @ReadOnlyComposable get() = LocalPherryColors.current
+    val text: PherryTextStyles
+        @Composable @ReadOnlyComposable get() = LocalPherryText.current
 }

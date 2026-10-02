@@ -1,6 +1,6 @@
 const {
   app, BrowserWindow, ipcMain, dialog, shell,
-  Tray, Menu, Notification, nativeImage,
+  Tray, Menu, Notification, nativeImage, nativeTheme,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -27,6 +27,17 @@ let settingsPath;
 let tray = null;
 let bonjourInstance = null;
 let bonjourService = null;
+
+// One Pherry per computer: a second launch would fail to bind the port and pretend to receive.
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => showMainWindow());
+}
+
+/** What the receiver is doing now. Kept so a window opened later (or reloaded) can ask for it. */
+let lastServerState = { running: false, port: DEFAULT_PORT, error: null, code: null };
 
 let settings = {
   downloadPath: "",
@@ -115,13 +126,19 @@ function applyLaunchAtStartup() {
   }
 }
 
+/** Paper by day, darkroom by night: matches the renderer's ground so the window never flashes. */
+function windowBackground() {
+  const dark = settings.theme === "dark" || (settings.theme === "system" && nativeTheme.shouldUseDarkColors);
+  return dark ? "#161513" : "#F5F5F2";
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 480,
     minHeight: 560,
-    title: "Pherry Desktop",
+    title: "Pherry",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -129,10 +146,12 @@ function createWindow() {
     },
     icon: path.join(__dirname, "renderer", "pherry-icon.png"),
     show: false,
-    backgroundColor: settings.theme === "dark" ? "#0B0F11" : "#F6F8F9",
+    backgroundColor: windowBackground(),
   });
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  // A bind failure at launch happens before any window exists; repeat the state once the page is up.
+  mainWindow.webContents.on("did-finish-load", () => broadcastToRenderer("server-state", { ...lastServerState }));
 
   mainWindow.once("ready-to-show", () => mainWindow.show());
 
@@ -153,6 +172,27 @@ function broadcastToRenderer(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload);
   }
+}
+
+function setServerState(next) {
+  lastServerState = { running: false, port: settings.port, error: null, code: null, ...next };
+  updateTrayTooltip();
+  broadcastToRenderer("server-state", { ...lastServerState });
+}
+
+/** Same order as the renderer's sortedIPs(): home Wi-Fi ranges first, VPN and virtual adapters last. */
+function sortedLocalIPs() {
+  const score = (ip) => (/^192\.168\./.test(ip) ? 0 : /^10\./.test(ip) ? 1 : /^172\./.test(ip) ? 2 : 3);
+  return [...(getLocalIPs() || [])].sort((a, b) => score(a) - score(b));
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let v = bytes;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
 }
 
 // ── mDNS / DNS-SD advertising ────────────────────────────────────────────────
@@ -209,13 +249,15 @@ async function startServer() {
     deviceId: settings.deviceId,
     onFileReceived: (entry) => {
       broadcastToRenderer("file-received", entry);
-      notifyArrival(entry);
+      if (trackArrival(entry)) notifyArrival(entry);
       if (settings.autoOpenFolder) {
         const bucket = entry?.bucketName || "Unsorted";
         const target = path.join(settings.downloadPath, bucket);
         if (fs.existsSync(target)) shell.openPath(target);
       }
     },
+    // A phone's Sync removed files here: the window's lists and totals need re-reading.
+    onFilesRemoved: (info) => broadcastToRenderer("files-removed", info),
   });
 
   return new Promise((resolve, reject) => {
@@ -224,38 +266,92 @@ async function startServer() {
       console.log(`Pherry server listening on port ${settings.port}`);
       startBonjour();
       refreshTray();
-      broadcastToRenderer("server-state", { running: true, port: settings.port, error: null });
+      setServerState({ running: true, port: settings.port });
       resolve();
     });
+    // Node 18+ cuts any request that takes longer than 5 minutes to arrive in full (requestTimeout
+    // defaults to 300 s). A multi-GB video over Wi-Fi, sharing bandwidth with parallel uploads,
+    // takes longer than that, so every big file was cut off and restarted from zero, forever.
+    // Lift the whole-request limit; drop only sockets that go silent for 2 minutes instead.
+    server.requestTimeout = 0;
+    server.setTimeout(120000);
     server.once("error", (err) => {
       console.error("Server bind error:", err.message);
-      broadcastToRenderer("server-state", { running: false, port: settings.port, error: err.message });
+      setServerState({ running: false, port: settings.port, error: err.message, code: err.code || null });
       reject(err);
     });
   });
 }
 
-/** Native OS notification when a file lands (unless the window is focused). */
+// ── Arrival notifications ──────────────────────────────────────────────────
+// A backup is thousands of files: one toast (with sound) when a phone starts sending, then one
+// silent summary once it has been quiet for ARRIVAL_GAP_MS. Mirrors SESSION_GAP_MS in renderer/state.js.
+const ARRIVAL_GAP_MS = 20000;
+let arrivalSession = null; // { device, count, bytes, bucket, timer }
+
+function windowFocused() {
+  return !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused());
+}
+
+function showArrivalToast({ title, body, silent, bucket }) {
+  const n = new Notification({ title, body, silent, icon: trayImage() || undefined });
+  n.on("click", () => {
+    showMainWindow();
+    const target = path.join(settings.downloadPath, bucket || "Unsorted");
+    if (fs.existsSync(target)) shell.openPath(target);
+  });
+  n.show();
+}
+
+/** Fold one arrival into the phone's session. Returns true for the first file of a new session. */
+function trackArrival(entry) {
+  const device = entry?.deviceName || "";
+  let s = arrivalSession;
+  let started = false;
+  if (!s || s.device !== device) {
+    if (s) {
+      clearTimeout(s.timer);
+      summarizeArrivals(s);
+    }
+    s = arrivalSession = { device, count: 0, bytes: 0, bucket: "", timer: null };
+    started = true;
+  }
+  s.count += 1;
+  s.bytes += Number(entry?.size) || 0;
+  s.bucket = entry?.bucketName || s.bucket;
+  clearTimeout(s.timer);
+  s.timer = setTimeout(() => {
+    if (arrivalSession === s) arrivalSession = null;
+    summarizeArrivals(s);
+  }, ARRIVAL_GAP_MS);
+  return started;
+}
+
+/** The quiet summary for a session of more than one file (the first toast already named a single one). */
+function summarizeArrivals(s) {
+  try {
+    if (s.count < 2 || !settings.notifyOnArrival || !Notification.isSupported() || windowFocused()) return;
+    showArrivalToast({
+      title: `${s.count.toLocaleString()} files arrived${s.device ? ` from ${s.device}` : ""}`,
+      body: formatBytes(s.bytes),
+      silent: true,
+      bucket: s.bucket,
+    });
+  } catch { /* best effort */ }
+}
+
+/** Native OS notification when a phone starts sending (unless the window is focused). */
 function notifyArrival(entry) {
   try {
     if (!settings.notifyOnArrival) return;
     if (!Notification.isSupported()) return;
-    if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()) return;
-    const name = entry?.fileName || "A file";
-    const from = entry?.deviceName ? ` from ${entry.deviceName}` : "";
-    const n = new Notification({
-      title: "Photo received",
-      body: `${name}${from}`,
+    if (windowFocused()) return;
+    showArrivalToast({
+      title: entry?.deviceName ? `Receiving from ${entry.deviceName}` : "Receiving files",
+      body: entry?.fileName || entry?.originalName || "",
       silent: false,
-      icon: trayImage() || undefined,
+      bucket: entry?.bucketName,
     });
-    n.on("click", () => {
-      showMainWindow();
-      const bucket = entry?.bucketName || "Unsorted";
-      const target = path.join(settings.downloadPath, bucket);
-      if (fs.existsSync(target)) shell.openPath(target);
-    });
-    n.show();
   } catch { /* best effort */ }
 }
 
@@ -417,6 +513,14 @@ ipcMain.handle("remove-duplicates", async (_e, opts = {}) => {
 
 ipcMain.handle("get-local-ips", () => getLocalIPs());
 
+ipcMain.handle("get-server-state", () => ({ ...lastServerState }));
+
+ipcMain.handle("get-host-info", () => ({
+  hostname: os.hostname(),
+  platform: process.platform,
+  version: app.getVersion(),
+}));
+
 ipcMain.handle("get-settings", () => ({ ...settings }));
 
 // Generate a fresh pairing code and restart the receiver so the new token immediately gates
@@ -532,6 +636,11 @@ function resolveDownloadFile(bucket, name) {
 
 const IMAGE_EXTS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif", ".tif", ".tiff"]);
 const thumbnailCache = new Map(); // key `path:mtime` -> dataURL
+// 256px thumbnails so a ~160px contact-sheet frame stays sharp on a 2x display. They are about four
+// times the size of the old 128px ones, so the cache is also capped by its total length.
+const THUMB_SIZE = 256;
+const THUMB_CACHE_MAX_CHARS = 64 * 1024 * 1024;
+let thumbnailCacheChars = 0;
 
 ipcMain.handle("get-thumbnail", async (_e, opts = {}) => {
   try {
@@ -541,11 +650,15 @@ ipcMain.handle("get-thumbnail", async (_e, opts = {}) => {
     const stat = fs.statSync(full);
     const key = `${full}:${stat.mtimeMs}`;
     if (thumbnailCache.has(key)) return thumbnailCache.get(key);
-    const img = await nativeImage.createThumbnailFromPath(full, { width: 128, height: 128 });
+    const img = await nativeImage.createThumbnailFromPath(full, { width: THUMB_SIZE, height: THUMB_SIZE });
     const dataUrl = img.isEmpty() ? null : img.toDataURL();
     if (dataUrl) {
-      if (thumbnailCache.size > 600) thumbnailCache.clear();
+      if (thumbnailCache.size > 600 || thumbnailCacheChars + dataUrl.length > THUMB_CACHE_MAX_CHARS) {
+        thumbnailCache.clear();
+        thumbnailCacheChars = 0;
+      }
       thumbnailCache.set(key, dataUrl);
+      thumbnailCacheChars += dataUrl.length;
     }
     return dataUrl;
   } catch {
@@ -593,14 +706,14 @@ function showMainWindow() {
 }
 
 function buildTrayMenu() {
-  const ip = (getLocalIPs() || [])[0];
-  const address = ip ? `${ip}:${settings.port}` : "No network";
+  const ip = sortedLocalIPs()[0];
+  const address = ip ? `${ip}:${settings.port}` : "not on a network";
   return Menu.buildFromTemplate([
     { label: "Open Pherry", click: () => showMainWindow() },
-    { label: `Pairing: ${address}`, enabled: false },
-    { label: `Code: ${settings.pairingToken}`, enabled: false },
+    { label: `Address: ${address}`, enabled: false },
+    { label: `Pairing code: ${settings.pairingToken}`, enabled: false },
     { type: "separator" },
-    { label: "Open download folder", click: () => fs.existsSync(settings.downloadPath) && shell.openPath(settings.downloadPath) },
+    { label: "Open the Pherry folder", click: () => fs.existsSync(settings.downloadPath) && shell.openPath(settings.downloadPath) },
     { type: "separator" },
     {
       label: "Quit Pherry",
@@ -616,7 +729,7 @@ function createTray() {
   if (tray) return;
   const img = trayImage();
   tray = img ? new Tray(img) : new Tray(nativeImage.createEmpty());
-  tray.setToolTip("Pherry Desktop — receiving");
+  updateTrayTooltip();
   tray.setContextMenu(buildTrayMenu());
   tray.on("click", () => showMainWindow());
   tray.on("double-click", () => showMainWindow());
@@ -626,21 +739,53 @@ function refreshTray() {
   if (tray) tray.setContextMenu(buildTrayMenu());
 }
 
+function updateTrayTooltip() {
+  if (!tray) return;
+  const s = lastServerState;
+  tray.setToolTip(
+    s.running
+      ? "Pherry · receiving"
+      : s.code === "EADDRINUSE"
+        ? `Pherry · not receiving, port ${s.port} is in use`
+        : "Pherry · not receiving"
+  );
+}
+
+// Wi-Fi can come up after Pherry starts at sign-in, and DHCP can hand out a new address. Watch for
+// it so the tray menu and the window's pairing ticket never show a stale address.
+let lastIPs = "";
+function watchNetwork() {
+  lastIPs = sortedLocalIPs().join(",");
+  setInterval(() => {
+    const now = sortedLocalIPs().join(",");
+    if (now === lastIPs) return;
+    lastIPs = now;
+    refreshTray();
+    broadcastToRenderer("ips-changed", now ? now.split(",") : []);
+  }, 10000);
+}
+
 // ── App lifecycle ──────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  if (!gotSingleInstanceLock) return;
   historyStatePath = path.join(app.getPath("userData"), "history-state.json");
   settingsPath = path.join(app.getPath("userData"), "settings.json");
   loadSettings();
   applyLaunchAtStartup();
+  lastServerState = { ...lastServerState, port: settings.port };
   try {
     await startServer();
-  } catch {
-    /* surfaced via server-state event */
+  } catch (err) {
+    // Surfaced through lastServerState: the window asks for it (get-server-state) once it loads.
+    if (!lastServerState.error) {
+      setServerState({ running: false, port: settings.port, error: err?.message || "The receiver couldn't start" });
+    }
   }
   createTray();
   refreshTray();
   createWindow();
+  watchNetwork();
 });
 
 app.on("before-quit", () => {

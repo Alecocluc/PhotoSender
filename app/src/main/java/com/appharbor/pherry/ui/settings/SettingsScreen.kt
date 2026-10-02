@@ -1,55 +1,72 @@
 package com.appharbor.pherry.ui.settings
 
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryChargingFull
-import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Wifi
-import androidx.compose.material.icons.outlined.Brightness4
-import androidx.compose.material.icons.outlined.Brightness6
-import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.appharbor.pherry.data.model.ConnectionState
+import com.appharbor.pherry.data.network.RememberedComputer
 import com.appharbor.pherry.data.preferences.ThemeMode
+import com.appharbor.pherry.ui.components.Hairline
+import com.appharbor.pherry.ui.components.Lamp
+import com.appharbor.pherry.ui.components.LampState
 import com.appharbor.pherry.ui.components.PherryMark
+import com.appharbor.pherry.ui.components.Ph
+import com.appharbor.pherry.ui.components.PrintButton
+import com.appharbor.pherry.ui.components.PrintButtonStyle
+import com.appharbor.pherry.ui.components.PrintSegmented
 import com.appharbor.pherry.ui.components.ScreenHeader
-import com.appharbor.pherry.ui.components.SectionCard
-import com.appharbor.pherry.ui.components.SegmentedToggle
-import com.appharbor.pherry.ui.components.ToggleRow
+import com.appharbor.pherry.ui.components.SectionHeading
+import com.appharbor.pherry.ui.components.SwitchRow
 import com.appharbor.pherry.ui.gallery.UploadMode
+import com.appharbor.pherry.ui.theme.PherryShape
+import com.appharbor.pherry.ui.theme.PherryTheme
 import com.appharbor.pherry.ui.theme.Spacing
 
 @Composable
 fun SettingsScreen(
+    onManageComputer: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
+    val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
+    val serverName by viewModel.serverName.collectAsStateWithLifecycle()
+    val connectedEndpoint by viewModel.connectedEndpoint.collectAsStateWithLifecycle()
+    val rememberedComputer by viewModel.rememberedComputer.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val dynamicColorEnabled by viewModel.dynamicColorEnabled.collectAsStateWithLifecycle()
     val highSpeedTransferEnabled by viewModel.highSpeedTransferEnabled.collectAsStateWithLifecycle()
@@ -59,187 +76,417 @@ fun SettingsScreen(
     val wifiOnlyTransfer by viewModel.wifiOnlyTransfer.collectAsStateWithLifecycle()
     val keepScreenAwake by viewModel.keepScreenAwake.collectAsStateWithLifecycle()
     val defaultUploadModeName by viewModel.defaultUploadMode.collectAsStateWithLifecycle()
-    val defaultUploadMode = UploadMode.entries.firstOrNull { it.name == defaultUploadModeName } ?: UploadMode.ADD
+    val uploadMode = UploadMode.entries.firstOrNull { it.name == defaultUploadModeName } ?: UploadMode.ADD
 
-    var showAutoBackupDialog by remember { mutableStateOf(false) }
+    val c = PherryTheme.colors
+    val context = LocalContext.current
+    val versionName = remember(context) { context.appVersionName() }
+    val dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val computer = serverName.ifBlank { "your computer" }
 
-    if (showAutoBackupDialog) {
+    var askAutoBackup by rememberSaveable { mutableStateOf(false) }
+    var askDisconnect by rememberSaveable { mutableStateOf(false) }
+
+    // The link can drop on its own while the dialog is open; there is nothing left to disconnect then.
+    LaunchedEffect(connectionState) {
+        if (connectionState == ConnectionState.DISCONNECTED) askDisconnect = false
+    }
+
+    if (askAutoBackup) {
         AlertDialog(
-            onDismissRequest = { showAutoBackupDialog = false },
+            onDismissRequest = { askAutoBackup = false },
+            containerColor = c.sheet,
             title = { Text("Turn on auto-backup") },
             text = {
                 Text(
-                    "New photos and videos will be sent to your desktop automatically over Wi-Fi. " +
-                        "Should Pherry also back up your existing library, or only media added from now on?"
+                    "Pherry will send new photos and videos to $computer by itself, about every 15 minutes " +
+                        "when the phone is on Wi-Fi. Start with everything already on this phone, or only what you take from now on?"
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.enableAutoBackup(includeExisting = true)
-                    showAutoBackupDialog = false
-                }) { Text("Back up everything") }
+                TextButton(
+                    onClick = {
+                        viewModel.enableAutoBackup(includeExisting = true)
+                        askAutoBackup = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = c.ink),
+                ) { Text("Everything") }
             },
             dismissButton = {
-                TextButton(onClick = {
-                    viewModel.enableAutoBackup(includeExisting = false)
-                    showAutoBackupDialog = false
-                }) { Text("Only new media") }
+                TextButton(
+                    onClick = {
+                        viewModel.enableAutoBackup(includeExisting = false)
+                        askAutoBackup = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = c.ink),
+                ) { Text("Only new") }
+            },
+        )
+    }
+
+    if (askDisconnect) {
+        AlertDialog(
+            onDismissRequest = { askDisconnect = false },
+            containerColor = c.sheet,
+            title = { Text("Disconnect from $computer?") },
+            text = {
+                // Disconnect only drops the live link: the pairing stays, so Pherry reconnects by itself.
+                Text(
+                    if (autoBackupEnabled) {
+                        "Pherry reconnects to $computer the next time it opens or auto-backup runs. " +
+                            "To stop backups, turn off auto-backup."
+                    } else {
+                        "Pherry reconnects to $computer the next time it opens."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.disconnect()
+                        askDisconnect = false
+                    },
+                    // Nothing is removed, so the confirm prints in ink; red is kept for deletions.
+                    colors = ButtonDefaults.textButtonColors(contentColor = c.ink),
+                ) { Text("Disconnect") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { askDisconnect = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = c.ink),
+                ) { Text("Cancel") }
             },
         )
     }
 
     LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = Spacing.screen),
-        verticalArrangement = Arrangement.spacedBy(Spacing.md),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = Spacing.screen, end = Spacing.screen, bottom = Spacing.xxl),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xl),
     ) {
-        item {
-            Spacer(Modifier.height(Spacing.sm))
-            ScreenHeader(title = "Settings", subtitle = "Appearance and transfer behavior")
-            Spacer(Modifier.height(Spacing.sm))
+        item(key = "header") {
+            ScreenHeader(title = "Settings")
         }
 
-        item {
-            SectionCard(title = "Appearance") {
-                Text(
-                    text = "Theme Mode",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
+        item(key = "computer") {
+            SettingsSection("Computer") {
+                ComputerBlock(
+                    state = connectionState,
+                    serverName = serverName,
+                    endpoint = connectedEndpoint,
+                    remembered = rememberedComputer,
+                    onManage = onManageComputer,
+                    onRetry = viewModel::reconnect,
+                    onDisconnect = { askDisconnect = true },
+                    modifier = Modifier.padding(top = Spacing.md),
+                )
+            }
+        }
+
+        item(key = "backup") {
+            SettingsSection("Backup") {
+                Spacer(Modifier.height(Spacing.md))
+                Text("When you back up", style = MaterialTheme.typography.titleSmall, color = c.ink)
+                Spacer(Modifier.height(Spacing.sm))
+                PrintSegmented(
+                    options = listOf(
+                        UploadMode.ADD to "Add new only",
+                        UploadMode.SYNC to "Sync this phone",
+                    ),
+                    selected = uploadMode,
+                    onSelect = viewModel::onDefaultUploadModeSelected,
                 )
                 Spacer(Modifier.height(Spacing.sm))
+                Text(
+                    text = when (uploadMode) {
+                        UploadMode.ADD -> "Sends new photos and videos. Never deletes anything on the computer."
+                        UploadMode.SYNC -> "Sends new photos and videos, and deletes from the computer what you delete here. " +
+                            "You confirm before anything is deleted."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.ink2,
+                )
+                Spacer(Modifier.height(Spacing.sm))
+                Hairline()
+                SwitchRow(
+                    title = "Auto-backup",
+                    subtitle = "Sends new photos and videos to $computer every 15 minutes or so, while on Wi-Fi and $computer is on.",
+                    icon = Ph.Clock,
+                    checked = autoBackupEnabled,
+                    onCheckedChange = { on -> if (on) askAutoBackup = true else viewModel.disableAutoBackup() },
+                )
+                Hairline()
+                SwitchRow(
+                    title = "Only while charging",
+                    subtitle = if (autoBackupEnabled) {
+                        "Auto-backup waits until the phone is plugged in."
+                    } else {
+                        "Turn on auto-backup to use this."
+                    },
+                    icon = Ph.BatteryCharging,
+                    checked = autoBackupRequiresCharging,
+                    onCheckedChange = viewModel::onAutoBackupChargingChanged,
+                    enabled = autoBackupEnabled,
+                )
+                Hairline()
+                SwitchRow(
+                    title = "Wi-Fi only",
+                    subtitle = "Transfers wait when the Wi-Fi is a phone hotspot or marked as metered.",
+                    icon = Ph.Wifi,
+                    checked = wifiOnlyTransfer,
+                    onCheckedChange = viewModel::onWifiOnlyTransferChanged,
+                )
+                Hairline()
+                SwitchRow(
+                    title = "Review every sync",
+                    subtitle = "Shows what a sync will send before it starts. Deleting from the computer always asks first.",
+                    icon = Ph.Eye,
+                    checked = confirmDestructiveSync,
+                    onCheckedChange = viewModel::onConfirmDestructiveSyncChanged,
+                )
+            }
+        }
 
-                SegmentedToggle(
+        item(key = "transfers") {
+            SettingsSection("Transfers") {
+                SwitchRow(
+                    title = "Faster transfers",
+                    subtitle = "Sends up to 6 files at once. Turn off if your Wi-Fi drops.",
+                    icon = Ph.Lightning,
+                    checked = highSpeedTransferEnabled,
+                    onCheckedChange = viewModel::onHighSpeedTransferChanged,
+                )
+                Hairline()
+                SwitchRow(
+                    title = "Keep screen on while sending",
+                    subtitle = "Only while the Transfers tab is open.",
+                    icon = Ph.Phone,
+                    checked = keepScreenAwake,
+                    onCheckedChange = viewModel::onKeepScreenAwakeChanged,
+                )
+            }
+        }
+
+        item(key = "appearance") {
+            SettingsSection("Appearance") {
+                Spacer(Modifier.height(Spacing.md))
+                Text("Theme", style = MaterialTheme.typography.titleSmall, color = c.ink)
+                Spacer(Modifier.height(Spacing.sm))
+                PrintSegmented(
                     options = listOf(
                         ThemeMode.SYSTEM to "System",
                         ThemeMode.LIGHT to "Light",
                         ThemeMode.DARK to "Dark",
                     ),
                     selected = themeMode,
-                    onSelect = { viewModel.onThemeModeSelected(it) },
-                    fillWidth = true,
-                    leadingIcons = mapOf(
-                        ThemeMode.SYSTEM to Icons.Outlined.Brightness6,
-                        ThemeMode.LIGHT to Icons.Outlined.LightMode,
-                        ThemeMode.DARK to Icons.Outlined.Brightness4,
-                    ),
+                    onSelect = viewModel::onThemeModeSelected,
                 )
-
                 Spacer(Modifier.height(Spacing.md))
-
-                ToggleRow(
-                    icon = Icons.Filled.Palette,
-                    title = "Dynamic Color",
-                    subtitle = "Use Material You wallpaper-based colors",
-                    checked = dynamicColorEnabled,
+                Hairline()
+                SwitchRow(
+                    title = "Use wallpaper colours",
+                    subtitle = "Replaces Pherry yellow with colours from your wallpaper. Android 12 and newer.",
+                    icon = Ph.Sparkle,
+                    checked = dynamicColorEnabled && dynamicColorSupported,
                     onCheckedChange = viewModel::onDynamicColorChanged,
+                    enabled = dynamicColorSupported,
                 )
             }
         }
 
-        item {
-            SectionCard(title = "Transfer") {
-                Text(
-                    text = "Default action",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                SegmentedToggle(
-                    options = listOf(
-                        UploadMode.ADD to "Add new",
-                        UploadMode.SYNC to "Sync library",
-                    ),
-                    selected = defaultUploadMode,
-                    onSelect = viewModel::onDefaultUploadModeSelected,
-                    fillWidth = true,
-                    leadingIcons = mapOf(
-                        UploadMode.ADD to Icons.Filled.Storage,
-                        UploadMode.SYNC to Icons.Filled.Sync,
-                    ),
-                )
-                Spacer(Modifier.height(Spacing.md))
-                ToggleRow(
-                    icon = Icons.Filled.Speed,
-                    title = "High-Speed Transfer",
-                    subtitle = "Up to 6 parallel uploads. Turn off on unstable routers.",
-                    checked = highSpeedTransferEnabled,
-                    onCheckedChange = viewModel::onHighSpeedTransferChanged,
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                ToggleRow(
-                    icon = Icons.Filled.DeleteSweep,
-                    title = "Confirm desktop deletes",
-                    subtitle = "Ask before Sync removes files from the PC",
-                    checked = confirmDestructiveSync,
-                    onCheckedChange = viewModel::onConfirmDestructiveSyncChanged,
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                ToggleRow(
-                    icon = Icons.Filled.Wifi,
-                    title = "Wi-Fi only",
-                    subtitle = "Pause queued transfers on metered networks",
-                    checked = wifiOnlyTransfer,
-                    onCheckedChange = viewModel::onWifiOnlyTransferChanged,
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                ToggleRow(
-                    icon = Icons.Filled.BatteryChargingFull,
-                    title = "Keep screen awake",
-                    subtitle = "Prevent dimming while Activity is open during a transfer",
-                    checked = keepScreenAwake,
-                    onCheckedChange = viewModel::onKeepScreenAwakeChanged,
-                )
-                Spacer(Modifier.height(Spacing.sm))
-                ToggleRow(
-                    icon = Icons.Filled.CloudSync,
-                    title = "Auto-backup",
-                    subtitle = "Send new photos to your desktop automatically over Wi-Fi",
-                    checked = autoBackupEnabled,
-                    onCheckedChange = { enabled ->
-                        if (enabled) showAutoBackupDialog = true else viewModel.disableAutoBackup()
-                    },
-                )
-                if (autoBackupEnabled) {
-                    Spacer(Modifier.height(Spacing.sm))
-                    ToggleRow(
-                        icon = Icons.Filled.Bolt,
-                        title = "Only while charging",
-                        subtitle = "Wait until the phone is plugged in before backing up",
-                        checked = autoBackupRequiresCharging,
-                        onCheckedChange = viewModel::onAutoBackupChargingChanged,
-                    )
-                }
+        item(key = "about") {
+            SettingsSection("About") {
+                AboutBlock(versionName = versionName, modifier = Modifier.padding(top = Spacing.lg))
             }
         }
-
-        item {
-            SectionCard(title = "About") {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    PherryMark(size = 48.dp, cornerRadius = 14.dp)
-                    Spacer(Modifier.width(Spacing.md))
-                    Column {
-                        Text(
-                            text = "Pherry",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            text = "Version 1.0 · photo ferry",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(Spacing.md))
-                Text(
-                    text = "Ferry photos and videos to your computer over your local network — no cables, no cloud.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        item { Spacer(Modifier.height(Spacing.xxl)) }
     }
 }
+
+/** A titled group of rows: printed caps heading over a hairline, rows straight on the paper. */
+@Composable
+private fun SettingsSection(
+    title: String,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(modifier.fillMaxWidth()) {
+        SectionHeading(title)
+        content()
+    }
+}
+
+/** The paired computer on a raised print: lamp, name, address, and what you can do about it. */
+@Composable
+private fun ComputerBlock(
+    state: ConnectionState,
+    serverName: String,
+    endpoint: String,
+    remembered: RememberedComputer?,
+    onManage: () -> Unit,
+    onRetry: () -> Unit,
+    onDisconnect: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = PherryTheme.colors
+    // A saved computer that isn't linked right now is still paired: name it and say it's offline.
+    val offline = state == ConnectionState.DISCONNECTED && remembered != null
+    val savedName = remembered?.name?.takeIf { it.isNotBlank() }
+    val title = when (state) {
+        ConnectionState.CONNECTED -> serverName.ifBlank { "Your computer" }
+        ConnectionState.CONNECTING -> serverName.ifBlank { "Connecting…" }
+        ConnectionState.DISCONNECTED -> if (offline) savedName ?: "Your computer" else "No computer"
+    }
+    val address = when (state) {
+        ConnectionState.DISCONNECTED -> remembered?.address ?: "Not paired"
+        else -> endpoint.ifBlank { "Not paired" }
+    }
+    val status = when (state) {
+        ConnectionState.CONNECTED -> "Connected"
+        ConnectionState.CONNECTING -> "Connecting"
+        ConnectionState.DISCONNECTED -> when {
+            remembered?.disconnectedByUser == true -> "Disconnected"
+            offline -> "Not answering"
+            else -> "Not connected"
+        }
+    }
+
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(PherryShape.print)
+            .background(c.sheet)
+            .border(1.dp, c.rule, PherryShape.print)
+            .padding(Spacing.lg),
+    ) {
+        Row(
+            modifier = Modifier.semantics(mergeDescendants = true) { stateDescription = status },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Lamp(
+                when (state) {
+                    ConnectionState.CONNECTED -> LampState.On
+                    ConnectionState.CONNECTING -> LampState.Busy
+                    ConnectionState.DISCONNECTED -> LampState.Idle
+                }
+            )
+            Spacer(Modifier.width(Spacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = c.ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    address,
+                    style = PherryTheme.text.mono,
+                    color = c.ink2,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        when (state) {
+            ConnectionState.CONNECTING -> {
+                Spacer(Modifier.height(Spacing.md))
+                Text(
+                    "Make sure Pherry Desktop is open on ${serverName.ifBlank { "your computer" }} and both are on the same Wi-Fi.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.ink2,
+                )
+            }
+            ConnectionState.DISCONNECTED -> {
+                Spacer(Modifier.height(Spacing.md))
+                Text(
+                    when {
+                        remembered?.disconnectedByUser == true ->
+                            "Disconnected. Pherry reconnects the next time it opens, or connect now."
+                        offline ->
+                            "Not answering. Make sure Pherry Desktop is open on ${savedName ?: "your computer"} and both are on the same Wi-Fi."
+                        else -> "Pair this phone with Pherry Desktop on your computer to back up."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = c.ink2,
+                )
+            }
+            ConnectionState.CONNECTED -> Unit
+        }
+
+        Spacer(Modifier.height(Spacing.lg))
+        if (offline) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PrintButton(
+                    if (remembered?.disconnectedByUser == true) "Connect" else "Try again",
+                    onClick = onRetry,
+                    icon = Ph.Refresh,
+                    modifier = Modifier.weight(1f),
+                )
+                PrintButton(
+                    "Change computer",
+                    onClick = onManage,
+                    style = PrintButtonStyle.Outline,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        } else if (state == ConnectionState.DISCONNECTED) {
+            PrintButton("Pair a computer", onClick = onManage, icon = Ph.Desktop, modifier = Modifier.fillMaxWidth())
+        } else {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PrintButton(
+                    "Change computer",
+                    onClick = onManage,
+                    style = PrintButtonStyle.Outline,
+                    modifier = Modifier.weight(1f),
+                )
+                // Disconnect only drops the link and keeps the pairing: quiet ink, not safelight red.
+                PrintButton("Disconnect", onClick = onDisconnect, style = PrintButtonStyle.Quiet)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AboutBlock(versionName: String?, modifier: Modifier = Modifier) {
+    val c = PherryTheme.colors
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.semantics(mergeDescendants = true) {},
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PherryMark(size = 48.dp)
+            Spacer(Modifier.width(Spacing.md))
+            Column {
+                Text("Pherry", style = MaterialTheme.typography.titleMedium, color = c.ink)
+                if (versionName != null) {
+                    Text("Version $versionName", style = PherryTheme.text.mono, color = c.ink2)
+                }
+            }
+        }
+        Spacer(Modifier.height(Spacing.md))
+        Text("Open source, MIT licence.", style = MaterialTheme.typography.bodySmall, color = c.ink2)
+        Spacer(Modifier.height(Spacing.xs))
+        Text(
+            "Photos travel only between this phone and your computer, over your own network.",
+            style = MaterialTheme.typography.bodySmall,
+            color = c.ink2,
+        )
+    }
+}
+
+private fun Context.appVersionName(): String? = runCatching {
+    val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(0))
+    } else {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(packageName, 0)
+    }
+    info.versionName
+}.getOrNull()?.takeIf { it.isNotBlank() }

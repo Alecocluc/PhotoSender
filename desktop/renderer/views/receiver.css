@@ -1,0 +1,188 @@
+/* Receiver: the claim ticket on the left, the day's contact sheet on the right. */
+.receiver {
+  display: grid;
+  grid-template-columns: 316px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+.receiver .notice { margin-bottom: 20px; }
+.view-head + .notice { margin-bottom: 22px; }
+
+/* ── Ticket ─────────────────────────────────────────────────────────────── */
+.ticket {
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+/* Pin the ticket beside the sheet only when the whole ticket (~690px, stub included) fits the view:
+   on a short window a pinned ticket would keep the pairing code and address below the fold. */
+@media (min-width: 1081px) and (min-height: 760px) {
+  .ticket { position: sticky; top: 24px; }
+}
+.ticket-body { padding: 20px 20px 16px; display: grid; gap: 12px; }
+.ticket-title {
+  margin: 0; font-weight: 800; font-stretch: 90%; font-size: 22px; line-height: 1.1; letter-spacing: -0.01em;
+}
+.ticket-body p { margin: 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; }
+.ticket-body p strong { color: var(--ink); font-weight: 700; }
+.qr-frame {
+  margin-top: 4px;
+  aspect-ratio: 1; width: 100%;
+  background: #FFFFFF; border-radius: 4px;
+  display: grid; place-items: center; align-content: center; gap: 8px;
+  color: #6E6B65; font-weight: 650; font-size: 13px;
+}
+.qr-frame canvas { width: 100%; height: 100%; image-rendering: pixelated; border-radius: 4px; }
+.qr-frame.is-empty { background: var(--well); color: var(--ink-3); box-shadow: none; }
+
+/* Tear line with a notch bitten out of each edge. */
+.ticket-tear {
+  position: relative; height: 22px;
+  background: linear-gradient(var(--sheet) 0 11px, var(--stub) 11px);
+}
+.ticket-tear .perf {
+  position: absolute; left: 18px; right: 18px; top: 9px;
+  background-image: radial-gradient(circle, var(--paper) 1.5px, transparent 1.8px);
+}
+.ticket-tear::before, .ticket-tear::after {
+  content: ""; position: absolute; top: 0; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--paper); box-shadow: inset 0 0 0 1px var(--rule);
+}
+.ticket-tear::before { left: -12px; }
+.ticket-tear::after { right: -12px; }
+
+/* The tear-off stub is yellow card: the part you claim with. While a phone is sending, the job band
+   is the screen's one yellow field, so the stub prints quietly on the ticket's own sheet. */
+.ticket {
+  --stub: var(--yellow); --stub-ink: var(--on-yellow); --stub-ink-2: var(--on-yellow-2);
+  --stub-hover: rgba(21, 20, 18, 0.08); --stub-rule: rgba(21, 20, 18, 0.2); --stub-underline: rgba(21, 20, 18, 0.4);
+}
+.ticket.is-quiet {
+  --stub: var(--sheet); --stub-ink: var(--ink); --stub-ink-2: var(--ink-2);
+  --stub-hover: var(--well); --stub-rule: var(--rule); --stub-underline: var(--rule-strong);
+}
+.ticket-stub {
+  padding: 8px 20px 20px; display: grid; gap: 16px;
+  background: var(--stub); color: var(--stub-ink);
+}
+.ticket-stub .label { color: var(--stub-ink-2); }
+.ticket-stub .code, .ticket-stub .addr { color: var(--stub-ink); }
+.ticket-stub .btn { border-color: var(--stub-ink); color: var(--stub-ink); }
+.ticket-stub .btn:hover { background: var(--stub-hover); }
+.ticket-stub :focus-visible { outline-color: var(--stub-ink); }
+.ticket-stub .other-addrs, .ticket-stub .other-addrs summary, .ticket-stub .other-addrs p { color: var(--stub-ink-2); }
+.ticket-stub .other-addrs summary:hover { color: var(--stub-ink); }
+.ticket-stub .link { color: var(--stub-ink); text-decoration-color: var(--stub-underline); }
+.ticket-stub .link:hover { text-decoration-color: var(--stub-ink); }
+.stub-field { display: grid; gap: 6px; }
+.code {
+  font-family: var(--mono); font-stretch: 100%; font-weight: 600;
+  font-size: 30px; line-height: 1; letter-spacing: 0.16em;
+  color: var(--ink);
+}
+.addr-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.addr { font-size: 14px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.other-addrs { font-size: 12.5px; color: var(--ink-2); }
+.other-addrs summary { cursor: pointer; font-weight: 600; color: var(--ink-2); list-style-position: inside; }
+.other-addrs summary:hover { color: var(--ink); }
+.other-addrs ul { list-style: none; margin: 8px 0 6px; padding: 0; display: grid; gap: 4px; }
+.other-addrs .link { font-size: 12.5px; font-weight: 500; }
+.other-addrs p { margin: 0; color: var(--ink-3); }
+.stub-note { margin: 0; padding-top: 14px; border-top: 1px solid var(--stub-rule); font-size: 12.5px; color: var(--stub-ink-2); line-height: 1.5; }
+.stub-note .link { font-size: 12.5px; }
+
+/* ── Arrivals ───────────────────────────────────────────────────────────── */
+/* A size container, so the job envelope lays out by the column it sits in, not by the window. */
+.arrivals { min-width: 0; display: grid; gap: 18px; container: arrivals / inline-size; }
+.arrivals-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.arrivals-head .section-title { margin: 0; }
+.tally {
+  margin-top: 6px; font-size: 11px; font-stretch: 75%; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3);
+}
+.arrivals .sheet { --frame-min: 168px; }
+.arrivals .empty { border: 1px dashed var(--rule-strong); border-radius: var(--r); padding: 48px 24px; }
+
+/* Loading: blank film, the same look as a frame whose thumbnail hasn't painted yet. */
+.frame.is-loading { cursor: default; }
+.frame.is-loading .shot { background: var(--film-2); animation: film-load 1.4s var(--ease-std) infinite alternate; }
+@keyframes film-load { from { opacity: 1; } to { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) {
+  .frame.is-loading .shot { animation: none; }
+}
+
+.ledger-line {
+  display: flex; justify-content: space-between; gap: 12px; margin: 4px 0 0;
+  padding-top: 12px; border-top: 1px solid var(--rule);
+  font-size: 11px; font-stretch: 75%; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3);
+}
+
+/* ── Live job: the envelope, with its thumb-cut ─────────────────────────── */
+.job {
+  position: relative;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px 28px; align-items: end;
+  padding: 22px 22px 18px;
+  background: var(--yellow); color: var(--on-yellow);
+  border-radius: 4px;
+  -webkit-mask: radial-gradient(circle 15px at 50% 0, transparent 14.5px, #000 15px);
+          mask: radial-gradient(circle 15px at 50% 0, transparent 14.5px, #000 15px);
+  animation: job-in 420ms var(--ease-out) both;
+}
+@keyframes job-in { from { opacity: 0; transform: translateY(-6px); } }
+.job-count {
+  font-weight: 800; font-stretch: 90%; font-size: 40px; line-height: 1; letter-spacing: -0.02em;
+}
+.job-count .num { font-variant-numeric: tabular-nums; }
+.job-count .unit { font-size: 17px; font-weight: 650; font-stretch: 95%; letter-spacing: 0; }
+
+/* Ink progress printed on the envelope, ticked every 10% like the phone's JobBar. */
+.job-progress { grid-column: 1 / -1; display: grid; gap: 6px; }
+.job-progress[hidden] { display: none; }
+.job-bar {
+  position: relative; height: 10px; border-radius: 1px; overflow: hidden;
+  background: rgba(21, 20, 18, 0.16);
+}
+.job-bar .fill {
+  position: absolute; inset: 0; background: var(--on-yellow);
+  transform-origin: left center; transform: scaleX(0);
+  transition: transform 600ms var(--ease-out);
+}
+.job-bar .tick { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255, 198, 41, 0.55); }
+.job-progress-text { font-size: 12px; font-stretch: 87.5%; color: var(--on-yellow-2); }
+/* Printed form fields: From, Received and Speed on one row, the file on the line under them.
+   Only From gives way when room runs short (its name ellipsizes); the numbers never cut. */
+.job-facts {
+  display: grid; grid-template-columns: minmax(0, max-content) auto auto; justify-content: start;
+  gap: 8px 22px; margin: 0;
+}
+.job-facts div { display: grid; gap: 2px; }
+.job-facts .from { min-width: 0; max-width: 200px; }
+.job-facts .wide { grid-column: 1 / -1; max-width: 300px; }
+.job-facts dt { font-weight: 700; font-stretch: 75%; font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--on-yellow-2); }
+.job-facts dd { margin: 0; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-facts .from dd { display: flex; align-items: center; gap: 7px; }
+.job-device { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A yellow busy lamp would vanish on the envelope: it blinks in ink instead. */
+.job .lamp.busy { box-shadow: inset 0 0 0 1.5px var(--on-yellow); background: var(--on-yellow); }
+
+/* In a narrow arrivals column the facts drop under the count rather than squeeze it. */
+@container arrivals (max-width: 620px) {
+  .job { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── Narrow ─────────────────────────────────────────────────────────────── */
+@media (max-width: 1080px) {
+  .receiver { grid-template-columns: minmax(0, 1fr); }
+  .ticket { position: static; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .ticket-body { grid-column: 1; }
+  .ticket-tear { display: none; }
+  .ticket-stub { grid-column: 2; padding: 20px; border-left: 1px dashed var(--rule-strong); align-content: start; }
+  .qr-frame { max-width: 240px; }
+}
+@media (max-width: 640px) {
+  .ticket { grid-template-columns: minmax(0, 1fr); }
+  .ticket-tear { display: block; }
+  .ticket-stub { grid-column: 1; border-left: 0; padding: 6px 20px 20px; }
+  .qr-frame { justify-self: center; }
+  .arrivals .sheet { --frame-min: 128px; }
+}

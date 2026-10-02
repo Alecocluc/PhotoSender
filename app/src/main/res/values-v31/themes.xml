@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Android 12+ system splash: the film-P on an envelope-yellow disc over photo-print paper. -->
+    <style name="Theme.Pherry" parent="Base.Theme.Pherry">
+        <item name="android:windowSplashScreenBackground">@color/pherry_paper</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/pherry_envelope</item>
+    </style>
+</resources>

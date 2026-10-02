@@ -29,6 +29,8 @@ class AppPreferences @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     private val lastIpKey = stringPreferencesKey("last_ip_address")
+    private val lastServerNameKey = stringPreferencesKey("last_server_name")
+    private val lastServerEndpointKey = stringPreferencesKey("last_server_endpoint")
     private val recentDesktopTargetsKey = stringPreferencesKey("recent_desktop_targets")
     private val desktopTokensKey = stringPreferencesKey("desktop_tokens")
     private val downloadPathKey = stringPreferencesKey("download_path")
@@ -48,6 +50,23 @@ class AppPreferences @Inject constructor(
 
     val lastIpAddress: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[lastIpKey] ?: ""
+    }
+
+    /**
+     * Name the desktop reported at the last successful connection, paired with the endpoint it came
+     * from, so a computer that stops answering can still be named. Blank when it doesn't belong to
+     * [lastIpAddress] (e.g. the last attempt was a different computer that never answered).
+     */
+    val lastServerName: Flow<String> = context.dataStore.data.map { prefs ->
+        val name = prefs[lastServerNameKey].orEmpty()
+        if (prefs[lastServerEndpointKey] == (prefs[lastIpKey] ?: "")) name else ""
+    }
+
+    suspend fun saveLastServer(endpoint: String, name: String) {
+        context.dataStore.edit { prefs ->
+            prefs[lastServerEndpointKey] = endpoint.trim()
+            prefs[lastServerNameKey] = name.trim()
+        }
     }
 
     val recentDesktopTargets: Flow<List<String>> = context.dataStore.data.map { prefs ->

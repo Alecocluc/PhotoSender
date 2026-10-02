@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-02T12:00:00Z",
+  "title": "Design System: Pherry",
+  "extensions": {
+    "colorMeta": {
+      "envelope-yellow": { "role": "primary", "displayName": "Envelope Yellow", "canonical": "#FFC629", "tonalRamp": ["#3D2C00", "#5E4500", "#8A6600", "#B88A00", "#F2B600", "#FFC629", "#FFDA75", "#FFF0C7"] },
+      "envelope-yellow-pressed": { "role": "primary", "displayName": "Envelope Yellow, Pressed", "canonical": "#F2B600" },
+      "on-envelope": { "role": "primary", "displayName": "Envelope Ink", "canonical": "#151412" },
+      "on-envelope-2": { "role": "primary", "displayName": "Envelope Ink, Secondary", "canonical": "#4F4316" },
+      "edge-print-orange": { "role": "secondary", "displayName": "Edge-Print Orange", "canonical": "#F39A2C", "tonalRamp": ["#3A1E08", "#5C3110", "#8A4C14", "#B86A1C", "#E08624", "#F39A2C", "#F8C07A", "#FDE6C8"] },
+      "safelight-red": { "role": "tertiary", "displayName": "Safelight Red", "canonical": "#C81E2A", "tonalRamp": ["#3A1513", "#6A0B12", "#94141F", "#C81E2A", "#E8443F", "#FF6B66", "#FFD9D6", "#FBE5E3"] },
+      "safelight-wash": { "role": "tertiary", "displayName": "Safelight Wash", "canonical": "#FBE5E3" },
+      "on-safelight-wash": { "role": "tertiary", "displayName": "Safelight Wash Ink", "canonical": "#6A0B12" },
+      "lamp-green": { "role": "tertiary", "displayName": "Lamp Green", "canonical": "#1F8A4C", "tonalRamp": ["#062012", "#0B3D20", "#173A26", "#1F8A4C", "#33A863", "#4CC27A", "#C6F0D4", "#DDEFE3"] },
+      "print-ink": { "role": "neutral", "displayName": "Print Ink", "canonical": "#151412", "tonalRamp": ["#151412", "#2E2C29", "#4A4843", "#66635D", "#908C84", "#BDBCB4", "#DADAD3", "#F5F5F2"] },
+      "print-ink-2": { "role": "neutral", "displayName": "Print Ink, Secondary", "canonical": "#4A4843" },
+      "print-ink-3": { "role": "neutral", "displayName": "Print Ink, Quiet", "canonical": "#66635D" },
+      "print-ink-hover": { "role": "neutral", "displayName": "Ink Hover (desktop)", "canonical": "#2E2C29" },
+      "photo-paper": { "role": "neutral", "displayName": "Photo Paper", "canonical": "#F5F5F2", "tonalRamp": ["#BDBCB4", "#DADAD3", "#E1E1DB", "#EAEAE5", "#EEEEEA", "#F0F0EC", "#F5F5F2", "#FFFFFF"] },
+      "print-sheet": { "role": "neutral", "displayName": "Print Sheet", "canonical": "#FFFFFF" },
+      "rail": { "role": "neutral", "displayName": "Rail (desktop sidebar)", "canonical": "#EEEEEA" },
+      "well": { "role": "neutral", "displayName": "Well", "canonical": "#EAEAE5" },
+      "well-2": { "role": "neutral", "displayName": "Deep Well", "canonical": "#E1E1DB" },
+      "rule": { "role": "neutral", "displayName": "Rule", "canonical": "#DADAD3" },
+      "rule-strong": { "role": "neutral", "displayName": "Strong Rule", "canonical": "#BDBCB4" },
+      "film-black": { "role": "neutral", "displayName": "Film Black", "canonical": "#121110", "tonalRamp": ["#0B0A09", "#121110", "#15140F", "#1D1B19", "#262420", "#2C2A27", "#BDB8AE", "#CFCAC0"] },
+      "film-2": { "role": "neutral", "displayName": "Frame Well", "canonical": "#1D1B19" },
+      "film-rule": { "role": "neutral", "displayName": "Sprocket", "canonical": "#2C2A27" },
+      "film-ink": { "role": "neutral", "displayName": "Film Ink", "canonical": "#CFCAC0" },
+      "darkroom": { "role": "neutral", "displayName": "Darkroom", "canonical": "#161513", "tonalRamp": ["#0F0E0D", "#11100F", "#161513", "#1A1917", "#1F1E1B", "#262522", "#2E2D29", "#46433E"] },
+      "darkroom-sheet": { "role": "neutral", "displayName": "Darkroom Sheet", "canonical": "#1F1E1B" },
+      "darkroom-rail": { "role": "neutral", "displayName": "Darkroom Rail (desktop)", "canonical": "#11100F" },
+      "darkroom-well": { "role": "neutral", "displayName": "Darkroom Well", "canonical": "#262522" },
+      "darkroom-well-2": { "role": "neutral", "displayName": "Darkroom Deep Well", "canonical": "#2E2D29" },
+      "darkroom-rule": { "role": "neutral", "displayName": "Darkroom Rule", "canonical": "#2E2C29" },
+      "darkroom-rule-strong": { "role": "neutral", "displayName": "Darkroom Strong Rule", "canonical": "#46433E" },
+      "darkroom-ink": { "role": "neutral", "displayName": "Darkroom Ink", "canonical": "#EDEBE6" },
+      "darkroom-ink-2": { "role": "neutral", "displayName": "Darkroom Ink, Secondary", "canonical": "#BDB9B0" },
+      "darkroom-ink-3": { "role": "neutral", "displayName": "Darkroom Ink, Quiet", "canonical": "#908C84" },
+      "darkroom-film": { "role": "neutral", "displayName": "Darkroom Film", "canonical": "#0B0A09" },
+      "darkroom-red": { "role": "tertiary", "displayName": "Darkroom Safelight", "canonical": "#FF6B66" },
+      "darkroom-red-wash": { "role": "tertiary", "displayName": "Darkroom Safelight Wash (Android; desktop uses rgba(255,107,102,0.13))", "canonical": "#3A1513" },
+      "darkroom-on-red-wash": { "role": "tertiary", "displayName": "Darkroom Safelight Wash Ink", "canonical": "#FFD9D6" },
+      "darkroom-green": { "role": "tertiary", "displayName": "Darkroom Lamp Green", "canonical": "#4CC27A" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The envelope's count (64sp Android; desktop job count 40px)." },
+      "headline": { "displayName": "Headline", "purpose": "Android screen titles via ScreenHeader." },
+      "view-title": { "displayName": "View Title", "purpose": "Desktop view titles (26px under 600px)." },
+      "title": { "displayName": "Title", "purpose": "Dialog and album titles; desktop section titles 17px/750." },
+      "title-small": { "displayName": "Title Small", "purpose": "Row titles, ledger file names, notice titles." },
+      "body": { "displayName": "Body", "purpose": "Running text, sentence case." },
+      "label": { "displayName": "Label", "purpose": "Buttons and tabs (desktop 13.5px/650)." },
+      "form-label": { "displayName": "Form Label", "purpose": "Printed caps fields on the envelope and stub; section headings." },
+      "edge": { "displayName": "Edge Print", "purpose": "Frame numbers and status on film; status tags (desktop 9.5px)." },
+      "mono": { "displayName": "Mono", "purpose": "Sizes, addresses, counts." },
+      "mono-caps": { "displayName": "Mono Caps", "purpose": "Data line under a title, guide words, date stamps." },
+      "code": { "displayName": "Code", "purpose": "Pairing code as ticket number (desktop 30px)." },
+      "wordmark": { "displayName": "Wordmark", "purpose": "\"Pherry\" beside the mark." }
+    },
+    "shadows": [
+      { "name": "lift-hi", "value": "0 2px 6px rgba(21, 20, 18, 0.10), 0 24px 48px -20px rgba(21, 20, 18, 0.34)", "purpose": "Desktop toasts and confirm dialogs only (dark: 0 2px 8px rgba(0,0,0,0.5), 0 28px 56px -20px rgba(0,0,0,0.85))." },
+      { "name": "lamp-halo", "value": "0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent)", "purpose": "Linked lamp state signal." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Arrivals: develop, job band entry, toasts, dialogs, switch knob." },
+      { "name": "ease-std", "value": "cubic-bezier(0.2, 0, 0, 1)", "purpose": "State transitions on controls (120 to 160ms)." },
+      { "name": "develop", "value": "1600ms ease-out (desktop keyframes); progress-driven colour matrix (Android)", "purpose": "Frame develops from orange negative to print; reduced motion is a 300ms crossfade." },
+      { "name": "grease-ring-draw", "value": "240ms tween", "purpose": "Ring drawn on when a frame is selected." },
+      { "name": "lamp-blink", "value": "1.1s steps(2) desktop; 550ms reverse fade Android", "purpose": "Busy lamp only." },
+      { "name": "job-in", "value": "420ms ease-out, 6px rise", "purpose": "Desktop live job band appearing." }
+    ],
+    "breakpoints": [
+      { "name": "android-medium", "value": "600dp" },
+      { "name": "android-expanded", "value": "840dp" },
+      { "name": "desktop-narrow", "value": "600px" },
+      { "name": "desktop-ticket-stack", "value": "1080px" },
+      { "name": "desktop-rail-collapse", "value": "900px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Ink Button",
+      "kind": "button",
+      "refersTo": "button-ink",
+      "description": "Primary print button: solid ink, paper text, square 4px corners.",
+      "html": "<button class=\"ds-btn ds-btn-ink\">Back up 38 now</button>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 14px; border: 1.5px solid var(--ink, #151412); border-radius: 4px; background: transparent; color: var(--ink, #151412); font-family: Archivo, 'Segoe UI', system-ui, sans-serif; font-weight: 650; font-size: 13.5px; cursor: pointer; transition: background-color 120ms cubic-bezier(0.2,0,0,1), border-color 120ms cubic-bezier(0.2,0,0,1), transform 80ms cubic-bezier(0.2,0,0,1); } .ds-btn-ink { background: var(--ink, #151412); color: var(--paper, #F5F5F2); } .ds-btn-ink:hover { background: var(--ink-hover, #2E2C29); border-color: var(--ink-hover, #2E2C29); } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { outline: 2px solid var(--ink, #151412); outline-offset: 2px; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary print button: 1.5px ink stroke, well fill on hover.",
+      "html": "<button class=\"ds-btn-outline\">Open folder</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border: 1.5px solid var(--ink, #151412); border-radius: 4px; background: transparent; color: var(--ink, #151412); font-family: Archivo, 'Segoe UI', system-ui, sans-serif; font-weight: 650; font-size: 13.5px; cursor: pointer; transition: background-color 120ms cubic-bezier(0.2,0,0,1); } .ds-btn-outline:hover { background: var(--well, #EAEAE5); } .ds-btn-outline:active { transform: translateY(1px); } .ds-btn-outline:focus-visible { outline: 2px solid var(--ink, #151412); outline-offset: 2px; }"
+    },
+    {
+      "name": "Danger Outline Button",
+      "kind": "button",
+      "refersTo": "button-danger",
+      "description": "Deletion only: red stroke and text, red wash on hover.",
+      "html": "<button class=\"ds-btn-danger\">Get a new code</button>",
+      "css": ".ds-btn-danger { display: inline-flex; align-items: center; height: 36px; padding: 0 14px; border: 1.5px solid var(--red, #C81E2A); border-radius: 4px; background: transparent; color: var(--red, #C81E2A); font-family: Archivo, 'Segoe UI', system-ui, sans-serif; font-weight: 650; font-size: 13.5px; cursor: pointer; } .ds-btn-danger:hover { background: var(--red-wash, #FBE5E3); } .ds-btn-danger:focus-visible { outline: 2px solid var(--ink, #151412); outline-offset: 2px; }"
+    },
+    {
+      "name": "Envelope",
+      "kind": "card",
+      "refersTo": "envelope",
+      "description": "The one job field per screen: yellow, thumb-cut notch, form labels, display count, ink button printed on it, ticked job bar.",
+      "html": "<section class=\"ds-env\"><div class=\"ds-env-fields\"><div><div class=\"ds-env-label\">On this phone</div><div class=\"ds-env-val\">4,212</div></div><div><div class=\"ds-env-label\">Backed up</div><div class=\"ds-env-val\">4,174</div></div><div><div class=\"ds-env-label\">To</div><div class=\"ds-env-val\" style=\"display:flex;align-items:center;gap:8px\"><span class=\"ds-lamp\"></span>ALEX-PC</div></div></div><div class=\"ds-env-count\">38</div><div class=\"ds-env-bar\"><span style=\"width:40%\"></span></div><button class=\"ds-env-btn\">Back up 38 now</button></section>",
+      "css": ".ds-env { position: relative; display: grid; gap: 12px; padding: 26px 20px 20px; background: #FFC629; color: #151412; border-radius: 4px; -webkit-mask: radial-gradient(circle 15px at 50% 0, transparent 14.5px, #000 15px); mask: radial-gradient(circle 15px at 50% 0, transparent 14.5px, #000 15px); font-family: Archivo, 'Segoe UI', system-ui, sans-serif; } .ds-env-label { display: flex; align-items: center; gap: 8px; font-weight: 700; font-stretch: 75%; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #4F4316; } .ds-lamp { width: 10px; height: 10px; border-radius: 50%; background: #1F8A4C; box-shadow: inset 0 0 0 1.2px #151412; } .ds-env-fields { display: flex; gap: 16px; } .ds-env-val { font-family: 'Martian Mono', ui-monospace, monospace; font-stretch: 87.5%; font-size: 15px; } .ds-env-count { font-weight: 800; font-stretch: 88%; font-size: 64px; line-height: 1; letter-spacing: -0.02em; } .ds-env-bar { position: relative; height: 10px; background: rgba(21,20,18,0.16); } .ds-env-bar span { position: absolute; inset: 0 auto 0 0; background: #151412; } .ds-env-btn { height: 48px; border: 0; border-radius: 4px; background: #151412; color: #FFC629; font: 600 14px Archivo, system-ui, sans-serif; cursor: pointer; } .ds-env-btn:hover { background: #2E2C29; } .ds-env-btn:focus-visible { outline: 2px solid #151412; outline-offset: 2px; }"
+    },
+    {
+      "name": "Film Frame",
+      "kind": "custom",
+      "refersTo": "film-frame",
+      "description": "One frame on a contact sheet: edge print above and below, picture at 2px corners on a film well; yellow focus.",
+      "html": "<button class=\"ds-frame\"><span class=\"ds-edge\"><span>12<svg width=\"9\" height=\"9\" viewBox=\"0 0 256 256\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"32\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"96 48 176 128 96 208\"/></svg></span><span class=\"ds-dim\">05:39</span></span><span class=\"ds-shot\"></span><span class=\"ds-edge\"><span class=\"ds-dim\">Camera</span></span></button>",
+      "css": ".ds-frame { display: flex; flex-direction: column; width: 168px; padding: 0 5px; border: 0; background: var(--film, #121110); color: var(--film-ink, #CFCAC0); cursor: pointer; text-align: left; } .ds-edge { height: 18px; display: flex; align-items: center; justify-content: space-between; font-family: 'Martian Mono', ui-monospace, monospace; font-stretch: 75%; font-size: 9.5px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--edge, #F39A2C); } .ds-dim { color: var(--film-ink, #CFCAC0); opacity: 0.72; } .ds-shot { aspect-ratio: 4 / 3; border-radius: 2px; background: var(--film-2, #1D1B19); } .ds-frame:hover .ds-shot { filter: brightness(1.08); } .ds-frame:focus-visible { outline: 2px solid var(--yellow, #FFC629); outline-offset: -2px; }"
+    },
+    {
+      "name": "Status Tag",
+      "kind": "chip",
+      "refersTo": "status-tag",
+      "description": "Mono caps in a hairline box; the job variant is filled yellow.",
+      "html": "<span class=\"ds-tag\">Saved</span> <span class=\"ds-tag ds-tag-job\">2 new</span> <span class=\"ds-tag ds-tag-reject\">Failed</span>",
+      "css": ".ds-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border: 1px solid currentColor; border-radius: 2px; font-family: 'Martian Mono', ui-monospace, monospace; font-stretch: 75%; font-size: 10px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink, #151412); } .ds-tag-job { color: #151412; background: #FFC629; border-color: #FFC629; } .ds-tag-reject { color: var(--red, #C81E2A); }"
+    },
+    {
+      "name": "Printed Segmented Tabs",
+      "kind": "nav",
+      "refersTo": "segmented-selected",
+      "description": "Ink-outlined tabs; the chosen option prints solid ink.",
+      "html": "<div class=\"ds-seg\" role=\"group\"><button aria-pressed=\"true\">All</button><button aria-pressed=\"false\">Photos</button><button aria-pressed=\"false\">Videos</button></div>",
+      "css": ".ds-seg { display: inline-flex; border: 1.5px solid var(--ink, #151412); border-radius: 4px; overflow: hidden; } .ds-seg button { height: 32px; padding: 0 14px; border: 0; background: transparent; color: var(--ink, #151412); font: 650 13px Archivo, system-ui, sans-serif; cursor: pointer; } .ds-seg button + button { border-left: 1.5px solid var(--ink, #151412); } .ds-seg button:hover { background: var(--well, #EAEAE5); } .ds-seg button[aria-pressed=\"true\"] { background: var(--ink, #151412); color: var(--paper, #F5F5F2); } .ds-seg button:focus-visible { outline: 2px solid currentColor; outline-offset: -5px; }"
+    },
+    {
+      "name": "Square Switch (desktop)",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Square toggle: ink track with yellow knob in light; yellow track with ink knob in the darkroom.",
+      "html": "<label class=\"ds-switch\"><input type=\"checkbox\" checked><span class=\"ds-track\"></span></label>",
+      "css": ".ds-switch { position: relative; display: inline-flex; cursor: pointer; } .ds-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; } .ds-track { position: relative; width: 40px; height: 22px; border-radius: 4px; background: var(--well-2, #E1E1DB); box-shadow: inset 0 0 0 1.5px var(--ink-3, #66635D); transition: background-color 160ms cubic-bezier(0.2,0,0,1); } .ds-track::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 2px; background: var(--sheet, #FFFFFF); box-shadow: 0 0 0 1.5px var(--ink-3, #66635D); transition: transform 180ms cubic-bezier(0.16,1,0.3,1); } .ds-switch input:checked + .ds-track { background: var(--ink, #151412); box-shadow: none; } .ds-switch input:checked + .ds-track::after { transform: translateX(18px); background: #FFC629; box-shadow: none; } .ds-switch input:focus-visible + .ds-track { outline: 2px solid var(--ink, #151412); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Sheet field with a 1.5px ink-3 stroke that steps to ink on focus.",
+      "html": "<input class=\"ds-input\" placeholder=\"192.168.1.42:3210\">",
+      "css": ".ds-input { height: 36px; padding: 0 12px; border: 1.5px solid var(--ink-3, #66635D); border-radius: 4px; background: var(--sheet, #FFFFFF); color: var(--ink, #151412); font: 500 13.5px Archivo, system-ui, sans-serif; transition: border-color 120ms cubic-bezier(0.2,0,0,1); } .ds-input::placeholder { color: var(--ink-3, #66635D); } .ds-input:hover { border-color: var(--ink-2, #4A4843); } .ds-input:focus { border-color: var(--ink, #151412); outline: none; }"
+    },
+    {
+      "name": "Claim Ticket Stub",
+      "kind": "card",
+      "refersTo": "ticket-stub",
+      "description": "Yellow stub under a perforation holding the pairing code as the ticket number.",
+      "html": "<div class=\"ds-stub\"><div class=\"ds-perf\"></div><div class=\"ds-stub-in\"><span class=\"ds-stub-label\">Pairing code</span><span class=\"ds-code\">K7M2QP</span></div></div>",
+      "css": ".ds-stub { width: 232px; background: #FFC629; color: #151412; border-radius: 4px; overflow: hidden; } .ds-perf { height: 4px; margin: 7px 12px 0; background: radial-gradient(circle, #FFFFFF 1.5px, transparent 1.8px) 0 50% / 9px 4px repeat-x; } .ds-stub-in { display: grid; gap: 8px; padding: 10px 18px 18px; } .ds-stub-label { font: 700 11.5px Archivo, system-ui, sans-serif; font-stretch: 75%; letter-spacing: 0.07em; text-transform: uppercase; color: #4F4316; } .ds-code { font-family: 'Martian Mono', ui-monospace, monospace; font-weight: 600; font-size: 30px; line-height: 1; letter-spacing: 0.16em; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Lab Envelope & Contact Sheet",
+    "overview": "Pherry is a photo lab you own. The phone drops film off; the computer develops and keeps it. Every backup is a job written on a yellow drop-off envelope, and every library, arrival list and history is a darkroom contact sheet: strips of film-black frames with orange edge print naming the frame number and its status. The world is the same on both platforms; Android (Jetpack Compose, Material 3 with its roles remapped) and Pherry Desktop (Electron, vanilla CSS custom properties) are two prints from one negative.\n\nGrounds are photo-print paper by day and darkroom by night. One committed field of envelope yellow per screen holds the job (what is waiting, sending or selected), with ink-black controls printed on it. Everything else is flat: paper, white print sheets, hairline rules, square 4px corners, perforated tear lines and the envelope's thumb-cut notch. Depth comes from material and colour, not shadow. Safelight red appears only for rejects and deletions; a small green lamp only for a live link. Phosphor icons, Archivo for words, Martian Mono for data.\n\nThe system rejects the cloud-sync dashboard: no stat-card grids, gradient progress bars, cloud glyphs or teal. The metaphor is visual only; the words stay literal.",
+    "keyCharacteristics": [
+      "One envelope-yellow field per screen, and it always means \"the job\".",
+      "Film-black strips with orange edge print carry every collection of photos.",
+      "Flat paper and darkroom grounds; square 4px print corners, 2px frame corners.",
+      "Selection is a yellow grease-pencil ring drawn on the picture, never a chrome overlay.",
+      "Arrivals develop from an orange negative into the print.",
+      "Archivo (variable width) for words, Martian Mono for data; both bundled, never fetched."
+    ],
+    "rules": [
+      { "name": "The One Envelope Rule", "body": "Each screen commits exactly one envelope-yellow field, and it holds the job. When the job changes, the yellow moves: while a phone is sending, the desktop Receiver's claim-ticket stub prints quietly (sheet and ink, perforation and notches kept) and the live job band holds the yellow. Yellow elsewhere only marks what is in the job (grease ring, job tag, nav indicator, the switch's on state).", "section": "colors" },
+      { "name": "The Edge Print Stays On Film Rule", "body": "Orange appears only on film-black. On paper, data is ink in mono caps.", "section": "colors" },
+      { "name": "The Rationed Signal Rule", "body": "Red means failure or deletion; green means a live link. Neither decorates, neither fills a region.", "section": "colors" },
+      { "name": "The No Yellow On Yellow Rule", "body": "On envelope surfaces selection, focus and highlights invert to ink (the desktop's ::selection flips to ink on the stub and job band; focus rings take on-envelope).", "section": "colors" },
+      { "name": "The Mono Is Data Rule", "body": "Martian Mono sets sizes, counts, addresses, codes, dates and edge print. Running text and buttons are Archivo.", "section": "typography" },
+      { "name": "The Data Line Below Rule", "body": "A title's counts and dates go on a mono-caps line under it. Nothing sits above a heading.", "section": "typography" },
+      { "name": "The Caps By Style Rule", "body": "Edge print, form labels and data lines are uppercased by style or at the call site; source strings stay sentence case.", "section": "typography" },
+      { "name": "The Flat Print Rule", "body": "Cards, sheets, envelopes, tickets and frames carry no shadow. If something needs to stand apart, change its ground or give it a 1px rule.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do give each screen exactly one envelope-yellow field, holding the job, with everything on it printed in on-envelope ink.",
+      "Do put every collection of photos on film-black strips with orange edge print (frame number with a Phosphor caret, status or time dim on the right).",
+      "Do mark selection with the yellow grease-pencil ring and its order number, and let arrivals develop from the orange negative (300ms crossfade under reduced motion).",
+      "Do use 4px print corners for controls and containers, 2px for frames and tags, 1.5px ink strokes for interactive outlines and 1px rules for structure.",
+      "Do set titles in Archivo and put their data line below them in Martian Mono caps; name long lists' span with sticky guide words.",
+      "Do write plain, specific, second-person copy in sentence case that names the computer (\"your computer\" as fallback), names the action and count on buttons, and says what to do next in errors.",
+      "Do keep 48dp touch targets on Android and visible 2px focus rings on desktop (yellow on film, ink on paper, on-envelope ink on yellow).",
+      "Do generate brand assets only from build_brand.py and ship fonts and icons inside both apps."
+    ],
+    "donts": [
+      "Don't build stat-card grids, gradient progress bars, cloud glyphs or anything teal; this is not a cloud-sync dashboard.",
+      "Don't use shadows, gradients, glass or glow for depth; desktop toasts and dialogs are the only lifted surfaces.",
+      "Don't use red except for failures and deletions, or green except for the linked lamp.",
+      "Don't put edge-print orange on paper or Martian Mono on running sentences.",
+      "Don't put labels above headings; data lines go below titles.",
+      "Don't add sprockets inside dense contact sheets; they belong to standalone strips.",
+      "Don't use spinners, shimmer gradients or placeholder glyphs for loading media; show blank film-2 frames.",
+      "Don't use lab puns, exclamation marks, \"Oops\" or emoji in copy, or invent URLs, speeds or features; the metaphor is visual and the words stay literal.",
+      "Don't use androidx material icons or any non-Phosphor icon set, or text glyphs as icons."
+    ]
+  }
+}

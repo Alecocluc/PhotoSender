@@ -8,15 +8,25 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
+
+/**
+ * The computer this phone last paired with, kept while it isn't answering. [name] may be blank (not
+ * learned yet). [disconnectedByUser] is true when the link is down because the user tapped Disconnect,
+ * not because the computer stopped answering.
+ */
+data class RememberedComputer(val name: String, val address: String, val disconnectedByUser: Boolean = false)
 
 @Singleton
 class ConnectionManager @Inject constructor(
@@ -42,8 +52,39 @@ class ConnectionManager @Inject constructor(
     val connectionError: StateFlow<String?> = _connectionError.asStateFlow()
 
     private var monitorJob: Job? = null
+
+    private val _disconnectedByUser = MutableStateFlow(false)
+    /** True after the user taps Disconnect, until they connect again. */
+    val disconnectedByUser: StateFlow<Boolean> = _disconnectedByUser.asStateFlow()
+
     /** Set when the user explicitly disconnects, so a dropped heartbeat doesn't auto-reconnect. */
-    @Volatile private var userDisconnected = false
+    private var userDisconnected: Boolean
+        get() = _disconnectedByUser.value
+        set(value) { _disconnectedByUser.value = value }
+
+    private val _canDelete = MutableStateFlow(false)
+    /**
+     * Whether this connection carries the desktop's pairing token. Without it (paired from the Wi-Fi
+     * list or by typing the address) the desktop refuses Sync deletions.
+     */
+    val canDelete: StateFlow<Boolean> = _canDelete.asStateFlow()
+
+    /**
+     * The saved computer, or null when none is saved. Disconnect keeps it (the next start reconnects),
+     * so the UI can say "can't reach ALEX-PC" instead of "not paired" while it's asleep or off.
+     */
+    val rememberedComputer: StateFlow<RememberedComputer?> = combine(
+        appPreferences.lastIpAddress,
+        appPreferences.lastServerName,
+        _disconnectedByUser,
+    ) { address, name, byUser ->
+        if (address.isBlank()) null else RememberedComputer(name = name, address = address, disconnectedByUser = byUser)
+    }.stateIn(scope, SharingStarted.Eagerly, null)
+
+    private fun setToken(token: String) {
+        session.token = token
+        _canDelete.value = session.token.isNotBlank()
+    }
 
     fun connect(targetInput: String) = connectInternal(targetInput, silent = false)
 
@@ -80,11 +121,12 @@ class ConnectionManager @Inject constructor(
             // IP changes — a token stored under the old endpoint would otherwise be missed.
             val health = performHealthCheck(target, silent)
             if (health != null) {
-                session.token = resolveToken(target, health.deviceId)
+                setToken(resolveToken(target, health.deviceId))
+                appPreferences.saveLastServer(target.endpoint, health.serverName)
                 _connectionState.value = ConnectionState.CONNECTED
                 startMonitor(target)
             } else {
-                session.token = ""
+                setToken("")
                 _connectionState.value = ConnectionState.DISCONNECTED
                 _connectedIp.value = ""
                 _connectedEndpoint.value = ""
@@ -119,7 +161,7 @@ class ConnectionManager @Inject constructor(
         userDisconnected = true
         monitorJob?.cancel()
         monitorJob = null
-        session.token = ""
+        setToken("")
         _connectionState.value = ConnectionState.DISCONNECTED
         _connectedIp.value = ""
         _connectedEndpoint.value = ""
@@ -209,7 +251,8 @@ class ConnectionManager @Inject constructor(
         val last = appPreferences.lastIpAddress.first()
         val target = parseConnectionTarget(last) ?: return false
         val health = performHealthCheck(target, silent = true) ?: return false
-        session.token = resolveToken(target, health.deviceId)
+        setToken(resolveToken(target, health.deviceId))
+        appPreferences.saveLastServer(target.endpoint, health.serverName)
         userDisconnected = false
         _connectedIp.value = target.host
         _connectedEndpoint.value = target.endpoint
