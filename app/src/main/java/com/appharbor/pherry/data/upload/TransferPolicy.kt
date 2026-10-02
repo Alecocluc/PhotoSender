@@ -11,7 +11,7 @@ import java.security.MessageDigest
 object ReceiptPolicy {
     fun key(receiverId: String, libraryId: String, uri: String, version: String): String =
         MessageDigest.getInstance("SHA-256").digest(listOf(receiverId, libraryId, uri, version).joinToString("\u0000").toByteArray())
-            .joinToString("") { "%02x".format(it) }
+            .toLowerHex()
 
     fun matches(record: UploadRecord, receiverId: String, libraryId: String, uri: String, version: String): Boolean =
         record.receiverId == receiverId && record.libraryId == libraryId && record.contentUri == uri &&
@@ -19,6 +19,18 @@ object ReceiptPolicy {
 
     fun shouldWithholdDeletes(fullAccess: Boolean, authoritative: Boolean, liveCount: Int, missing: Int, backedUp: Int): Boolean =
         !fullAccess || !authoritative || liveCount == 0 || (missing >= 20 && missing * 2 > backedUp)
+}
+
+/** Avoid constructing a Formatter for every digest byte when scanning a large library. */
+internal fun ByteArray.toLowerHex(): String {
+    val digits = "0123456789abcdef"
+    val result = CharArray(size * 2)
+    for (index in indices) {
+        val byte = this[index].toInt() and 0xff
+        result[index * 2] = digits[byte ushr 4]
+        result[index * 2 + 1] = digits[byte and 0x0f]
+    }
+    return String(result)
 }
 
 enum class QueueOutcome { COMPLETE, RETRY, PAUSED, FAILED }

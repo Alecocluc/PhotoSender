@@ -9,7 +9,7 @@ const { createServer } = require("../receiver");
 const { LibraryStore, SCHEMA_VERSION } = require("../storage");
 const hash = (b) => crypto.createHash("sha256").update(b).digest("hex");
 const id = () => crypto.randomUUID();
-async function fixture(t) {
+async function fixture(t, extraOptions = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pherry-test-"));
   const root = path.join(dir, "Photos"),
     databasePath = path.join(dir, "state.sqlite");
@@ -20,6 +20,7 @@ async function fixture(t) {
     adminToken: "desktop-secret",
     deviceId: "desktop-identity",
     onRecoveryProgress: () => { recoveryProgress += 1; },
+    ...extraOptions,
   };
   let app, server;
   const start = async (beforeReady) => {
@@ -224,6 +225,26 @@ test("attribute-only changes do not invalidate presence and chunks do not rewrit
   const result = await f.request("/v2/files/exists", { method: "POST", token: p.credential, body: { hashes: [hash(bytes)] } });
   assert.equal(result.files[0].exists, true);
 });
+
+test("file progress notifications are coalesced and terminal job state is immediate", async (t) => {
+  const events = [];
+  const f = await fixture(t, { onJobsChanged: (event) => events.push(event) });
+  const p = await f.pair(), jobId = await f.job(p), bytes = Buffer.from("progress");
+  const u = await f.begin(p, bytes, jobId);
+  await f.chunk(p, u, bytes);
+  await f.complete(p, u);
+  const complete = await f.request(`/v2/jobs/${jobId}`, {
+    method: "PUT", token: p.credential,
+    body: { state: "completed", totalFiles: 1, completedFiles: 1, totalBytes: bytes.length, completedBytes: bytes.length },
+  });
+  assert.equal(complete.status, 200);
+  const finalEvent = events.at(-1).items.find((job) => job.id === jobId);
+  assert.equal(finalEvent.state, "completed");
+  assert.equal(finalEvent.receivedBytes, bytes.length, "completed files are not counted again as pending");
+  const count = events.length;
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(events.length, count, "terminal state cancels the queued progress notification");
+});
 test("the same content on two phones has independent folders and receipts", async (t) => {
   const f = await fixture(t),
     a = await f.pair(),
@@ -239,6 +260,21 @@ test("the same content on two phones has independent folders and receipts", asyn
   assert.notEqual(a.deviceFolder, b.deviceFolder);
   assert.equal((await f.request("/v2/media", { admin: true })).totalCount, 2);
 });
+test("repeated camera names skip occupied suffixes without overwriting external files", async (t) => {
+  const f = await fixture(t), p = await f.pair(), jobId = await f.job(p);
+  const saved = [];
+  for (let i = 0; i < 4; i++) {
+    if (i === 2) fs.writeFileSync(path.join(f.root, p.deviceFolder, "Camera", "photo (2).jpg"), "external");
+    const bytes = Buffer.from(`unique photo ${i}`), u = await f.begin(p, bytes, jobId);
+    await f.chunk(p, u, bytes);
+    saved.push(await f.complete(p, u));
+  }
+  assert.deepEqual(saved.map((entry) => entry.fileName), ["photo.jpg", "photo (1).jpg", "photo (3).jpg", "photo (4).jpg"]);
+  for (let i = 0; i < saved.length; i++)
+    assert.equal(fs.readFileSync(path.join(f.root, saved[i].relativePath), "utf8"), `unique photo ${i}`);
+  assert.equal(fs.readFileSync(path.join(f.root, p.deviceFolder, "Camera", "photo (2).jpg"), "utf8"), "external");
+});
+
 test("a database from another schema version is reset instead of migrated", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pherry-test-")),
     filename = path.join(dir, "state.sqlite");
@@ -294,6 +330,83 @@ test("acknowledged chunks survive restart and wrong offsets are rejected", async
     fs.readFileSync(path.join(f.root, done.relativePath)),
     bytes,
   );
+});
+
+test("buffered writes handle short writes and retain the acknowledged hash after a failed chunk", async (t) => {
+  const f = await fixture(t), p = await f.pair();
+  const bytes = crypto.randomBytes(900 * 1024 + 37), prefixLength = 300 * 1024 + 19;
+  const u = await f.begin(p, bytes);
+  assert.equal((await f.chunk(p, u, bytes.subarray(0, prefixLength))).offset, prefixLength);
+  const partial = path.join(f.root, ".pherry", "uploads", `${u.uploadId}.part`);
+  const originalOpen = fs.promises.open, originalReadStream = fs.createReadStream;
+  let shouldFail = true, reads = 0;
+  fs.createReadStream = function (file, ...args) {
+    if (file === partial) reads++;
+    return originalReadStream.call(this, file, ...args);
+  };
+  fs.promises.open = async function (file, ...args) {
+    const handle = await originalOpen.call(this, file, ...args);
+    if (file === partial) {
+      const write = handle.write.bind(handle);
+      let written = 0;
+      handle.write = async (buffer, offset, length, position) => {
+        if (shouldFail && written >= 256 * 1024) {
+          shouldFail = false;
+          throw Object.assign(new Error("temporary disk write failure"), { code: "EIO" });
+        }
+        const result = await write(buffer, offset, Math.min(length, 17 * 1024), position);
+        written += result.bytesWritten;
+        return result;
+      };
+    }
+    return handle;
+  };
+  let saved;
+  try {
+    assert.equal((await f.chunk(p, u, bytes.subarray(prefixLength), prefixLength)).status, 500);
+    assert.equal(f.store.upload(u.uploadId).offset, prefixLength);
+    assert.equal(fs.statSync(partial).size, prefixLength);
+    assert.equal((await f.chunk(p, u, bytes.subarray(prefixLength), prefixLength)).offset, bytes.length);
+    saved = await f.complete(p, u);
+    assert.equal(saved.status, 200);
+    assert.equal(reads, 0, "retry must reuse the acknowledged hash without rereading the prefix");
+  } finally {
+    fs.promises.open = originalOpen;
+    fs.createReadStream = originalReadStream;
+  }
+  assert.deepEqual(fs.readFileSync(path.join(f.root, saved.relativePath)), bytes);
+});
+
+test("a close error after checkpointing never truncates durable chunk bytes", async (t) => {
+  const f = await fixture(t), p = await f.pair(), bytes = crypto.randomBytes(350 * 1024 + 7);
+  const u = await f.begin(p, bytes);
+  const partial = path.join(f.root, ".pherry", "uploads", `${u.uploadId}.part`);
+  const originalOpen = fs.promises.open;
+  fs.promises.open = async function (file, ...args) {
+    const handle = await originalOpen.call(this, file, ...args);
+    if (file === partial) {
+      const close = handle.close.bind(handle);
+      let failed = false;
+      handle.close = async () => {
+        if (!failed) {
+          failed = true;
+          throw Object.assign(new Error("temporary close failure"), { code: "EIO" });
+        }
+        return close();
+      };
+    }
+    return handle;
+  };
+  try {
+    assert.equal((await f.chunk(p, u, bytes)).status, 500);
+  } finally {
+    fs.promises.open = originalOpen;
+  }
+  assert.equal(f.store.upload(u.uploadId).offset, bytes.length);
+  assert.deepEqual(fs.readFileSync(partial), bytes);
+  const saved = await f.complete(p, u);
+  assert.equal(saved.status, 200);
+  assert.deepEqual(fs.readFileSync(path.join(f.root, saved.relativePath)), bytes);
 });
 test("checksum rejection restarts only that file and concurrent duplicates share a receipt", async (t) => {
   const f = await fixture(t),
@@ -594,6 +707,9 @@ for (const failure of ["saveMedia", "accountSavedUpload", "saveUpload"]) test(`a
   try { failed = await f.complete(phone, u); }
   finally { f.store[failure] = original; }
   assert.equal(failed.status, 500);
+  assert.equal(f.store.totals().mediaCount, 0, "failed completion rolls back inventory");
+  assert.equal(f.store.query("activity", {}).totalCount, 0, "failed completion rolls back activity");
+  assert.equal(f.store.job(u.jobId).savedFiles, 0, "failed completion rolls back accounting");
   const intent = f.store.upload(u.uploadId);
   assert.ok(intent.finalPath);
   assert.equal(fs.existsSync(path.join(f.root, ".pherry", "uploads", `${u.uploadId}.part`)), false);

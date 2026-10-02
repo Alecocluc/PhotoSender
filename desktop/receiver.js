@@ -12,6 +12,7 @@ const {
 } = require("./storage");
 const MAX_FILE = 16 * 1024 ** 3,
   MAX_CHUNK = 4 * 1024 ** 2,
+  WRITE_BUFFER_BYTES = 256 * 1024,
   UPLOAD_TTL = 7 * 86400000;
 const ID = /^[a-zA-Z0-9_-]{8,100}$/;
 const JOB_STATES = new Set([
@@ -81,7 +82,9 @@ function createServer(downloadPath, options = {}) {
     hashes = new Map(),
     active = new Map(),
     heartbeats = new Map(),
-    attempts = new Map();
+    attempts = new Map(),
+    filenameHints = new Map();
+  let jobsTimer;
   let rebuild = {
     running: false,
     indexed: 0,
@@ -140,17 +143,15 @@ function createServer(downloadPath, options = {}) {
   };
   const match = (device, hash) => store.find(device, hash).find(onDisk);
   const jobs = () => {
-    const pending = store.pendingUploads();
+    const received = new Map(), rates = new Map();
+    for (const u of store.pendingUploads())
+      received.set(u.jobId, (received.get(u.jobId) || 0) + (active.get(u.uploadId)?.bytes ?? u.offset));
+    for (const u of active.values())
+      rates.set(u.jobId, (rates.get(u.jobId) || 0) + u.rate);
     return store.jobs().map((j) => ({
       ...j,
-      receivedBytes:
-        (j.completedBytes || 0) +
-        pending
-          .filter((u) => u.jobId === j.id)
-          .reduce((s, u) => s + (active.get(u.uploadId)?.bytes ?? u.offset), 0),
-      currentSpeedBytesPerSec: [...active.values()]
-        .filter((u) => u.jobId === j.id)
-        .reduce((s, u) => s + u.rate, 0),
+      receivedBytes: (j.completedBytes || 0) + (received.get(j.id) || 0),
+      currentSpeedBytesPerSec: rates.get(j.id) || 0,
     }));
   };
   const currentReceipt = (u) => {
@@ -168,7 +169,16 @@ function createServer(downloadPath, options = {}) {
       fail(410, "The saved file changed or was removed. Restart this upload."),
       { code: "UPLOAD_EXPIRED" },
     );
-  const notifyJobs = () => emit("onJobsChanged", { items: jobs() });
+  const notifyJobs = () => {
+    clearTimeout(jobsTimer);
+    jobsTimer = null;
+    if (options.onJobsChanged) emit("onJobsChanged", { items: jobs() });
+  };
+  const scheduleJobs = () => {
+    if (!options.onJobsChanged || jobsTimer) return;
+    jobsTimer = setTimeout(notifyJobs, 250);
+    jobsTimer.unref();
+  };
   const tempPath = (u) =>
     inside(root, path.join(".pherry", "uploads", `${u.uploadId}.part`));
   const removePartial = (u) => {
@@ -557,7 +567,8 @@ function createServer(downloadPath, options = {}) {
     locks.add(u.uploadId);
     const file = tempPath(u);
     let handle,
-      written = 0;
+      written = 0,
+      checkpointed = false;
     try {
       handle = await fs.promises.open(file, "r+");
       await handle.truncate(offset);
@@ -574,6 +585,21 @@ function createServer(downloadPath, options = {}) {
         hashes.set(u.uploadId, state);
         if (hashes.size > 64) hashes.delete(hashes.keys().next().value);
       }
+      // Keep the acknowledged hash intact if a chunk fails. Retrying near the end
+      // of a large file must not reread its entire prefix after a dropped connection.
+      const chunkHash = state.hash.copy();
+      const buffer = Buffer.allocUnsafe(Math.min(WRITE_BUFFER_BYTES, length));
+      let buffered = 0, persisted = 0;
+      const flush = async () => {
+        let at = 0;
+        while (at < buffered) {
+          const r = await handle.write(buffer, at, buffered - at, offset + persisted + at);
+          if (!r.bytesWritten) throw new Error("Disk write stopped");
+          at += r.bytesWritten;
+        }
+        persisted += buffered;
+        buffered = 0;
+      };
       const began = Date.now(),
         progress = {
           id: u.uploadId,
@@ -591,16 +617,13 @@ function createServer(downloadPath, options = {}) {
         if (written + c.length > length) throw fail(413, "Chunk is too large");
         let at = 0;
         while (at < c.length) {
-          const r = await handle.write(
-            c,
-            at,
-            c.length - at,
-            offset + written + at,
-          );
-          if (!r.bytesWritten) throw new Error("Disk write stopped");
-          at += r.bytesWritten;
+          const count = Math.min(buffer.length - buffered, c.length - at);
+          c.copy(buffer, buffered, at, at + count);
+          buffered += count;
+          at += count;
+          if (buffered === buffer.length) await flush();
         }
-        state.hash.update(c);
+        chunkHash.update(c);
         written += c.length;
         progress.bytes = offset + written;
         progress.rate = Math.round(
@@ -608,11 +631,14 @@ function createServer(downloadPath, options = {}) {
         );
       }
       if (written !== length) throw fail(400, "Chunk was interrupted");
+      if (buffered) await flush();
       await handle.sync();
       u.offset = offset + written;
       u.updatedAt = Date.now();
-      state.offset = u.offset;
       store.saveUpload(u);
+      checkpointed = true;
+      state.hash = chunkHash;
+      state.offset = u.offset;
       heartbeats.set(u.jobId, Date.now());
       // Acknowledgement also means the file handle and chunk lock are released for commit.
       await handle.close();
@@ -621,14 +647,19 @@ function createServer(downloadPath, options = {}) {
       active.delete(u.uploadId);
       res.json({ uploadId: u.uploadId, offset: u.offset, complete: false });
     } catch (e) {
-      hashes.delete(u.uploadId);
-      if (handle) await handle.truncate(offset).catch(() => {});
+      if (handle && !checkpointed) await handle.truncate(offset).catch(() => {});
       throw e;
     } finally {
       if (handle) await handle.close();
       locks.delete(u.uploadId);
       active.delete(u.uploadId);
     }
+  });
+  const finishUpload = (u, getReceipt, account = true) => store.transaction(() => {
+    const saved = getReceipt();
+    if (account) store.accountSavedUpload(u);
+    store.saveUpload({ ...u, complete: true, receiptId: saved.id, updatedAt: Date.now() });
+    return saved;
   });
   // Rename is a durable intent, even if the following database write fails while we stay alive.
   // A retry must finish that receipt instead of trying to read the now-moved partial forever.
@@ -645,14 +676,11 @@ function createServer(downloadPath, options = {}) {
     const after = await fs.promises.stat(final);
     if (after.size !== before.size || after.mtimeMs !== before.mtimeMs || after.ino !== before.ino) throw expired();
     const existing = store.find(u.deviceId, u.hash).find((entry) => entry.relativePath === u.finalPath);
-    const saved = existing && onDisk(existing) ? existing : store.saveMedia({
+    const saved = finishUpload(u, () => existing && onDisk(existing) ? existing : store.saveMedia({
       ...u, relativePath: u.finalPath, fileName: path.basename(final), time: existing?.time || u.updatedAt,
       integrityInvalid: false, diskMtimeMs: after.mtimeMs, diskCtimeMs: after.ctimeMs,
-    }, { arrival: !existing });
-    store.accountSavedUpload(u);
-    u.complete = true; u.receiptId = saved.id; u.updatedAt = Date.now();
-    store.saveUpload(u);
-    notifyJobs(); emit("onFileReceived", saved);
+    }, { arrival: !existing }));
+    scheduleJobs(); emit("onFileReceived", saved);
     return saved;
   };
   app.post("/v2/uploads/:id/complete", async (req, res) => {
@@ -691,12 +719,14 @@ function createServer(downloadPath, options = {}) {
       let saved = match(u.deviceId, u.hash);
       if (saved) {
         await fs.promises.unlink(file);
+        saved = finishUpload(u, () => saved, false);
       } else {
         // No await between deduplication, filename allocation and commit: simultaneous copies share one receipt.
         const dir = inside(root, path.join(u.deviceFolder, u.bucketName));
         const created = fs.mkdirSync(dir, { recursive: true });
+        const hintKey = `${dir}\0${u.fileName}`;
         let name = u.fileName,
-          n = 1;
+          n = filenameHints.get(hintKey) || 1;
         const ext = path.extname(name),
           stem = path.basename(name, ext);
         while (fs.existsSync(path.join(dir, name)))
@@ -705,6 +735,11 @@ function createServer(downloadPath, options = {}) {
         u.finalPath = path.relative(root, final);
         store.saveUpload(u);
         fs.renameSync(file, final);
+        // Hints skip suffixes already allocated in this run; every candidate is
+        // still checked on disk. Bound memory independently of library size.
+        filenameHints.delete(hintKey);
+        filenameHints.set(hintKey, n);
+        if (filenameHints.size > 1024) filenameHints.delete(filenameHints.keys().next().value);
         syncDirectory(dir);
         if (created) {
           for (
@@ -722,23 +757,21 @@ function createServer(downloadPath, options = {}) {
           } catch {
             /* Bytes are already safe; some filesystems reject source timestamps. */
           }
-        saved = store.saveMedia({
+        const stat = fs.statSync(final);
+        // The rename intent is already durable. Publish inventory, job accounting
+        // and the receipt in one FULL commit instead of three disk flushes.
+        saved = finishUpload(u, () => store.saveMedia({
           ...u,
           fileName: name,
           relativePath: u.finalPath,
           size: u.size,
           time: Date.now(),
-          diskMtimeMs: fs.statSync(final).mtimeMs,
-          diskCtimeMs: fs.statSync(final).ctimeMs,
-        });
-        store.accountSavedUpload(u);
-        notifyJobs();
+          diskMtimeMs: stat.mtimeMs,
+          diskCtimeMs: stat.ctimeMs,
+        }));
+        scheduleJobs();
         emit("onFileReceived", saved);
       }
-      u.complete = true;
-      u.receiptId = saved.id;
-      u.updatedAt = Date.now();
-      store.saveUpload(u);
       res.json({ ...receipt(saved, u.uploadId), offset: u.size });
     } finally {
       locks.delete(u.uploadId);
@@ -1006,7 +1039,7 @@ function createServer(downloadPath, options = {}) {
             const existing = store
               .find(u.deviceId, u.hash)
               .find((e) => e.relativePath === u.finalPath);
-            const saved =
+            finishUpload(u, () =>
               existing ||
               store.saveMedia({
                 ...u,
@@ -1015,11 +1048,7 @@ function createServer(downloadPath, options = {}) {
                 time: u.updatedAt,
                 diskMtimeMs: fs.statSync(final).mtimeMs,
                 diskCtimeMs: fs.statSync(final).ctimeMs,
-              });
-            u.complete = true;
-            u.receiptId = saved.id;
-            store.accountSavedUpload(u);
-            store.saveUpload(u);
+              }));
             continue;
           }
       }
@@ -1043,7 +1072,7 @@ function createServer(downloadPath, options = {}) {
       }
     }
     // A partial without an upload record (for example after a database reset) can never resume.
-    const known = new Set(store.uploads().map((u) => `${u.uploadId}.part`));
+    const known = new Set(store.uploadIds().map((uploadId) => `${uploadId}.part`));
     const partials = inside(root, path.join(".pherry", "uploads"));
     for (const name of await fs.promises.readdir(partials))
       if (name.endsWith(".part") && !known.has(name))
@@ -1071,6 +1100,7 @@ function createServer(downloadPath, options = {}) {
   app.locals.cleanupExpiredUploads = cleanupExpiredUploads;
   app.locals.close = () => {
     clearInterval(timer);
+    clearTimeout(jobsTimer);
     store.close();
   };
   return app;

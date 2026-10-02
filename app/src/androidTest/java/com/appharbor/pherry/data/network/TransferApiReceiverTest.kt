@@ -4,6 +4,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import android.os.Build
 import android.content.pm.PackageManager
 import com.appharbor.pherry.data.upload.TransferReason
+import com.appharbor.pherry.data.upload.UploadChunkBody
 import com.appharbor.pherry.data.upload.shouldRetryTransfer
 import com.appharbor.pherry.data.upload.transferReason
 import kotlinx.coroutines.runBlocking
@@ -64,8 +65,15 @@ class TransferApiReceiverTest {
     private suspend fun startJob(api: TransferApi, job: String, files: Int, bytes: Int) = api.json("/v2/jobs/$job", "PUT",
         JSONObject().put("state", "running").put("totalFiles", files).put("totalBytes", bytes))
 
-    private suspend fun patch(api: TransferApi, upload: String, bytes: ByteArray, offset: Long) =
-        api.request("/v2/uploads/$upload", "PATCH", bytes.toRequestBody("application/octet-stream".toMediaType()), offset)
+    private suspend fun patch(api: TransferApi, upload: String, bytes: ByteArray, offset: Long): JSONObject =
+        bytes.inputStream().use { input ->
+            var sent = 0L
+            val body = UploadChunkBody(input, bytes.size.toLong(), ByteArray(128 * 1024),
+                isCancelled = { false }, onBytes = { sent += it })
+            api.request("/v2/uploads/$upload", "PATCH", body, offset).also {
+                assertEquals(bytes.size.toLong(), sent)
+            }
+        }
 
     private suspend fun exists(api: TransferApi, digest: String): JSONObject = api.json("/v2/files/exists", "POST",
         JSONObject().put("hashes", JSONArray(listOf(digest))).put("verify", true))

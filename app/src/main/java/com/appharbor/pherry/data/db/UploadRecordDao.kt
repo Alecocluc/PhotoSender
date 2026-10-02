@@ -24,13 +24,35 @@ interface UploadRecordDao {
     suspend fun getFailed(): List<UploadRecord>
 
     @Query("DELETE FROM upload_records WHERE id IN (:ids)")
-    suspend fun deleteByIds(ids: List<Long>)
+    suspend fun deleteIdBatch(ids: List<Long>)
+
+    /** Stay below SQLite's bind limit even when a sync removes thousands of receipts. */
+    @Transaction
+    suspend fun deleteByIds(ids: List<Long>) {
+        for (batch in ids.chunked(500)) deleteIdBatch(batch)
+    }
 
     @Query("UPDATE upload_records SET status = 'PENDING' WHERE status = 'UPLOADING'")
     suspend fun resetUploadingToPending()
 
     @Query("SELECT * FROM upload_records WHERE receiverId = :receiverId AND libraryId = :libraryId")
     suspend fun recordsForDestination(receiverId: String, libraryId: String): List<UploadRecord>
+
+    // Library selection needs receipt identities, not every column of every historical transfer.
+    @Query("SELECT dedupKey FROM upload_records WHERE receiverId = :receiverId AND libraryId = :libraryId AND status = 'COMPLETED' AND dedupKey IS NOT NULL")
+    suspend fun completedReceiptKeys(receiverId: String, libraryId: String): List<String>
+
+    @Query("SELECT dedupKey FROM upload_records WHERE receiverId = :receiverId AND libraryId = :libraryId AND status != 'FAILED' AND dedupKey IS NOT NULL")
+    suspend fun recordedReceiptKeys(receiverId: String, libraryId: String): List<String>
+
+    @Query("SELECT * FROM upload_records WHERE receiverId = :receiverId AND libraryId = :libraryId AND status = 'COMPLETED' AND dedupKey IS NOT NULL")
+    suspend fun completedRecordsForDestination(receiverId: String, libraryId: String): List<UploadRecord>
+
+    @Query("SELECT * FROM upload_records WHERE receiverId = :receiverId AND libraryId = :libraryId AND status = 'FAILED'")
+    suspend fun failedRecordsForDestination(receiverId: String, libraryId: String): List<UploadRecord>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM upload_records WHERE receiverId = :receiverId AND libraryId = :libraryId AND status IN ('PENDING', 'UPLOADING'))")
+    suspend fun hasQueuedRecords(receiverId: String, libraryId: String): Boolean
 
     @Query("SELECT * FROM upload_records WHERE jobId = :jobId ORDER BY id")
     suspend fun recordsForJob(jobId: String): List<UploadRecord>

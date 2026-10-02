@@ -19,6 +19,7 @@ const os = require("os");
 const { pathToFileURL } = require("node:url");
 const { inside } = require("./storage");
 const { ReceiverRestartPolicy } = require("./restart-policy");
+const { ArrivalFolderPolicy } = require("./arrival-folder-policy");
 const getLocalIPs = () => [
   ...new Set(
     Object.values(os.networkInterfaces())
@@ -37,6 +38,7 @@ const receiverRestartPolicy = new ReceiverRestartPolicy();
 let receiverRestartTimer = null;
 let serverStartTail = Promise.resolve();
 const jobStates = new Map();
+const arrivalFolderPolicy = new ArrivalFolderPolicy();
 
 let Bonjour = null;
 try {
@@ -322,6 +324,9 @@ async function stopServer() {
 
 function handleJobs(info) {
   const jobs = info?.items || [];
+  const currentIds = new Set(jobs.map((job) => job.id));
+  for (const id of jobStates.keys())
+    if (!currentIds.has(id)) jobStates.delete(id);
   const busy = jobs.some((j) => ["planning", "running"].includes(j.state));
   if (busy && sleepBlocker === null)
     sleepBlocker = powerSaveBlocker.start("prevent-app-suspension");
@@ -423,11 +428,9 @@ async function startReceiverProcess() {
         broadcastToRenderer(message.type, message.data);
         if (settings.autoOpenFolder && message.data.relativePath) {
           try {
-            shell.openPath(
-              path.dirname(
-                inside(settings.downloadPath, message.data.relativePath),
-              ),
-            );
+            const folder = path.dirname(inside(settings.downloadPath, message.data.relativePath));
+            if (arrivalFolderPolicy.shouldOpen(message.data.jobId, settings.downloadPath, folder))
+              void shell.openPath(folder).catch(() => {});
           } catch {
             /* stale receipt */
           }

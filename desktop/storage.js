@@ -88,6 +88,7 @@ class LibraryStore {
       CREATE INDEX IF NOT EXISTS media_kind ON media(library,kind,time DESC);
       CREATE TABLE IF NOT EXISTS activity(id INTEGER PRIMARY KEY AUTOINCREMENT, library TEXT NOT NULL, device TEXT NOT NULL, name TEXT NOT NULL, album TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, time INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS activity_browse ON activity(library,time DESC);
+      CREATE INDEX IF NOT EXISTS activity_sequence ON activity(library,id);
       CREATE TABLE IF NOT EXISTS uploads(id TEXT PRIMARY KEY, library TEXT NOT NULL, device TEXT NOT NULL, job TEXT NOT NULL, updated INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS uploads_pending ON uploads(library,json_extract(data,'$.complete'));
       CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, library TEXT NOT NULL, device TEXT NOT NULL, updated INTEGER NOT NULL, data TEXT NOT NULL);
@@ -95,6 +96,7 @@ class LibraryStore {
       CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
       PRAGMA user_version=${SCHEMA_VERSION};`);
     this.statements = new Map();
+    this.transactionDepth = 0;
     let library = this.q("SELECT id FROM libraries WHERE root=?").get(
       this.root,
     );
@@ -122,15 +124,20 @@ class LibraryStore {
   }
   transaction(fn) {
     const activityCount = this.activityCount;
-    this.db.exec("BEGIN IMMEDIATE");
+    const depth = this.transactionDepth;
+    const savepoint = `pherry_${depth}`;
+    this.db.exec(depth ? `SAVEPOINT ${savepoint}` : "BEGIN IMMEDIATE");
+    this.transactionDepth++;
     try {
       const result = fn();
-      this.db.exec("COMMIT");
+      this.db.exec(depth ? `RELEASE ${savepoint}` : "COMMIT");
       return result;
     } catch (e) {
-      this.db.exec("ROLLBACK");
+      this.db.exec(depth ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK");
       this.activityCount = activityCount;
       throw e;
+    } finally {
+      this.transactionDepth--;
     }
   }
   close() {
@@ -460,6 +467,11 @@ class LibraryStore {
     return this.q("SELECT data FROM uploads WHERE library=?")
       .all(this.libraryId)
       .map(json);
+  }
+  uploadIds() {
+    return this.q("SELECT id FROM uploads WHERE library=?")
+      .all(this.libraryId)
+      .map((row) => row.id);
   }
   pendingUploads() {
     return this.q(

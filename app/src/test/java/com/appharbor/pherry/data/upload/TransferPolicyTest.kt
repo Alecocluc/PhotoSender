@@ -9,6 +9,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TransferPolicyTest {
+    @Test fun digestHexPreservesLeadingZerosAndUnsignedBytes() {
+        assertEquals("00010f107f80ff", byteArrayOf(0, 1, 15, 16, 127, -128, -1).toLowerHex())
+        assertEquals("", byteArrayOf().toLowerHex())
+    }
+
     @Test fun receiverOutagesDuringPreparationAndSendingKeepTheQueueRetryable() {
         assertTrue(IOException("Connection reset").shouldRetryTransfer())
         for (code in listOf(408, 429, 500, 503)) {

@@ -7,13 +7,10 @@ import com.appharbor.pherry.data.network.ReceiverIdentity
 import com.appharbor.pherry.data.network.TransferApi
 import com.appharbor.pherry.data.network.TransferHttpException
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
 import java.io.File
 import java.io.InputStream
-import java.io.InterruptedIOException
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 import android.Manifest
@@ -49,10 +46,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.TimeUnit
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
-import okhttp3.RequestBody
-import okio.BufferedSink
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.FileNotFoundException
@@ -207,12 +201,12 @@ class UploadManager @Inject constructor(
     }
 
     /** Persists the whole job atomically before returning to a share intent or background caller. */
-    suspend fun enqueueAndSchedule(items: List<MediaItem>, userInitiated: Boolean = false) {
-        if (items.isEmpty()) return
+    suspend fun enqueueAndSchedule(items: List<MediaItem>, userInitiated: Boolean = false): Unit = withContext(Dispatchers.IO) {
+        if (items.isEmpty()) return@withContext
         val identity = connectionManager.selectedIdentity() ?: throw IllegalStateException("Pair a computer before sending files")
         val enqueuedJobId = enqueueMutex.withLock {
-            val existing = uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId)
-            val known = existing.filter { it.status != UploadStatus.FAILED }.mapNotNullTo(HashSet()) { it.dedupKey }
+            val known = uploadRecordDao.recordedReceiptKeys(identity.deviceId, identity.libraryId).toHashSet()
+            val failed = uploadRecordDao.failedRecordsForDestination(identity.deviceId, identity.libraryId)
             val jobId = UUID.randomUUID().toString()
             val records = items.distinctBy { it.uri.toString() to it.sourceVersion }.mapNotNull { item ->
                 val key = ReceiptPolicy.key(identity.deviceId, identity.libraryId, item.uri.toString(), item.sourceVersion)
@@ -222,7 +216,7 @@ class UploadManager @Inject constructor(
                     dedupKey = key, jobId = jobId, uploadId = UUID.randomUUID().toString())
             }
             val selectedKeys = items.mapTo(HashSet()) { ReceiptPolicy.key(identity.deviceId, identity.libraryId, it.uri.toString(), it.sourceVersion) }
-            val retries = existing.filter { it.status == UploadStatus.FAILED && it.dedupKey in selectedKeys }
+            val retries = failed.filter { it.dedupKey in selectedKeys }
             val retryKeys = retries.mapTo(HashSet()) { it.dedupKey }
             val newRecords = records.filter { it.dedupKey !in retryKeys }
             if (newRecords.isNotEmpty() || retries.isNotEmpty()) {
@@ -240,8 +234,7 @@ class UploadManager @Inject constructor(
             uploadRecordDao.pauseOpenJobs(false)
         }
         if (enqueuedJobId == null) {
-            val queued = uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId)
-                .any { it.status == UploadStatus.PENDING || it.status == UploadStatus.UPLOADING }
+            val queued = uploadRecordDao.hasQueuedRecords(identity.deviceId, identity.libraryId)
             if (!runMutex.isLocked) {
                 if (queued) restoreLatestState()
                 else _transferState.value = TransferState(phase = TransferPhase.COMPLETE, totalFiles = items.size,
@@ -249,7 +242,7 @@ class UploadManager @Inject constructor(
                     transferredBytes = items.sumOf { it.size }, message = "These versions are already saved on this computer")
             }
             if (queued) scheduleWork(userInitiated, ExistingWorkPolicy.APPEND_OR_REPLACE)
-            return
+            return@withContext
         }
         // Publish durable new intent before Android evaluates constraints. A queued job must never
         // continue showing the previous job's Finished receipt while waiting for Wi-Fi.
@@ -299,7 +292,7 @@ class UploadManager @Inject constructor(
     fun retryFailed() {
         scope.launch {
             val identity = connectionManager.selectedIdentity() ?: return@launch
-            uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId).filter { it.status == UploadStatus.FAILED }.forEach {
+            uploadRecordDao.failedRecordsForDestination(identity.deviceId, identity.libraryId).forEach {
                 uploadRecordDao.update(it.copy(status = UploadStatus.PENDING, error = ""))
             }
             resumeTransfer()
@@ -404,7 +397,8 @@ class UploadManager @Inject constructor(
                 if (permanent) blocked.set(true)
                 stop.set(true)
                 outcome = if (blocked.get()) QueueOutcome.FAILED else QueueOutcome.RETRY
-                _transferState.update { if (permanent || !blocked.get()) it.copy(reason = error.transferReason(), message = error.message) else it }
+                _transferState.update { if (permanent || !blocked.get()) it.copy(reason = error.transferReason(), message = error.message,
+                    enoughSpace = if (error is TransferHttpException && error.code == 507) false else it.enoughSpace) else it }
             } else failRecord(record, error, ledger, api)
         }
         try {
@@ -414,51 +408,36 @@ class UploadManager @Inject constructor(
             if (!reportJob(api, job.id, "running")) throw IOException("The computer has not acknowledged this backup job")
             coroutineScope {
                 val ticker = launch { while (isActive) { delay(200); _transferState.update { ledger.snapshot(it) } } }
-                // Hashing and sending overlap. The bounded channel limits both ready-file metadata
-                // and the number of files being read ahead; the first ready original starts now.
-                val readyFiles = Channel<UploadRecord>(slots * 2)
-                val preparer = launch {
-                    try {
-                        forEachBounded(pending, slots, stop) { record ->
+                val reportingFinished = CompletableDeferred<Unit>()
+                val reporter = launch {
+                    while (isActive) {
+                        if (withTimeoutOrNull(JOB_REPORT_INTERVAL_MS) { reportingFinished.await(); true } == true) break
+                        if (!stop.get()) reportJob(api, job.id, "running")
+                    }
+                }
+                var pipelineFinished = false
+                try {
+                    transferPipeline(pending, slots,
+                        shouldStop = { stop.get() || pauseRequested.get() },
+                        prepare = { record ->
                             ledger.start(record)
                             try {
-                                val ready = prepare(record, api)
-                                ledger.sourcePrepared(record, ready)
-                                readyFiles.send(ready)
+                                prepare(record, api).also { ledger.sourcePrepared(record, it) }
                             } catch (e: CancellationException) { throw e }
-                            catch (e: Exception) { handleFileError(record, e) }
-                        }
-                    } finally { readyFiles.close() }
-                }
-                try {
-                    while (!stop.get() && !pauseRequested.get()) {
-                        val first = readyFiles.receiveCatching().getOrNull() ?: break
-                        val prepared = mutableListOf(first)
-                        while (prepared.size < slots * 2) prepared.add(readyFiles.tryReceive().getOrNull() ?: break)
-                        if (stop.get()) break
-                        val matches = presence(api, prepared.map { it.hash })
-                        if (stop.get()) break
-                        // Existing content consumes no new disk space. Check only known-missing
-                        // bytes, so a nearly full receiver can still confirm an already-saved library.
-                        val missingFiles = prepared.filter { !matches.getValue(it.hash).optBoolean("exists") }.distinctBy { it.hash }
-                        val requiredBytes = missingFiles.sumOf { (it.fileSize - it.acknowledgedBytes).coerceAtLeast(0) }
-                        if (requiredBytes > 0) {
-                            val preflight = api.json("/v2/preflight", "POST", JSONObject().put("totalBytes", requiredBytes).put("totalFiles", missingFiles.size))
-                            if (!preflight.optBoolean("enoughSpace", true)) {
-                                _transferState.update { it.copy(enoughSpace = false) }
-                                throw TransferHttpException(507, "Insufficient receiver space", "OUT_OF_SPACE")
+                            catch (e: Exception) { handleFileError(record, e); null }
+                        },
+                        inspect = { prepared ->
+                            val matches = presence(api, prepared.map { it.hash })
+                            // Upload creation atomically reserves disk space. A separate preflight
+                            // per tiny batch adds a round-trip without covering concurrent reservations.
+                            _transferState.update {
+                                if (stop.get()) it else it.copy(phase = TransferPhase.UPLOADING,
+                                    reason = TransferReason.NONE, isTransferring = true, message = null)
                             }
-                        }
-                        if (stop.get()) break
-                        _transferState.update { it.copy(enoughSpace = true) }
-                        _transferState.update {
-                            if (stop.get()) it else it.copy(phase = TransferPhase.UPLOADING,
-                                reason = TransferReason.NONE, isTransferring = true, message = null)
-                        }
-                        forEachBounded(prepared, slots, stop) { record ->
-                            if (pauseRequested.get()) { stop.set(true); return@forEachBounded }
+                            prepared.map { it to matches.getValue(it.hash) }
+                        },
+                        transfer = { (record, match) ->
                             try {
-                                val match = matches.getValue(record.hash)
                                 if (match.optBoolean("exists")) {
                                     val skipped = match.optString("savedUploadId") != record.uploadId
                                     if (skipped) abandonUpload(record, api)
@@ -466,11 +445,15 @@ class UploadManager @Inject constructor(
                                 } else uploadFile(record, api, ledger)
                             } catch (e: CancellationException) { throw e }
                             catch (e: Exception) { handleFileError(record, e) }
-                        }
-                        _transferState.update { ledger.snapshot(it) }
-                        reportJob(api, job.id, if (stop.get()) "waiting" else "running")
-                    }
-                } finally { preparer.cancelAndJoin(); ticker.cancel() }
+                        })
+                    pipelineFinished = true
+                } finally {
+                    reportingFinished.complete(Unit)
+                    // Let an in-flight running report finish before sending the terminal receipt.
+                    // Cancellation or a pipeline failure still tears down the socket immediately.
+                    if (pipelineFinished) reporter.join() else reporter.cancel()
+                    ticker.cancel()
+                }
             }
             if (pauseRequested.get()) outcome = QueueOutcome.PAUSED
         } catch (e: CancellationException) { throw e }
@@ -556,7 +539,7 @@ class UploadManager @Inject constructor(
                 digest.update(buffer, 0, n)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        return digest.digest().toLowerHex()
     }
 
     private suspend fun presence(api: TransferApi, hashes: List<String>, verify: Boolean = false): Map<String, JSONObject> {
@@ -570,13 +553,13 @@ class UploadManager @Inject constructor(
     private suspend fun uploadFile(initial: UploadRecord, api: TransferApi, ledger: ProgressLedger) = withContext(Dispatchers.IO) {
         var record = initial.copy(status = UploadStatus.UPLOADING)
         val wire = AtomicLong(record.sentBytes)
-        uploadRecordDao.update(record)
         try {
             val metadata = JSONObject().put("uploadId", record.uploadId).put("jobId", record.jobId)
                 .put("hash", record.hash).put("size", record.fileSize)
                 .put("fileName", record.fileName).put("bucketName", record.bucketName)
                 .put("sourceTimestampMs", sourceTimestamp(record))
             val created = api.json("/v2/uploads", "POST", metadata)
+            _transferState.update { if (it.reason == TransferReason.OUT_OF_SPACE) it else it.copy(enoughSpace = true) }
             if (created.optBoolean("complete")) {
                 val skipped = created.optBoolean("deduplicated")
                 if (skipped) abandonUpload(record, api)
@@ -591,38 +574,27 @@ class UploadManager @Inject constructor(
             val uri = Uri.parse(record.contentUri)
             readOriginal { contentResolver.openInputStream(uri) ?: throw FileNotFoundException("The original cannot be opened") }.use { input ->
                 readOriginal { skipFully(input, offset) }
+                val buffer = ByteArray(128 * 1024)
+                var checkpointAt = System.nanoTime()
                 while (record.acknowledgedBytes < record.fileSize) {
                     currentCoroutineContext().ensureActive()
                     if (pauseRequested.get()) throw CancellationException("Paused by you")
                     val count = minOf(CHUNK_BYTES.toLong(), record.fileSize - record.acknowledgedBytes).toInt()
-                    val bytes = ByteArray(count)
-                    var read = 0
-                    while (read < count) {
-                        currentCoroutineContext().ensureActive()
-                        val n = readOriginal { input.read(bytes, read, minOf(128 * 1024, count - read)) }
-                        if (n < 0) throw FileNotFoundException("The original changed or ended before its recorded size")
-                        read += n
-                    }
                     val owner = currentCoroutineContext()[Job]
-                    val body = object : RequestBody() {
-                        override fun contentType() = "application/octet-stream".toMediaType()
-                        override fun contentLength() = bytes.size.toLong()
-                        override fun writeTo(sink: BufferedSink) {
-                            var start = 0
-                            while (start < bytes.size) {
-                                if (owner?.isActive == false || pauseRequested.get()) throw InterruptedIOException("Transfer paused")
-                                val amount = minOf(64 * 1024, bytes.size - start)
-                                sink.write(bytes, start, amount)
-                                wire.addAndGet(amount.toLong()); ledger.wire(amount.toLong())
-                                start += amount
-                            }
-                        }
-                    }
+                    val body = UploadChunkBody(input, count.toLong(), buffer,
+                        isCancelled = { owner?.isActive == false || pauseRequested.get() },
+                        onBytes = { amount -> wire.addAndGet(amount); ledger.wire(amount) })
                     val acknowledged = api.request("/v2/uploads/${record.uploadId}", "PATCH", body, record.acknowledgedBytes)
                     val next = acknowledged.optLong("offset", -1)
                     if (next != record.acknowledgedBytes + count) throw IOException("The receiver did not acknowledge the full chunk")
                     record = record.copy(acknowledgedBytes = next, sentBytes = wire.get())
-                    uploadRecordDao.update(record)
+                    // The PC is authoritative on resume. Checkpoint at most once per second;
+                    // completion and interruption below always persist the latest acknowledgement.
+                    val now = System.nanoTime()
+                    if (now - checkpointAt >= CHECKPOINT_INTERVAL_NS) {
+                        uploadRecordDao.update(record)
+                        checkpointAt = now
+                    }
                     ledger.acknowledge(record, next)
                 }
             }
@@ -693,19 +665,6 @@ class UploadManager @Inject constructor(
         ledger.finish(failed, UploadStatus.FAILED)
     }
 
-    private suspend fun <T> forEachBounded(items: List<T>, slots: Int, stop: AtomicBoolean, action: suspend (T) -> Unit) = coroutineScope {
-        val next = AtomicInteger(0)
-        repeat(minOf(slots, items.size)) {
-            launch {
-                while (isActive && !stop.get() && !pauseRequested.get()) {
-                    val index = next.getAndIncrement()
-                    if (index >= items.size) break
-                    action(items[index])
-                }
-            }
-        }
-    }
-
     private suspend fun reportJob(api: TransferApi, id: String, state: String): Boolean {
         return try {
             val current = _transferState.value
@@ -740,19 +699,17 @@ class UploadManager @Inject constructor(
         _transferState.update { it.copy(phase = phase, reason = reason, message = message, isTransferring = phase in setOf(TransferPhase.PREPARING, TransferPhase.UPLOADING, TransferPhase.VERIFYING)) }
     }
 
-    suspend fun completedMediaStoreIds(liveItems: List<MediaItem>): Set<Long> {
-        val identity = connectionManager.selectedIdentity() ?: return emptySet()
-        val receipts = uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId)
-            .filter { it.status == UploadStatus.COMPLETED }.mapNotNullTo(HashSet()) { it.dedupKey }
-        return liveItems.filter { ReceiptPolicy.key(identity.deviceId, identity.libraryId, it.uri.toString(), it.sourceVersion) in receipts }.mapTo(HashSet()) { it.id }
+    suspend fun completedMediaStoreIds(liveItems: List<MediaItem>): Set<Long> = withContext(Dispatchers.Default) {
+        val identity = connectionManager.selectedIdentity() ?: return@withContext emptySet()
+        val receipts = uploadRecordDao.completedReceiptKeys(identity.deviceId, identity.libraryId).toHashSet()
+        liveItems.asSequence().filter { ReceiptPolicy.key(identity.deviceId, identity.libraryId, it.uri.toString(), it.sourceVersion) in receipts }.mapTo(HashSet()) { it.id }
     }
     suspend fun completedMediaStoreIds(): Set<Long> = completedMediaStoreIds(mediaRepository.loadAllMedia())
 
-    suspend fun filterUnsent(liveItems: List<MediaItem>): List<MediaItem> {
-        val identity = connectionManager.selectedIdentity() ?: return liveItems
-        val recorded = uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId)
-            .filter { it.status != UploadStatus.FAILED }.mapNotNullTo(HashSet()) { it.dedupKey }
-        return liveItems.filter { ReceiptPolicy.key(identity.deviceId, identity.libraryId, it.uri.toString(), it.sourceVersion) !in recorded }
+    suspend fun filterUnsent(liveItems: List<MediaItem>): List<MediaItem> = withContext(Dispatchers.Default) {
+        val identity = connectionManager.selectedIdentity() ?: return@withContext liveItems
+        val recorded = uploadRecordDao.recordedReceiptKeys(identity.deviceId, identity.libraryId).toHashSet()
+        liveItems.filter { ReceiptPolicy.key(identity.deviceId, identity.libraryId, it.uri.toString(), it.sourceVersion) !in recorded }
     }
     fun verifyAgainstServer(verifyIntegrity: Boolean = false) {
         if (_verifyState.value.isVerifying) return
@@ -765,8 +722,7 @@ class UploadManager @Inject constructor(
                 val identity = connectionManager.selectedIdentity() ?: throw IOException("Pair a computer first")
                 repairTarget = identity
                 val connection = connectionManager.connectionFor(identity) ?: throw IOException("Your computer is unavailable")
-                val completed = uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId)
-                    .filter { it.status == UploadStatus.COMPLETED && it.dedupKey != null }
+                val completed = uploadRecordDao.completedRecordsForDestination(identity.deviceId, identity.libraryId)
                 _verifyState.value = VerifyState(isVerifying = true, total = completed.size)
                 val api = TransferApi(okHttpClient, connection)
                 for (page in completed.chunked(if (verifyIntegrity) 10 else 100)) {
@@ -799,10 +755,9 @@ class UploadManager @Inject constructor(
         }
     }
 
-    suspend fun computeSyncPlan(liveItems: List<MediaItem>): SyncPlan {
+    suspend fun computeSyncPlan(liveItems: List<MediaItem>): SyncPlan = withContext(Dispatchers.Default) {
         val identity = connectionManager.selectedIdentity()
-        val completed = if (identity == null) emptyList() else uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId)
-            .filter { it.status == UploadStatus.COMPLETED && it.dedupKey != null }
+        val completed = if (identity == null) emptyList() else uploadRecordDao.completedRecordsForDestination(identity.deviceId, identity.libraryId)
         val liveUris = liveItems.mapTo(HashSet()) { it.uri.toString() }
         val phoneRecords = completed.filter { it.mediaStoreId >= 0 }
         val missing = phoneRecords.filter { it.contentUri !in liveUris }
@@ -812,7 +767,7 @@ class UploadManager @Inject constructor(
         val entries = deletedRecords.filter { it.hash.isNotBlank() && it.hash !in aliveHashes }.distinctBy { it.hash }
             .map { SyncDeleteEntry(it.hash, it.bucketName, it.fileName) }
         val uploadItems = filterUnsent(liveItems)
-        return SyncPlan(uploadItems, uploadItems.sumOf { it.size }, entries, deletedRecords.map { it.id },
+        SyncPlan(uploadItems, uploadItems.sumOf { it.size }, entries, deletedRecords.map { it.id },
             deletesWithheld = missing.isNotEmpty() && withhold, receiverId = identity?.deviceId.orEmpty(), libraryId = identity?.libraryId.orEmpty())
     }
 
@@ -851,7 +806,7 @@ class UploadManager @Inject constructor(
                         else failures++
                     }
                 }
-                val completed = uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId)
+                val completed = uploadRecordDao.completedRecordsForDestination(identity.deviceId, identity.libraryId)
                 val ids = confirmed.deletedRecordIds.toHashSet()
                 uploadRecordDao.deleteByIds(completed.filter { it.id in ids && it.hash in removedHashes }.map { it.id })
                 _syncState.value = SyncState(deleted = deleted, summary = "$deleted computer files removed" + if (failures > 0) "; $failures could not be removed and can be retried" else "")
@@ -862,5 +817,9 @@ class UploadManager @Inject constructor(
 
     fun clearSyncSummary() { _syncState.update { it.copy(summary = null) } }
     private suspend fun parallelSlots(): Int = if (appPreferences.highSpeedTransferEnabled.first()) 6 else 3
-    companion object { private const val CHUNK_BYTES = 4 * 1024 * 1024 }
+    companion object {
+        private const val CHUNK_BYTES = 4 * 1024 * 1024
+        private const val CHECKPOINT_INTERVAL_NS = 1_000_000_000L
+        private const val JOB_REPORT_INTERVAL_MS = 2_000L
+    }
 }
