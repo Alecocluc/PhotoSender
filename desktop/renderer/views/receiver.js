@@ -39,6 +39,8 @@ function sender(m) {
 }
 
 function headline(m) {
+  // Say what the rail's station says until the receiver has reported in.
+  if (m.loading) return "Starting…";
   if (m.stopped) return "Receiver stopped";
   if (m.live) return `Receiving from ${sender(m)}`;
   return "Ready to receive";
@@ -72,7 +74,7 @@ function ticketHtml(m) {
     <section class="ticket${m.live ? " is-quiet" : ""}" aria-labelledby="ticket-title">
       <div class="ticket-body">
         <h2 class="ticket-title" id="ticket-title">Pair a phone</h2>
-        <p>${m.address
+        <p>${m.loading || m.address
           ? `In Pherry on your phone, tap <strong>Pair a computer</strong> and scan this ticket.`
           : `Connect this computer to Wi-Fi or Ethernet. Your phone needs to be on the same network.`}</p>
         ${body}
@@ -86,7 +88,7 @@ function ticketHtml(m) {
         <div class="stub-field">
           <span class="label">Address</span>
           <div class="addr-row">
-            <span class="mono addr">${escHtml(m.address || "Not on a network")}</span>
+            <span class="mono addr">${escHtml(m.loading ? "…" : m.address || "Not on a network")}</span>
             <button class="btn sm" id="copy-address" ${m.address ? "" : "disabled"}>${icon("copy", { size: 15 })}<span>Copy</span></button>
           </div>
           ${others.length ? `<details class="other-addrs"><summary>Other addresses on this computer</summary>

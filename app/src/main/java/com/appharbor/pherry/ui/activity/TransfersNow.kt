@@ -355,7 +355,7 @@ private fun JobEnvelope(
             }
             Spacer(Modifier.width(Spacing.sm))
             Text(
-                data.joinToString(" · ").uppercase(),
+                Fmt.line(data).uppercase(),
                 style = PherryTheme.text.monoCaps,
                 color = c.onEnvelope2,
                 modifier = Modifier.weight(1f),

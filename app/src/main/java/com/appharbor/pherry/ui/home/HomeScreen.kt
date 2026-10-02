@@ -777,7 +777,7 @@ private fun SendingBody(transfer: TransferState, computer: String, onView: () ->
                 if (transfer.currentSpeedBytesPerSec > 0) add(Fmt.speed(transfer.currentSpeedBytesPerSec))
                 Fmt.remaining(transfer.estimatedSecondsRemaining).takeIf { it.isNotEmpty() }?.let(::add)
                 if (transfer.skippedFiles > 0) add("${Fmt.count(transfer.skippedFiles)} already there")
-            }.joinToString(" · ").uppercase(),
+            }.let(Fmt::line).uppercase(),
             style = PherryTheme.text.monoCaps,
             color = c.onEnvelope2,
         )

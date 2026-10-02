@@ -34,12 +34,15 @@ object Fmt {
         else -> "$bytesPerSec${NBSP}B$PER_SECOND"
     }
 
-    /** "2 h 5 min left", "4 min left", "40 s left"; empty when unknown. */
+    /** A job's data line: items joined by " · ", each kept whole so a long line only wraps between items. */
+    fun line(items: Iterable<String>): String = items.joinToString(" · ") { it.replace(' ', NBSP[0]) }
+
+    /** "2 h 5 min left", "4 min left", "40 s left"; empty when unknown. Numbers stay with their units. */
     fun remaining(seconds: Long): String = when {
         seconds <= 0 -> ""
-        seconds >= 3600 -> "${seconds / 3600} h ${(seconds % 3600) / 60} min left"
-        seconds >= 60 -> "${seconds / 60} min left"
-        else -> "$seconds s left"
+        seconds >= 3600 -> "${seconds / 3600}${NBSP}h ${(seconds % 3600) / 60}${NBSP}min left"
+        seconds >= 60 -> "${seconds / 60}${NBSP}min left"
+        else -> "$seconds${NBSP}s left"
     }
 
     /** "photo" / "photos" with a localized count. */
