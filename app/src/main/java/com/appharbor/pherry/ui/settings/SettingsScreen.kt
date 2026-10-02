@@ -39,12 +39,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.data.network.RememberedComputer
 import com.appharbor.pherry.data.preferences.ThemeMode
-import com.appharbor.pherry.ui.components.Notice
 import com.appharbor.pherry.ui.components.Hairline
 import com.appharbor.pherry.ui.components.Lamp
 import com.appharbor.pherry.ui.components.LampState
@@ -67,8 +66,6 @@ fun SettingsScreen(
     onManageComputer: () -> Unit,
     focusBackup: Boolean = false,
     onBackupFocused: () -> Unit = {},
-    upgradeReviewRequired: Boolean = false,
-    onReviewUpgrade: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
@@ -232,18 +229,12 @@ fun SettingsScreen(
 
         item(key = "backup") {
             SettingsSection("Backup") {
-                if (upgradeReviewRequired) {
-                    Notice(title = "Review your existing backup", detail = "Choose how to organize files from the previous version before automatic backups continue.",
-                        actionLabel = "Review backup", onAction = onReviewUpgrade,
-                        modifier = Modifier.padding(vertical = Spacing.md))
-                }
                 SwitchRow(
                     title = "Auto-backup",
-                    subtitle = if (upgradeReviewRequired) "On hold until you review your existing backup."
-                        else "Sends new photos and videos to $computer in the background, when your network and charging settings allow it.",
+                    subtitle = "Sends new photos and videos to $computer in the background, when your network and charging settings allow it.",
                     icon = Ph.Clock,
                     checked = autoBackupEnabled,
-                    onCheckedChange = { on -> if (on && upgradeReviewRequired) onReviewUpgrade() else if (on) askAutoBackup = true else viewModel.disableAutoBackup() },
+                    onCheckedChange = { on -> if (on) askAutoBackup = true else viewModel.disableAutoBackup() },
                 )
                 Hairline()
                 SwitchRow(

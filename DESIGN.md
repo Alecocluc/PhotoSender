@@ -427,7 +427,7 @@ Finished jobs become expandable receipts on paper with the phone, saved files an
 
 ### Paired phones
 
-Desktop Settings lists enrolled phones, their display names, stable folders and last connection. Rename updates the label without moving files. Remove access explains that the phone must pair again and that existing files stay on disk. The legacy inventory group Previous backups is a Photos filter, not a fictitious paired phone. A new enrollment code and revoking a phone's existing credential are separate actions.
+Desktop Settings lists enrolled phones, their display names, stable folders and last connection. Rename updates the label without moving files. Remove access explains that the phone must pair again and that existing files stay on disk. A new enrollment code and revoking a phone's existing credential are separate actions.
 
 ### Film strip and contact sheet (signature)
 A film-black strip with 5 to 6px side margins holding equal frames separated by 4dp of film. Each frame: an 18px edge-print row above (frame number plus a bold Phosphor caret, status or time on the right in dim film ink), the picture at 2px corners on a film-2 well (4:3 on desktop sheets, square on Android sheets), and an optional edge row below ("ON PC" with a bold check icon). Video frames carry a 20dp play badge on 72% film; failed frames a red 20dp X badge. Desktop frames are buttons: hover brightens the image 8%, focus is a 2px yellow inset outline. Loading states are blank film-2 frames that breathe slowly (opacity 1 to 0.55, 1.4s, alternate), never spinners, shimmer gradients or placeholder glyphs; a file glyph appears only on a frame that cannot get a thumbnail or whose thumbnail failed.

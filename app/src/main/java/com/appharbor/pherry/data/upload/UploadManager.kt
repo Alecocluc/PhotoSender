@@ -43,7 +43,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -78,7 +77,7 @@ data class DedupSkip(
     val matchedFileName: String?,
     val matchedBucketName: String?,
     val fileSize: Long,
-    val md5Hash: String,
+    val hash: String,
     val matchedOnPhone: Boolean,
 )
 
@@ -137,7 +136,7 @@ data class VerifyState(
 
 /** A file the server should delete in Sync mode, identified by its content hash. */
 data class SyncDeleteEntry(
-    val md5: String,
+    val hash: String,
     val bucketName: String,
     val fileName: String,
 )
@@ -174,10 +173,6 @@ data class SyncState(
     val summary: String? = null,
 )
 
-data class UpgradeReviewState(val required: Boolean = false, val checking: Boolean = false,
-    val legacyFiles: Int = 0, val legacyBytes: Long = 0, val localHistoryCount: Int = 0,
-    val reason: TransferReason = TransferReason.NONE, val receiverId: String = "", val libraryId: String = "")
-
 @Singleton
 class UploadManager @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -197,57 +192,8 @@ class UploadManager @Inject constructor(
     val verifyState = _verifyState.asStateFlow()
     private val _syncState = MutableStateFlow(SyncState())
     val syncState = _syncState.asStateFlow()
-    private val _upgradeReviewState = MutableStateFlow(UpgradeReviewState())
-    val upgradeReviewState = _upgradeReviewState.asStateFlow()
     private val pauseRequested = AtomicBoolean(false)
     @Volatile private var activeRun: Job? = null
-
-    init {
-        scope.launch {
-            connectionManager.connectionState.collect { connected ->
-                if (connected == com.appharbor.pherry.data.model.ConnectionState.CONNECTED) {
-                    try { checkUpgradeReview() } catch (e: CancellationException) { throw e }
-                    catch (e: Exception) { _upgradeReviewState.update { it.copy(checking = false, reason = e.transferReason()) } }
-                }
-            }
-        }
-    }
-
-    /** No old receipt authorizes silent full-library copying into a newly isolated phone folder. */
-    suspend fun checkUpgradeReview(): Boolean {
-        val identity = connectionManager.selectedIdentity() ?: return false
-        return reviewDestination(identity)
-    }
-
-    private suspend fun reviewDestination(identity: ReceiverIdentity): Boolean {
-        if (appPreferences.isLibraryReviewed(identity.deviceId, identity.libraryId)) {
-            _upgradeReviewState.value = UpgradeReviewState()
-            return true
-        }
-        _upgradeReviewState.update { it.copy(checking = true) }
-        val connection = connectionManager.connectionFor(identity) ?: throw IOException("Receiver unavailable")
-        val result = TransferApi(okHttpClient, connection).json("/v2/preflight", "POST", JSONObject().put("totalBytes", 0).put("totalFiles", 0))
-        val legacy = result.optInt("legacyMediaCount", 0)
-        val localHistory = uploadRecordDao.getLegacyHistoryCount().first()
-        val required = legacy > 0 || localHistory > 0 || uploadRecordDao.legacyPending().isNotEmpty()
-        _upgradeReviewState.value = UpgradeReviewState(required = required, legacyFiles = legacy,
-            legacyBytes = result.optLong("legacyBytes", 0), localHistoryCount = localHistory,
-            receiverId = identity.deviceId, libraryId = identity.libraryId,
-            reason = if (required) TransferReason.UPGRADE_REVIEW_REQUIRED else TransferReason.NONE)
-        if (!required) appPreferences.reviewLibrary(identity.deviceId, identity.libraryId, false)
-        return !required
-    }
-
-    suspend fun approveLegacyAdoption() {
-        val identity = connectionManager.selectedIdentity() ?: throw IOException("Pair a receiver first")
-        val reviewed = _upgradeReviewState.value
-        if (reviewed.receiverId != identity.deviceId || reviewed.libraryId != identity.libraryId) {
-            throw TransferHttpException(409, "The destination changed during review", "DESTINATION_CHANGED")
-        }
-        appPreferences.reviewLibrary(identity.deviceId, identity.libraryId, true)
-        _upgradeReviewState.value = UpgradeReviewState()
-        enqueueAndSchedule(mediaRepository.loadAllMedia(), userInitiated = true)
-    }
 
     fun start(items: List<MediaItem>) {
         if (items.isEmpty()) return
@@ -264,10 +210,6 @@ class UploadManager @Inject constructor(
     suspend fun enqueueAndSchedule(items: List<MediaItem>, userInitiated: Boolean = false) {
         if (items.isEmpty()) return
         val identity = connectionManager.selectedIdentity() ?: throw IllegalStateException("Pair a computer before sending files")
-        if (!checkUpgradeReview()) {
-            setPhase(TransferPhase.FAILED, null, TransferReason.UPGRADE_REVIEW_REQUIRED)
-            throw UpgradeReviewRequiredException()
-        }
         val enqueuedJobId = enqueueMutex.withLock {
             val existing = uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId)
             val known = existing.filter { it.status != UploadStatus.FAILED }.mapNotNullTo(HashSet()) { it.dedupKey }
@@ -276,9 +218,8 @@ class UploadManager @Inject constructor(
                 val key = ReceiptPolicy.key(identity.deviceId, identity.libraryId, item.uri.toString(), item.sourceVersion)
                 if (key in known) null else UploadRecord(mediaStoreId = item.id, contentUri = item.uri.toString(),
                     fileName = item.displayName, bucketName = item.bucketName, fileSize = item.size,
-                    serverIp = connectionManager.getConnectedEndpoint(), receiverId = identity.deviceId,
-                    libraryId = identity.libraryId, sourceVersion = item.sourceVersion, dedupKey = key,
-                    jobId = jobId, uploadId = UUID.randomUUID().toString(), hashAlgorithm = "sha256")
+                    receiverId = identity.deviceId, libraryId = identity.libraryId, sourceVersion = item.sourceVersion,
+                    dedupKey = key, jobId = jobId, uploadId = UUID.randomUUID().toString())
             }
             val selectedKeys = items.mapTo(HashSet()) { ReceiptPolicy.key(identity.deviceId, identity.libraryId, it.uri.toString(), it.sourceVersion) }
             val retries = existing.filter { it.status == UploadStatus.FAILED && it.dedupKey in selectedKeys }
@@ -394,11 +335,6 @@ class UploadManager @Inject constructor(
                 setPhase(TransferPhase.WAITING_FOR_COMPUTER, null, TransferReason.COMPUTER_UNAVAILABLE)
                 return@withLock QueueOutcome.RETRY
             }
-            if (!reviewDestination(selected)) {
-                setPhase(TransferPhase.FAILED, null, TransferReason.UPGRADE_REVIEW_REQUIRED)
-                return@withLock QueueOutcome.FAILED
-            }
-            adoptLegacyQueue(selected)
             uploadRecordDao.resetUploadingToPending()
             val jobs = uploadRecordDao.openJobs().filter { it.receiverId == selected.deviceId && it.libraryId == selected.libraryId && !it.userPaused && it.state != "blocked" }
             var outcome = QueueOutcome.COMPLETE
@@ -473,7 +409,6 @@ class UploadManager @Inject constructor(
         }
         try {
             val pending = records.filter { it.status == UploadStatus.PENDING }
-            val adoptLegacy = appPreferences.shouldAdoptLegacy(job.receiverId, job.libraryId)
             val slots = parallelSlots()
             uploadRecordDao.putJob(job.copy(state = "running"))
             if (!reportJob(api, job.id, "running")) throw IOException("The computer has not acknowledged this backup job")
@@ -501,15 +436,13 @@ class UploadManager @Inject constructor(
                         val prepared = mutableListOf(first)
                         while (prepared.size < slots * 2) prepared.add(readyFiles.tryReceive().getOrNull() ?: break)
                         if (stop.get()) break
-                        val matches = presence(api, prepared.map { it.md5Hash })
+                        val matches = presence(api, prepared.map { it.hash })
                         if (stop.get()) break
                         // Existing content consumes no new disk space. Check only known-missing
                         // bytes, so a nearly full receiver can still confirm an already-saved library.
-                        val missingFiles = prepared.filter { !matches.getValue(it.md5Hash).optBoolean("exists") }.distinctBy { it.md5Hash }
+                        val missingFiles = prepared.filter { !matches.getValue(it.hash).optBoolean("exists") }.distinctBy { it.hash }
                         val requiredBytes = missingFiles.sumOf { (it.fileSize - it.acknowledgedBytes).coerceAtLeast(0) }
-                        // Legacy adoption moves verified existing bytes without allocating another
-                        // copy. Upload creation performs its capacity check after attempting the move.
-                        if (!adoptLegacy && requiredBytes > 0) {
+                        if (requiredBytes > 0) {
                             val preflight = api.json("/v2/preflight", "POST", JSONObject().put("totalBytes", requiredBytes).put("totalFiles", missingFiles.size))
                             if (!preflight.optBoolean("enoughSpace", true)) {
                                 _transferState.update { it.copy(enoughSpace = false) }
@@ -525,12 +458,12 @@ class UploadManager @Inject constructor(
                         forEachBounded(prepared, slots, stop) { record ->
                             if (pauseRequested.get()) { stop.set(true); return@forEachBounded }
                             try {
-                                val match = matches.getValue(record.md5Hash)
+                                val match = matches.getValue(record.hash)
                                 if (match.optBoolean("exists")) {
-                                    val skipped = match.optBoolean("adoptedLegacy") || match.optString("savedUploadId", match.optString("uploadId")) != record.uploadId
+                                    val skipped = match.optString("savedUploadId") != record.uploadId
                                     if (skipped) abandonUpload(record, api)
                                     completeRecord(record, match, skipped, ledger)
-                                } else uploadFile(record, api, ledger, adoptLegacy)
+                                } else uploadFile(record, api, ledger)
                             } catch (e: CancellationException) { throw e }
                             catch (e: Exception) { handleFileError(record, e) }
                         }
@@ -581,15 +514,15 @@ class UploadManager @Inject constructor(
 
     private suspend fun prepare(record: UploadRecord, api: TransferApi): UploadRecord = withContext(Dispatchers.IO) {
         val (size, version) = readOriginal { readSourceVersion(record) }
-        val unchanged = version == record.sourceVersion && size == record.fileSize && record.hashAlgorithm == "sha256"
+        val unchanged = version == record.sourceVersion && size == record.fileSize
         if (!unchanged && record.uploadId.isNotBlank()) {
             try { api.json("/v2/uploads/${record.uploadId}", "DELETE") }
             catch (e: TransferHttpException) { if (e.code != 404) throw e }
         }
-        val hash = if (unchanged && record.hashAlgorithm == "sha256" && record.md5Hash.length == 64) record.md5Hash else readOriginal { hashSource(Uri.parse(record.contentUri)) }
+        val hash = if (unchanged && record.hash.length == 64) record.hash else readOriginal { hashSource(Uri.parse(record.contentUri)) }
         val after = readOriginal { readSourceVersion(record) }
         if (after != (size to version)) throw SourceReadException(IOException("Source changed while hashing"))
-        val prepared = record.copy(fileSize = size, sourceVersion = version, md5Hash = hash, hashAlgorithm = "sha256",
+        val prepared = record.copy(fileSize = size, sourceVersion = version, hash = hash,
             uploadId = if (unchanged && record.uploadId.isNotBlank()) record.uploadId else UUID.randomUUID().toString(),
             acknowledgedBytes = if (unchanged) record.acknowledgedBytes else 0,
             dedupKey = ReceiptPolicy.key(record.receiverId, record.libraryId, record.contentUri, version), error = "")
@@ -628,25 +561,24 @@ class UploadManager @Inject constructor(
 
     private suspend fun presence(api: TransferApi, hashes: List<String>, verify: Boolean = false): Map<String, JSONObject> {
         val unique = hashes.distinct()
-        val response = api.json("/v2/files/exists", "POST", JSONObject().put("hashes", JSONArray(unique)).put("hashAlgorithm", "sha256").put("verify", verify))
+        val response = api.json("/v2/files/exists", "POST", JSONObject().put("hashes", JSONArray(unique)).put("verify", verify))
         val files = response.optJSONArray("files") ?: throw IOException("The computer did not return a usable presence check")
         val found = (0 until files.length()).associate { val file = files.getJSONObject(it); file.getString("hash") to file }
         if (unique.any { found[it]?.has("exists") != true }) throw IOException("The computer returned an incomplete presence check")
         return found
     }
-    private suspend fun uploadFile(initial: UploadRecord, api: TransferApi, ledger: ProgressLedger, adoptLegacy: Boolean) = withContext(Dispatchers.IO) {
+    private suspend fun uploadFile(initial: UploadRecord, api: TransferApi, ledger: ProgressLedger) = withContext(Dispatchers.IO) {
         var record = initial.copy(status = UploadStatus.UPLOADING)
         val wire = AtomicLong(record.sentBytes)
         uploadRecordDao.update(record)
         try {
             val metadata = JSONObject().put("uploadId", record.uploadId).put("jobId", record.jobId)
-                .put("hash", record.md5Hash).put("hashAlgorithm", "sha256").put("size", record.fileSize)
+                .put("hash", record.hash).put("size", record.fileSize)
                 .put("fileName", record.fileName).put("bucketName", record.bucketName)
                 .put("sourceTimestampMs", sourceTimestamp(record))
-                .put("adoptLegacy", adoptLegacy)
             val created = api.json("/v2/uploads", "POST", metadata)
             if (created.optBoolean("complete")) {
-                val skipped = created.optBoolean("adoptedLegacy") || created.optBoolean("deduplicated", created.optString("savedUploadId", created.optString("uploadId")) != record.uploadId)
+                val skipped = created.optBoolean("deduplicated")
                 if (skipped) abandonUpload(record, api)
                 completeRecord(record, created, skipped, ledger)
                 return@withContext
@@ -698,15 +630,15 @@ class UploadManager @Inject constructor(
             if (after != (record.fileSize to record.sourceVersion)) throw SourceReadException(IOException("Source changed during upload"))
             val receipt = api.json("/v2/uploads/${record.uploadId}/complete", "POST")
             if (!receipt.optBoolean("complete")) throw IOException("The receiver has not verified this file")
-            val skipped = receipt.optBoolean("adoptedLegacy") || receipt.optBoolean("deduplicated", false)
+            val skipped = receipt.optBoolean("deduplicated")
             if (skipped) abandonUpload(record, api)
             completeRecord(record.copy(sentBytes = wire.get()), receipt, skipped, ledger)
         } catch (e: Exception) {
             withContext(NonCancellable) {
                 if (e is TransferHttpException && e.code == 422) {
-                    // A checksum rejection invalidates both the hash cache and resume proof.
+                    // A checksum rejection invalidates the hash cache, source version and resume proof.
                     // An explicit retry re-reads the source and abandons this failed upload ID.
-                    record = record.copy(md5Hash = "", hashAlgorithm = "sha256-invalid", acknowledgedBytes = 0)
+                    record = record.copy(hash = "", sourceVersion = "", acknowledgedBytes = 0)
                 }
                 if (e is TransferHttpException && e.code == 410 && e.protocolCode == "UPLOAD_EXPIRED") {
                     // A lost/modified finalized file may leave a durable rename intent. Reusing its
@@ -739,7 +671,7 @@ class UploadManager @Inject constructor(
         uploadRecordDao.update(saved)
         ledger.finish(saved, UploadStatus.COMPLETED, skipped)
         if (skipped) _transferState.update { state -> state.copy(skippedDuplicates = (listOf(DedupSkip(record.id, record.fileName,
-            record.bucketName, receipt.optString("fileName"), receipt.optString("bucketName"), record.fileSize, record.md5Hash, false)) + state.skippedDuplicates).take(100)) }
+            record.bucketName, receipt.optString("fileName"), receipt.optString("bucketName"), record.fileSize, record.hash, false)) + state.skippedDuplicates).take(100)) }
     }
 
     private suspend inline fun <T> readOriginal(block: () -> T): T = try { block() }
@@ -791,16 +723,6 @@ class UploadManager @Inject constructor(
         if (it.size >= 2) it[it.size - 2].toLongOrNull()?.times(1000) ?: 0 else 0
     }
 
-    private suspend fun adoptLegacyQueue(identity: ReceiverIdentity) {
-        val endpoint = connectionManager.getConnectedEndpoint()
-        val legacy = uploadRecordDao.legacyPending().filter { it.serverIp.isBlank() || it.serverIp == endpoint }
-        if (legacy.isEmpty()) return
-        val id = UUID.randomUUID().toString()
-        uploadRecordDao.putJob(UploadJob(id, identity.deviceId, identity.libraryId, System.currentTimeMillis()))
-        for (record in legacy) uploadRecordDao.update(record.copy(receiverId = identity.deviceId, libraryId = identity.libraryId,
-            jobId = id, uploadId = UUID.randomUUID().toString(), hashAlgorithm = "sha256", md5Hash = "", status = UploadStatus.PENDING))
-    }
-
     private suspend fun restoreLatestState() {
         val identity = connectionManager.selectedIdentity() ?: return
         val job = uploadRecordDao.openJobs().lastOrNull { it.receiverId == identity.deviceId && it.libraryId == identity.libraryId }
@@ -844,13 +766,13 @@ class UploadManager @Inject constructor(
                 repairTarget = identity
                 val connection = connectionManager.connectionFor(identity) ?: throw IOException("Your computer is unavailable")
                 val completed = uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId)
-                    .filter { it.status == UploadStatus.COMPLETED && it.hashAlgorithm == "sha256" && it.dedupKey != null }
+                    .filter { it.status == UploadStatus.COMPLETED && it.dedupKey != null }
                 _verifyState.value = VerifyState(isVerifying = true, total = completed.size)
                 val api = TransferApi(okHttpClient, connection)
                 for (page in completed.chunked(if (verifyIntegrity) 10 else 100)) {
-                    val result = presence(api, page.map { it.md5Hash }, verifyIntegrity)
+                    val result = presence(api, page.map { it.hash }, verifyIntegrity)
                     for (record in page) {
-                        if (!result.getValue(record.md5Hash).optBoolean("exists")) {
+                        if (!result.getValue(record.hash).optBoolean("exists")) {
                             missing++
                             missingRecords.add(record)
                         }
@@ -885,10 +807,10 @@ class UploadManager @Inject constructor(
         val phoneRecords = completed.filter { it.mediaStoreId >= 0 }
         val missing = phoneRecords.filter { it.contentUri !in liveUris }
         val withhold = ReceiptPolicy.shouldWithholdDeletes(hasFullMediaAccess(), mediaRepository.isAuthoritativeSnapshot(liveItems), liveItems.size, missing.size, phoneRecords.size)
-        val aliveHashes = completed.filter { it.contentUri in liveUris }.mapTo(HashSet()) { it.md5Hash }
+        val aliveHashes = completed.filter { it.contentUri in liveUris }.mapTo(HashSet()) { it.hash }
         val deletedRecords = if (withhold) emptyList() else missing
-        val entries = deletedRecords.filter { it.md5Hash.isNotBlank() && it.md5Hash !in aliveHashes }.distinctBy { it.md5Hash }
-            .map { SyncDeleteEntry(it.md5Hash, it.bucketName, it.fileName) }
+        val entries = deletedRecords.filter { it.hash.isNotBlank() && it.hash !in aliveHashes }.distinctBy { it.hash }
+            .map { SyncDeleteEntry(it.hash, it.bucketName, it.fileName) }
         val uploadItems = filterUnsent(liveItems)
         return SyncPlan(uploadItems, uploadItems.sumOf { it.size }, entries, deletedRecords.map { it.id },
             deletesWithheld = missing.isNotEmpty() && withhold, receiverId = identity?.deviceId.orEmpty(), libraryId = identity?.libraryId.orEmpty())
@@ -911,14 +833,14 @@ class UploadManager @Inject constructor(
                 if (!hasFullMediaAccess()) throw IOException("Full photo and video access is needed for Sync deletions")
                 val fresh = computeSyncPlan(mediaRepository.loadAllMedia())
                 if (fresh.deletesWithheld) throw IOException("The library scan is incomplete. Deletions were held back")
-                val allowed = fresh.deleteEntries.mapTo(HashSet()) { it.md5 }
-                val entries = confirmed.deleteEntries.filter { it.md5 in allowed }
+                val allowed = fresh.deleteEntries.mapTo(HashSet()) { it.hash }
+                val entries = confirmed.deleteEntries.filter { it.hash in allowed }
                 val connection = connectionManager.connectionFor(identity) ?: throw IOException("The computer is unavailable")
                 val api = TransferApi(okHttpClient, connection)
                 val removedHashes = HashSet<String>()
                 var failures = 0; var deleted = 0
                 for (page in entries.chunked(100)) {
-                    val payload = JSONObject().put("entries", JSONArray(page.map { JSONObject().put("hash", it.md5) }))
+                    val payload = JSONObject().put("entries", JSONArray(page.map { JSONObject().put("hash", it.hash) }))
                     val response = api.json("/v2/sync/delete", "POST", payload)
                     val results = response.optJSONArray("results") ?: throw IOException("The computer did not confirm which files were removed")
                     for (index in 0 until results.length()) {
@@ -931,7 +853,7 @@ class UploadManager @Inject constructor(
                 }
                 val completed = uploadRecordDao.recordsForDestination(identity.deviceId, identity.libraryId)
                 val ids = confirmed.deletedRecordIds.toHashSet()
-                uploadRecordDao.deleteByIds(completed.filter { it.id in ids && it.md5Hash in removedHashes }.map { it.id })
+                uploadRecordDao.deleteByIds(completed.filter { it.id in ids && it.hash in removedHashes }.map { it.id })
                 _syncState.value = SyncState(deleted = deleted, summary = "$deleted computer files removed" + if (failures > 0) "; $failures could not be removed and can be retried" else "")
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { _syncState.value = SyncState(summary = "Sync stopped: ${e.message.orEmpty()}. Unconfirmed files remain recorded for retry") }

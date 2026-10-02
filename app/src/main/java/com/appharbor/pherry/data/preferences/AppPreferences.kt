@@ -7,7 +7,6 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.first
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -35,11 +34,9 @@ class AppPreferences @Inject constructor(
     private val lastServerEndpointKey = stringPreferencesKey("last_server_endpoint")
     private val recentDesktopTargetsKey = stringPreferencesKey("recent_desktop_targets")
     private val desktopTokensKey = stringPreferencesKey("desktop_tokens")
-    private val downloadPathKey = stringPreferencesKey("download_path")
     private val autoBackupEnabledKey = booleanPreferencesKey("auto_backup_enabled")
     private val autoBackupRequiresChargingKey = booleanPreferencesKey("auto_backup_requires_charging")
     private val lastAutoBackupAtKey = longPreferencesKey("last_auto_backup_at")
-    private val uploadedHashesKey = stringSetPreferencesKey("uploaded_hashes")
     private val themeModeKey = stringPreferencesKey("theme_mode")
     private val dynamicColorEnabledKey = booleanPreferencesKey("dynamic_color_enabled")
     private val highSpeedTransferEnabledKey = booleanPreferencesKey("high_speed_transfer_enabled")
@@ -55,21 +52,6 @@ class AppPreferences @Inject constructor(
     private val receiverIdKey = stringPreferencesKey("receiver_id")
     private val libraryIdKey = stringPreferencesKey("receiver_library_id")
     private val receiverEndpointsKey = stringPreferencesKey("receiver_endpoints")
-    private val reviewedLibrariesKey = stringSetPreferencesKey("reviewed_v2_libraries")
-    private val legacyAdoptionLibrariesKey = stringSetPreferencesKey("legacy_adoption_libraries")
-
-    private fun libraryKey(receiver: String, library: String) = "$receiver:$library"
-    suspend fun isLibraryReviewed(receiver: String, library: String): Boolean =
-        libraryKey(receiver, library) in context.dataStore.data.first()[reviewedLibrariesKey].orEmpty()
-    suspend fun shouldAdoptLegacy(receiver: String, library: String): Boolean =
-        libraryKey(receiver, library) in context.dataStore.data.first()[legacyAdoptionLibrariesKey].orEmpty()
-    suspend fun reviewLibrary(receiver: String, library: String, adoptLegacy: Boolean) {
-        val key = libraryKey(receiver, library)
-        context.dataStore.edit {
-            it[reviewedLibrariesKey] = it[reviewedLibrariesKey].orEmpty() + key
-            if (adoptLegacy) it[legacyAdoptionLibrariesKey] = it[legacyAdoptionLibrariesKey].orEmpty() + key
-        }
-    }
 
     val userPaused: Flow<Boolean> = context.dataStore.data.map { it[userPausedKey] ?: false }
     val receiverId: Flow<String> = context.dataStore.data.map { it[receiverIdKey].orEmpty() }
@@ -131,13 +113,6 @@ class AppPreferences @Inject constructor(
         if (prefs[lastServerEndpointKey] == (prefs[lastIpKey] ?: "")) name else ""
     }
 
-    suspend fun saveLastServer(endpoint: String, name: String) {
-        context.dataStore.edit { prefs ->
-            prefs[lastServerEndpointKey] = endpoint.trim()
-            prefs[lastServerNameKey] = name.trim()
-        }
-    }
-
     val recentDesktopTargets: Flow<List<String>> = context.dataStore.data.map { prefs ->
         prefs[recentDesktopTargetsKey]
             ?.split("|")
@@ -146,15 +121,7 @@ class AppPreferences @Inject constructor(
             ?: emptyList()
     }
 
-    val downloadPath: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[downloadPathKey] ?: ""
-    }
-
-    /**
-     * Per-desktop pairing tokens, persisted so reconnects keep delete rights. Keyed by the desktop's
-     * stable device id so the token survives the PC's IP changing; legacy entries keyed by "host:port"
-     * are migrated onto the id on the next reconnect (see [ConnectionManager]).
-     */
+    /** Enrollment credentials, keyed by each desktop's stable device id so they survive IP changes. */
     private val desktopTokens: Flow<Map<String, String>> = context.dataStore.data.map { prefs ->
         decodeTokens(prefs[desktopTokensKey])
     }
@@ -171,7 +138,7 @@ class AppPreferences @Inject constructor(
         prefs[lastAutoBackupAtKey] ?: 0L
     }
 
-    /** Store a pairing [token] under [key] (a stable device id, or an endpoint for legacy entries). */
+    /** Store an enrollment credential [token] under a desktop's stable device id [key]. */
     suspend fun rememberDesktopToken(key: String, token: String) {
         val k = key.trim()
         val value = token.trim()
@@ -183,23 +150,9 @@ class AppPreferences @Inject constructor(
         }
     }
 
-    /** Drop a stored token (used to remove a stale endpoint-keyed entry once migrated to a device id). */
-    suspend fun forgetDesktopToken(key: String) {
-        val k = key.trim()
-        if (k.isEmpty()) return
-        context.dataStore.edit { prefs ->
-            val current = decodeTokens(prefs[desktopTokensKey]).toMutableMap()
-            if (current.remove(k) != null) prefs[desktopTokensKey] = encodeTokens(current)
-        }
-    }
-
-    /** Pairing token bound to a desktop's stable device id. */
+    /** Enrollment credential bound to a desktop's stable device id. */
     suspend fun tokenForDevice(deviceId: String): String =
         desktopTokens.first()[deviceId.trim()] ?: ""
-
-    /** Legacy lookup: tokens stored by "host:port" before stable-id keying. Kept for migration. */
-    suspend fun tokenForEndpoint(endpoint: String): String =
-        desktopTokens.first()[endpoint.trim()] ?: ""
 
     suspend fun setAutoBackupEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs -> prefs[autoBackupEnabledKey] = enabled }
@@ -249,12 +202,6 @@ class AppPreferences @Inject constructor(
         prefs[onboardingCompletedKey] ?: false
     }
 
-    suspend fun saveLastIpAddress(ip: String) {
-        context.dataStore.edit { prefs ->
-            prefs[lastIpKey] = ip
-        }
-    }
-
     suspend fun rememberDesktopTarget(target: String) {
         val normalized = target.trim()
         if (normalized.isEmpty()) return
@@ -268,12 +215,6 @@ class AppPreferences @Inject constructor(
                 .take(5)
             prefs[recentDesktopTargetsKey] = next.joinToString("|")
             prefs[lastIpKey] = normalized
-        }
-    }
-
-    suspend fun saveDownloadPath(path: String) {
-        context.dataStore.edit { prefs ->
-            prefs[downloadPathKey] = path
         }
     }
 
@@ -331,25 +272,8 @@ class AppPreferences @Inject constructor(
         }
     }
 
-    val uploadedHashes: Flow<Set<String>> = context.dataStore.data.map { prefs ->
-        prefs[uploadedHashesKey] ?: emptySet()
-    }
-
-    suspend fun addUploadedHash(hash: String) {
-        context.dataStore.edit { prefs ->
-            val current = prefs[uploadedHashesKey] ?: emptySet()
-            prefs[uploadedHashesKey] = current + hash
-        }
-    }
-
-    suspend fun clearUploadedHashes() {
-        context.dataStore.edit { prefs ->
-            prefs[uploadedHashesKey] = emptySet()
-        }
-    }
-
-    // Tokens are stored as "endpoint=token" entries joined by "|". Endpoints/tokens never contain
-    // these separators (IPv4:port + alphanumeric token), so a flat string keeps DataStore simple.
+    // Entries are stored as "key=value" joined by "|". Device ids, endpoints and base64url credentials
+    // never contain these separators, so a flat string keeps DataStore simple.
     private fun decodeTokens(raw: String?): Map<String, String> {
         if (raw.isNullOrEmpty()) return emptyMap()
         return raw.split('|')

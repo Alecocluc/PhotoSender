@@ -5,7 +5,7 @@ import { frameHtml, reuseFrames, reuseRowThumbnails } from './components.js';
 import { attachThumbs, detachThumbs, canThumbnail } from './thumbs.js';
 import { icon } from './icons.js';
 import { showToast } from './shell.js';
-import { clearHistoryConfirm, exportHistory, importHistory } from './actions.js';
+import { clearHistoryConfirm, exportHistory } from './actions.js';
 
 const EMPTY_QUERY = { query: '', kind: 'all', album: '', deviceId: '', sort: 'newest', dateFrom: '', dateTo: '' };
 const SORTS = [['newest', 'Newest first'], ['oldest', 'Oldest first'], ['largest', 'Largest first'], ['name', 'By name']];
@@ -35,7 +35,6 @@ export function createMediaBrowser({ mode, title, query: preferences }) {
       <div class="view-actions">
         ${grid ? `<button class="btn" id="browser-open">${icon('folder-open', { size: 17 })}Open folder</button>` :
           `<button class="btn quiet" id="history-export">${icon('download-simple', { size: 17 })}Export</button>
-          <button class="btn quiet" id="history-import">${icon('upload-simple', { size: 17 })}Import</button>
           <button class="btn danger" id="history-clear">${icon('trash', { size: 17 })}Clear</button>`}
       </div>
     </header>
@@ -233,7 +232,6 @@ export function createMediaBrowser({ mode, title, query: preferences }) {
   });
   root.querySelector('#browser-open')?.addEventListener('click', () => window.api.openFolder());
   root.querySelector('#history-export')?.addEventListener('click', exportHistory);
-  root.querySelector('#history-import')?.addEventListener('click', importHistory);
   root.querySelector('#history-clear')?.addEventListener('click', clearHistoryConfirm);
   windowEl.addEventListener('click', (event) => {
     const row = event.target.closest('[data-index]'); if (!row) return;

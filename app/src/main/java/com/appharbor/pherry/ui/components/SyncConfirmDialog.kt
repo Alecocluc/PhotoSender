@@ -37,9 +37,6 @@ private const val DELETE_PREVIEW = 5
  * separate lines; the delete line is red, names the first files, and the confirm button names the
  * deletion. When [confirmDestructive] is off and nothing would be deleted, it confirms itself (a pure
  * upload needs no extra tap). Shared by Home and Library so both read identically.
- *
- * Without the pairing token ([canDelete] false) the computer would refuse the delete, so the dialog
- * says so, offers [onScanTicket], and confirming sends only the new files.
  */
 @Composable
 fun SyncConfirmDialog(
@@ -48,8 +45,6 @@ fun SyncConfirmDialog(
     confirmDestructive: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
-    canDelete: Boolean = true,
-    onScanTicket: (() -> Unit)? = null,
 ) {
     LaunchedEffect(plan, confirmDestructive) {
         if (!confirmDestructive && plan.deleteCount == 0 && !plan.isNoOp) onConfirm()
@@ -58,7 +53,6 @@ fun SyncConfirmDialog(
 
     val c = PherryTheme.colors
     val deletes = plan.deleteCount > 0
-    val blockedDeletes = deletes && !canDelete
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.sheet,
@@ -82,7 +76,7 @@ fun SyncConfirmDialog(
                         text = "Send ${Fmt.plural(plan.uploadCount, "new file")} (${Fmt.bytes(plan.uploadBytes)})",
                     )
                 }
-                if (deletes && canDelete) {
+                if (deletes) {
                     if (plan.uploadCount > 0) Spacer(Modifier.height(Spacing.md))
                     PlanLine(
                         mark = {
@@ -95,14 +89,6 @@ fun SyncConfirmDialog(
                     )
                     Spacer(Modifier.height(Spacing.sm))
                     DeletePreview(plan)
-                }
-                if (blockedDeletes) {
-                    if (plan.uploadCount > 0) Spacer(Modifier.height(Spacing.md))
-                    Notice(
-                        title = "To delete files on $computerName, scan its ticket once",
-                        detail = "${Fmt.plural(plan.deleteCount, "file")} no longer on this phone stay on $computerName for now.",
-                        error = false,
-                    )
                 }
                 if (plan.deletesWithheld) {
                     if (plan.uploadCount > 0) Spacer(Modifier.height(Spacing.md))
@@ -117,15 +103,6 @@ fun SyncConfirmDialog(
         confirmButton = {
             when {
                 plan.isNoOp -> TextButton(onClick = onDismiss, colors = ButtonDefaults.textButtonColors(contentColor = c.ink)) { Text("OK") }
-                blockedDeletes && plan.uploadCount > 0 -> TextButton(
-                    onClick = onConfirm,
-                    colors = ButtonDefaults.textButtonColors(contentColor = c.ink),
-                ) { Text("Send ${Fmt.count(plan.uploadCount)}") }
-                blockedDeletes && onScanTicket != null -> TextButton(
-                    onClick = onScanTicket,
-                    colors = ButtonDefaults.textButtonColors(contentColor = c.ink),
-                ) { Text("Scan the ticket") }
-                blockedDeletes -> TextButton(onClick = onDismiss, colors = ButtonDefaults.textButtonColors(contentColor = c.ink)) { Text("OK") }
                 deletes -> TextButton(
                     onClick = onConfirm,
                     colors = ButtonDefaults.textButtonColors(contentColor = c.red),
@@ -133,15 +110,9 @@ fun SyncConfirmDialog(
                 else -> TextButton(onClick = onConfirm, colors = ButtonDefaults.textButtonColors(contentColor = c.ink)) { Text("Back up") }
             }
         },
-        dismissButton = when {
-            plan.isNoOp -> null
-            blockedDeletes && plan.uploadCount == 0 && onScanTicket == null -> null
-            else -> {
-                {
-                    TextButton(onClick = onDismiss, colors = ButtonDefaults.textButtonColors(contentColor = c.ink)) {
-                        Text(if (blockedDeletes && plan.uploadCount == 0) "Close" else "Cancel")
-                    }
-                }
+        dismissButton = if (plan.isNoOp) null else {
+            {
+                TextButton(onClick = onDismiss, colors = ButtonDefaults.textButtonColors(contentColor = c.ink)) { Text("Cancel") }
             }
         },
     )

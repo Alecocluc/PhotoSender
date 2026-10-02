@@ -52,7 +52,6 @@ const MAX_PORT = 65535;
 
 let mainWindow;
 let serverInstance;
-let historyStatePath;
 let settingsPath;
 let tray = null;
 let bonjourInstance = null;
@@ -458,7 +457,6 @@ async function startReceiverProcess() {
       downloadPath: settings.downloadPath,
       port: settings.port,
       options: {
-        historyStatePath,
         databasePath: path.join(app.getPath("userData"), "receiver.sqlite"),
         pairingToken: settings.pairingToken,
         deviceId: settings.deviceId,
@@ -471,7 +469,7 @@ async function startReceiverProcess() {
 async function localFetch(route, options = {}) {
   const res = await fetch(`http://127.0.0.1:${settings.port}${route}`, {
     ...options,
-    signal: ["/history/import", "/history/remove-duplicates"].includes(route)
+    signal: route === "/history/remove-duplicates"
       ? undefined
       : AbortSignal.timeout(30000),
     headers: { ...options.headers, "X-Pherry-Admin": adminToken },
@@ -571,28 +569,6 @@ handle("export-history", async () => {
       "utf8",
     );
     return { success: true, filePath: result.filePath };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-handle("import-history", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: "Import Pherry history",
-    properties: ["openFile"],
-    filters: [{ name: "JSON", extensions: ["json"] }],
-  });
-  if (result.canceled || !result.filePaths[0])
-    return { success: false, canceled: true };
-  try {
-    const stat = await fs.promises.stat(result.filePaths[0]);
-    if (stat.size > 64 * 1024 * 1024)
-      throw new Error("The history file is too large (maximum 64 MB)");
-    const data = JSON.parse(
-      await fs.promises.readFile(result.filePaths[0], "utf8"),
-    );
-    if (!Array.isArray(data.activityLog) && !Array.isArray(data.completedFiles))
-      throw new Error("This is not a Pherry history export");
-    return await api("/history/import", "POST", data);
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -746,18 +722,10 @@ handle("open-external", async (_e, url) => {
 
 // ── Files: thumbnails + open/reveal ──────────────────────────────────────────
 
-/** Resolve a {bucket,name} pair to an absolute path strictly inside the download folder. */
+/** Resolve a receipt's relative path to an absolute path strictly inside the download folder. */
 function resolveDownloadFile(opts = {}) {
   try {
-    return inside(
-      settings.downloadPath,
-      opts.relativePath ||
-        path.join(
-          opts.deviceFolder || "",
-          opts.bucket || "Unsorted",
-          path.basename(String(opts.name || "")),
-        ),
-    );
+    return inside(settings.downloadPath, opts.relativePath);
   } catch {
     return null;
   }
@@ -936,7 +904,6 @@ function watchNetwork() {
 
 app.whenReady().then(async () => {
   if (!gotSingleInstanceLock) return;
-  historyStatePath = path.join(app.getPath("userData"), "history-state.json");
   settingsPath = path.join(app.getPath("userData"), "settings.json");
   loadSettings();
   applyLaunchAtStartup();

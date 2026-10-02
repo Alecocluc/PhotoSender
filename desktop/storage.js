@@ -4,6 +4,8 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const HISTORY_CAP = 5000;
+// Pre-release: a schema change resets the library database instead of migrating it.
+const SCHEMA_VERSION = 1;
 const uuid = () => crypto.randomUUID();
 const bounded = (v, fallback, max = Number.MAX_SAFE_INTEGER) =>
   Number.isFinite(Number(v))
@@ -70,11 +72,17 @@ class LibraryStore {
     fs.mkdirSync(path.dirname(filename), { recursive: true });
     this.root = fs.realpathSync(root);
     this.db = new DatabaseSync(filename);
+    if (this.db.prepare("PRAGMA user_version").get().user_version !== SCHEMA_VERSION) {
+      for (const { name } of this.db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        .all())
+        this.db.exec(`DROP TABLE "${name}"`);
+    }
     this.db
       .exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS libraries(id TEXT PRIMARY KEY, root TEXT UNIQUE NOT NULL);
-      CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY, name TEXT NOT NULL, folder TEXT UNIQUE NOT NULL, tokenHash TEXT, pairedAt INTEGER, lastSeenAt INTEGER);
-      CREATE TABLE IF NOT EXISTS media(id INTEGER PRIMARY KEY AUTOINCREMENT, library TEXT NOT NULL, device TEXT NOT NULL, hash TEXT NOT NULL, algorithm TEXT NOT NULL, relative TEXT NOT NULL, name TEXT NOT NULL, album TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, time INTEGER NOT NULL, data TEXT NOT NULL, UNIQUE(library,relative));
+      CREATE TABLE IF NOT EXISTS devices(id TEXT PRIMARY KEY, name TEXT NOT NULL, folder TEXT UNIQUE NOT NULL, tokenHash TEXT, pairedAt INTEGER, lastSeenAt INTEGER, revoked INTEGER NOT NULL DEFAULT 0, reportedName TEXT);
+      CREATE TABLE IF NOT EXISTS media(id INTEGER PRIMARY KEY AUTOINCREMENT, library TEXT NOT NULL, device TEXT NOT NULL, hash TEXT NOT NULL, relative TEXT NOT NULL, name TEXT NOT NULL, album TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, time INTEGER NOT NULL, data TEXT NOT NULL, UNIQUE(library,relative));
       CREATE INDEX IF NOT EXISTS media_content ON media(library,device,hash);
       CREATE INDEX IF NOT EXISTS media_browse ON media(library,device,album,time DESC);
       CREATE INDEX IF NOT EXISTS media_kind ON media(library,kind,time DESC);
@@ -84,28 +92,9 @@ class LibraryStore {
       CREATE INDEX IF NOT EXISTS uploads_pending ON uploads(library,json_extract(data,'$.complete'));
       CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, library TEXT NOT NULL, device TEXT NOT NULL, updated INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS job_saves(library TEXT NOT NULL, job TEXT NOT NULL, upload TEXT NOT NULL, size INTEGER NOT NULL, PRIMARY KEY(library,job,upload));
-      CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      PRAGMA user_version=${SCHEMA_VERSION};`);
     this.statements = new Map();
-    if (
-      !this.db
-        .prepare("PRAGMA table_info(devices)")
-        .all()
-        .some((c) => c.name === "revoked")
-    ) {
-      this.db.exec(
-        "ALTER TABLE devices ADD COLUMN revoked INTEGER NOT NULL DEFAULT 0; UPDATE devices SET revoked=1 WHERE tokenHash IS NULL",
-      );
-    }
-    if (
-      !this.db
-        .prepare("PRAGMA table_info(devices)")
-        .all()
-        .some((c) => c.name === "reportedName")
-    ) {
-      this.db.exec(
-        "ALTER TABLE devices ADD COLUMN reportedName TEXT; UPDATE devices SET reportedName=name",
-      );
-    }
     let library = this.q("SELECT id FROM libraries WHERE root=?").get(
       this.root,
     );
@@ -114,18 +103,9 @@ class LibraryStore {
       this.q("INSERT INTO libraries VALUES(?,?)").run(library.id, this.root);
     }
     this.libraryId = library.id;
-    if (!this.meta("job-saves-v1")) {
-      this.db.exec(
-        "INSERT OR IGNORE INTO job_saves SELECT library,json_extract(data,'$.jobId'),json_extract(data,'$.uploadId'),size FROM media WHERE json_extract(data,'$.jobId') IS NOT NULL AND json_extract(data,'$.uploadId') IS NOT NULL",
-      );
-      this.meta("job-saves-v1", "done");
-    }
     this.activityCount = this.q(
       "SELECT COUNT(*) AS n FROM activity WHERE library=?",
     ).get(this.libraryId).n;
-    this.q(
-      "INSERT OR IGNORE INTO devices(id,name,folder,tokenHash,pairedAt,lastSeenAt,revoked) VALUES('legacy','Previous backups','',NULL,0,0,1)",
-    ).run();
     for (const job of this.jobs()) {
       if (["running", "planning"].includes(job.state))
         this.saveJob({
@@ -243,7 +223,7 @@ class LibraryStore {
       timestamp: row.time,
       time: row.time,
       deviceId: row.device,
-      deviceName: d?.name || "Previous backups",
+      deviceName: d?.name || "Unknown phone",
       deviceFolder: d?.folder || "",
     };
   }
@@ -271,12 +251,11 @@ class LibraryStore {
     };
     const run = () => {
       this.q(
-        "INSERT INTO media(library,device,hash,algorithm,relative,name,album,kind,size,time,data) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(library,relative) DO UPDATE SET device=excluded.device,hash=excluded.hash,algorithm=excluded.algorithm,name=excluded.name,album=excluded.album,kind=excluded.kind,size=excluded.size,time=excluded.time,data=excluded.data",
+        "INSERT INTO media(library,device,hash,relative,name,album,kind,size,time,data) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(library,relative) DO UPDATE SET device=excluded.device,hash=excluded.hash,name=excluded.name,album=excluded.album,kind=excluded.kind,size=excluded.size,time=excluded.time,data=excluded.data",
       ).run(
         this.libraryId,
         e.deviceId,
         e.hash,
-        e.hashAlgorithm || "sha256",
         e.relativePath,
         e.fileName,
         e.bucketName,
@@ -561,55 +540,14 @@ class LibraryStore {
         .map((r) => this.decorate(r)),
     };
   }
-  importLegacy(data) {
-    const entries = [
-      ...(data.completedFiles || []),
-      ...(data.activityLog || []),
-    ];
-    let imported = 0;
-    for (const old of entries) {
-      try {
-        const relative =
-          old.relativePath ||
-          path.join(component(old.bucketName), component(old.fileName));
-        const stat = fs.statSync(inside(this.root, relative));
-        if (!stat.isFile() || (old.size && old.size !== stat.size)) continue;
-        if (
-          this.q("SELECT id FROM media WHERE library=? AND relative=?").get(
-            this.libraryId,
-            relative,
-          )
-        )
-          continue;
-        // Imports never confer ownership/deletion rights or restore credentials.
-        this.saveMedia(
-          {
-            deviceId: "legacy",
-            relativePath: relative,
-            fileName: path.basename(relative),
-            bucketName: old.bucketName || "Unsorted",
-            size: stat.size,
-            time: old.time || old.timestamp,
-            hash: old.hash || old.md5 || "",
-            hashAlgorithm: old.hashAlgorithm || "md5",
-          },
-          { arrival: true },
-        );
-        imported++;
-      } catch {
-        /* Missing legacy files remain absent; no invented receipts. */
-      }
-    }
-    return imported;
-  }
 }
 
 module.exports = {
   LibraryStore,
+  SCHEMA_VERSION,
   HISTORY_CAP,
   component,
   fileComponent,
   inside,
-  kind,
   bounded,
 };

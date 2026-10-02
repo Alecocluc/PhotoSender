@@ -55,7 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -70,9 +70,6 @@ import androidx.navigation.navArgument
 import com.appharbor.pherry.data.preferences.ThemeMode
 import com.appharbor.pherry.data.share.ShareIntakeBus
 import com.appharbor.pherry.navigation.Screen
-import com.appharbor.pherry.ui.components.UpgradeReviewDialog
-import com.appharbor.pherry.ui.permissions.hasMediaPermission
-import androidx.compose.ui.platform.LocalContext
 import com.appharbor.pherry.ui.activity.ActivityScreen
 import com.appharbor.pherry.ui.components.ComputerChip
 import com.appharbor.pherry.ui.components.Hairline
@@ -187,10 +184,6 @@ fun PherryApp(
     val rememberedComputer by mainViewModel.rememberedComputer.collectAsStateWithLifecycle()
     val onboardingCompleted by mainViewModel.onboardingCompleted.collectAsStateWithLifecycle()
 
-    val review by mainViewModel.upgradeReviewState.collectAsStateWithLifecycle()
-    val approvingUpgrade by mainViewModel.approvingUpgrade.collectAsStateWithLifecycle()
-    val upgradeError by mainViewModel.upgradeError.collectAsStateWithLifecycle()
-    val context = LocalContext.current
 
     val shareViewModel: ShareImportViewModel = hiltViewModel()
     val pendingShare by shareViewModel.pendingUris.collectAsStateWithLifecycle()
@@ -225,13 +218,8 @@ fun PherryApp(
         val topLevel = currentDestination?.route in Destinations.map { it.route }
 
         val openTab: (String) -> Unit = { route -> navController.openTab(route) }
-        var showUpgradeReview by rememberSaveable { mutableStateOf(false) }
         var focusBackupSettings by rememberSaveable { mutableStateOf(false) }
         val openBackupSettings: () -> Unit = { focusBackupSettings = true; openTab(Screen.Settings.route) }
-        val openUpgradeReview: () -> Unit = { showUpgradeReview = true; mainViewModel.refreshUpgradeReview() }
-        val beforeTransfer: () -> Unit = {
-            if (review.required) showUpgradeReview = true else onBeforeTransfer()
-        }
         var showTransferHistory by rememberSaveable { mutableStateOf(false) }
         val openTransfers: () -> Unit = {
             showTransferHistory = false
@@ -242,10 +230,6 @@ fun PherryApp(
             openTab(Screen.Activity.route)
         }
         LaunchedEffect(shareViewModel) { shareViewModel.sent.collect { openTransfers() } }
-        LaunchedEffect(mainViewModel) {
-            mainViewModel.upgradeApproved.collect { showUpgradeReview = false; openTransfers() }
-        }
-        LaunchedEffect(review.required) { if (review.required) showUpgradeReview = true }
 
         val scope = rememberCoroutineScope()
         val connectSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -262,17 +246,6 @@ fun PherryApp(
         }
 
         CompositionLocalProvider(LocalSnackbarHost provides snackbarHostState) {
-            if (showUpgradeReview && !showConnectSheet) {
-                UpgradeReviewDialog(
-                    review = review, computer = serverName.ifBlank { "your computer" },
-                    approving = approvingUpgrade, error = upgradeError,
-                    hasMediaAccess = hasMediaPermission(context),
-                    onApprove = { onBeforeTransfer(); mainViewModel.approveUpgrade() },
-                    onRetry = mainViewModel::refreshUpgradeReview,
-                    onOpenLibrary = { showUpgradeReview = false; openTab(Screen.Gallery.route) },
-                    onDismiss = { showUpgradeReview = false },
-                )
-            }
             if (showConnectSheet) {
                 ModalBottomSheet(
                     onDismissRequest = { showConnectSheet = false },
@@ -292,7 +265,7 @@ fun PherryApp(
             // Media shared into Pherry from another app. Hidden while the connect sheet is open so the
             // user can pair first; the request persists, so this re-appears (now connected) afterwards.
             val shareSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-            if (pendingShare.isNotEmpty() && !showConnectSheet && !showUpgradeReview) {
+            if (pendingShare.isNotEmpty() && !showConnectSheet) {
                 ModalBottomSheet(
                     onDismissRequest = { shareViewModel.cancel() },
                     sheetState = shareSheetState,
@@ -301,7 +274,7 @@ fun PherryApp(
                 ) {
                     ShareImportSheet(
                         onConnect = openConnect,
-                        onBeforeTransfer = beforeTransfer,
+                        onBeforeTransfer = onBeforeTransfer,
                         onDismiss = { shareViewModel.cancel() },
                         viewModel = shareViewModel,
                     )
@@ -358,8 +331,7 @@ fun PherryApp(
                                 onOpenTransfers = openTransfers,
                                 onOpenHistory = openHistory,
                                 onOpenSettings = openBackupSettings,
-                                onReviewUpgrade = openUpgradeReview,
-                                onBeforeTransfer = beforeTransfer,
+                                onBeforeTransfer = onBeforeTransfer,
                             )
                         }
                         composable(Screen.Gallery.route) { backStackEntry ->
@@ -371,7 +343,7 @@ fun PherryApp(
                                 },
                                 onTransferClick = openTransfers,
                                 onConnectClick = openConnect,
-                                onBeforeTransfer = beforeTransfer,
+                                onBeforeTransfer = onBeforeTransfer,
                                 connectionState = connectionState,
                             )
                         }
@@ -388,7 +360,7 @@ fun PherryApp(
                                 bucketName = bucketName,
                                 viewModel = galleryViewModel,
                                 onBack = { navController.popBackStack() },
-                                onBeforeTransfer = beforeTransfer,
+                                onBeforeTransfer = onBeforeTransfer,
                                 onTransferClick = openTransfers,
                                 onConnectClick = openConnect,
                                 connectionState = connectionState,
@@ -398,16 +370,14 @@ fun PherryApp(
                             ActivityScreen(
                                 showHistory = showTransferHistory,
                                 onOpenSettings = openBackupSettings,
-                                onReviewUpgrade = openUpgradeReview,
                                 onOpenLibrary = { openTab(Screen.Gallery.route) },
                                 onConnectClick = openConnect,
-                                onBeforeTransfer = beforeTransfer,
+                                onBeforeTransfer = onBeforeTransfer,
                             )
                         }
                         composable(Screen.Settings.route) {
                             SettingsScreen(onManageComputer = openChangeComputer, focusBackup = focusBackupSettings,
-                                onBackupFocused = { focusBackupSettings = false }, upgradeReviewRequired = review.required,
-                                onReviewUpgrade = openUpgradeReview)
+                                onBackupFocused = { focusBackupSettings = false })
                         }
                     }
                 }

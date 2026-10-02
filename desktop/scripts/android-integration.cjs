@@ -23,13 +23,13 @@ function verifyReports(startedAt) {
   const reports = fs.readdirSync(directory).filter(name => /^TEST-.*\.xml$/.test(name))
     .map(name => path.join(directory, name)).filter(file => fs.statSync(file).mtimeMs >= startedAt - 2000)
     .map(file => fs.readFileSync(file, 'utf8')).join('\n');
-  for (const name of ['com.appharbor.pherry.data.db.UploadMigrationTest', 'com.appharbor.pherry.data.network.TransferApiReceiverTest']) {
+  for (const name of ['com.appharbor.pherry.data.network.TransferApiReceiverTest']) {
     const matches = reports.match(new RegExp(`classname="${name.replaceAll('.', '\\.')}"`, 'g')) || [];
     if (matches.length < 2) throw new Error(`Instrumentation did not run both tests in ${name}; refusing an incomplete success.`);
   }
   if (/<testsuite\b[^>]*(?:failures|errors|skipped)="[1-9]/.test(reports))
     throw new Error('Instrumentation reported failed or skipped tests.');
-  console.log('Verified Room migration and real Kotlin/Node protocol test reports.');
+  console.log('Verified real Kotlin/Node protocol test reports.');
 }
 
 async function main() {

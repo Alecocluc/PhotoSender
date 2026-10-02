@@ -3,7 +3,7 @@ import { escHtml, sortedIPs, fmtFullTime } from '../utils.js';
 import { clearThumbnails } from '../thumbs.js';
 import { register, rerender } from '../router.js';
 import {
-  exportHistory, importHistory,
+  exportHistory,
   rebuildHistoryIndex, cleanDuplicates,
   updateRebuildButton, startRebuildPolling,
 } from '../actions.js';
@@ -138,7 +138,7 @@ function pairingHtml(s) {
 }
 
 function devicesHtml() {
-  const devices = (state.devices || []).filter((device) => String(device.deviceId || device.id) !== 'legacy');
+  const devices = state.devices || [];
   return `<section class="print set-block" aria-labelledby="set-devices">
     <h2 class="section-title" id="set-devices">Paired phones</h2>
     <p class="set-help device-intro">Each phone has its own copy of your files. Names are for display; renaming a phone keeps its folder in place.</p>
@@ -187,10 +187,9 @@ function maintenanceHtml() {
       <h2 class="section-title" id="set-maintenance">Maintenance</h2>
       ${row({
         name: "Back up the history",
-        help: "Save the record of files this computer has received to a file, or restore it from one. Photos and videos aren't included.",
+        help: "Save the record of files this computer has received to a file. Photos and videos aren't included.",
         control: `
-          <button class="btn" id="export-history">${icon("download-simple", { size: 17 })}Export</button>
-          <button class="btn" id="import-history">${icon("upload-simple", { size: 17 })}Import</button>`,
+          <button class="btn" id="export-history">${icon("download-simple", { size: 17 })}Export</button>`,
       })}
       ${row({
         name: "Rebuild the duplicate index",
@@ -510,7 +509,6 @@ function wire() {
   $("#opt-launch")?.addEventListener("change", (e) => saveToggle(e.target, "launchAtStartup"));
 
   $("#export-history")?.addEventListener("click", exportHistory);
-  $("#import-history")?.addEventListener("click", importHistory);
   $("#rebuild-index")?.addEventListener("click", rebuildHistoryIndex);
   $("#clean-duplicates")?.addEventListener("click", cleanDuplicates);
 

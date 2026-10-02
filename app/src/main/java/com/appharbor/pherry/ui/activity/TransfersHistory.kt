@@ -40,8 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.appharbor.pherry.data.db.UploadRecord
 import com.appharbor.pherry.data.upload.VerifyState
 import com.appharbor.pherry.ui.components.EmptyStrip
@@ -106,9 +105,6 @@ internal fun TransfersHistory(
     // The 500-row ledger query runs only while this tab is on screen (the same ViewModel instance the
     // screen collects [records] from; it keeps the last list while hidden).
     val historyViewModel: HistoryViewModel = hiltViewModel()
-    val legacyCount by historyViewModel.legacyHistoryCount.collectAsStateWithLifecycle()
-    val legacyRecords by historyViewModel.legacyHistory.collectAsStateWithLifecycle()
-    var showLegacy by rememberSaveable { mutableStateOf(false) }
     DisposableEffect(historyViewModel) {
         historyViewModel.setHistoryShown(true)
         onDispose { historyViewModel.setHistoryShown(false) }
@@ -180,32 +176,9 @@ internal fun TransfersHistory(
             }
         }
 
-        if (legacyCount > 0) {
-            item(key = "legacy-header") {
-                Column(Modifier.fillMaxWidth().padding(vertical = Spacing.lg)) {
-                    Text("Previous version", style = MaterialTheme.typography.titleMedium, color = PherryTheme.colors.ink)
-                    Text("${Fmt.plural(legacyCount, "transfer")} preserved from before separate phone folders. These records do not confirm the files in your current backup folder.",
-                        style = MaterialTheme.typography.bodyMedium, color = PherryTheme.colors.ink2,
-                        modifier = Modifier.padding(vertical = Spacing.sm))
-                    PrintButton(if (showLegacy) "Hide previous history" else "Show previous history", onClick = { showLegacy = !showLegacy },
-                        style = PrintButtonStyle.Outline)
-                }
-            }
-            if (showLegacy) {
-                items(legacyRecords, key = { "legacy-${it.id}" }) { record ->
-                    LedgerEntry(record)
-                    Hairline()
-                }
-                if (legacyRecords.size < legacyCount) item(key = "legacy-more") {
-                    PrintButton("Show older previous transfers", onClick = historyViewModel::loadMoreLegacyHistory,
-                        style = PrintButtonStyle.Outline, modifier = Modifier.padding(vertical = Spacing.md))
-                }
-            }
-        }
-
         if (records.isEmpty()) {
             item(key = "empty") {
-                EmptyStrip(title = if (completedCount > 0) "History cleared" else if (legacyCount > 0) "No transfers to this folder yet" else "No transfers yet", body = "New transfers appear here, newest first.")
+                EmptyStrip(title = if (completedCount > 0) "History cleared" else "No transfers yet", body = "New transfers appear here, newest first.")
             }
             return@LazyColumn
         }

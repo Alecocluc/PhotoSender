@@ -10,7 +10,6 @@ const {
   inside,
   bounded,
 } = require("./storage");
-const { adoptLegacy, recoverLegacy } = require("./legacy");
 const MAX_FILE = 16 * 1024 ** 3,
   MAX_CHUNK = 4 * 1024 ** 2,
   UPLOAD_TTL = 7 * 86400000;
@@ -25,8 +24,8 @@ const JOB_STATES = new Set([
   "cancelled",
 ]);
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code });
-async function hashFile(file, algorithm = "sha256", onProgress) {
-  const h = crypto.createHash(algorithm);
+async function hashFile(file, onProgress) {
+  const h = crypto.createHash("sha256");
   for await (const c of fs.createReadStream(file)) {
     h.update(c);
     onProgress?.(c.length);
@@ -62,29 +61,13 @@ function getLocalIPs() {
 /** Local-only receiver. Run in a utility process, never on Electron's window/tray thread. */
 function createServer(downloadPath, options = {}) {
   const store = new LibraryStore(
-    options.databasePath ||
-      `${options.historyStatePath || path.join(downloadPath, ".pherry", "state")}.sqlite`,
+    options.databasePath || path.join(downloadPath, ".pherry", "state.sqlite"),
     downloadPath,
   );
   const root = store.root;
   fs.mkdirSync(inside(root, path.join(".pherry", "uploads")), {
     recursive: true,
   });
-  const migrationKey = `legacy:${store.libraryId}`;
-  if (
-    !store.meta(migrationKey) &&
-    options.historyStatePath &&
-    fs.existsSync(options.historyStatePath)
-  ) {
-    try {
-      store.importLegacy(
-        JSON.parse(fs.readFileSync(options.historyStatePath, "utf8")),
-      );
-      store.meta(migrationKey, "done");
-    } catch (e) {
-      console.error("Legacy index migration failed:", e.message);
-    }
-  }
   const app = express();
   app.disable("x-powered-by");
   app.use((req, res, next) => {
@@ -232,8 +215,7 @@ function createServer(downloadPath, options = {}) {
     if (!equal(req.body.pairingCode, pairingCode))
       throw fail(401, "Incorrect pairing code", "PAIRING_CODE_INVALID");
     const id = String(req.body.clientId || "");
-    if (!ID.test(id) || id === "legacy")
-      throw fail(400, "Invalid phone identity");
+    if (!ID.test(id)) throw fail(400, "Invalid phone identity");
     const existing = store.device(id);
     if (
       existing &&
@@ -264,8 +246,6 @@ function createServer(downloadPath, options = {}) {
       apiVersion: 2,
     });
   });
-  app.all(["/upload", "/exists", "/sync/delete"], (req, res) =>
-    res.status(426).json({ code: "PROTOCOL_UPDATE_REQUIRED", error: "Update Pherry on this phone to continue backing up" }));
   app.use((req, res, next) => {
     req.admin =
       ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(
@@ -291,7 +271,7 @@ function createServer(downloadPath, options = {}) {
         "The computer or destination folder changed. Reconnect and review the destination before continuing.",
         "DESTINATION_CHANGED",
       );
-    let reportedName = req.get("X-Device-Name");
+    let reportedName;
     if (req.get("X-Device-Name-Encoded")) {
       try {
         reportedName = decodeURIComponent(
@@ -307,8 +287,7 @@ function createServer(downloadPath, options = {}) {
     }
     next();
   });
-  // Authenticate before accepting large bodies; only desktop imports need a larger bound.
-  app.use("/history/import", admin, express.json({ limit: "64mb" }));
+  // Authenticate before accepting bodies.
   app.use(express.json({ limit: "512kb" }));
   app.get("/v2/identity", (req, res) =>
     res.json({
@@ -431,7 +410,6 @@ function createServer(downloadPath, options = {}) {
         .reduce((s, u) => s + Math.max(0, u.size - u.offset), 0);
     res.json({
       libraryId: store.libraryId,
-      ...store.q("SELECT COUNT(*) AS legacyMediaCount,COALESCE(SUM(size),0) AS legacyBytes FROM media WHERE library=? AND device='legacy'").get(store.libraryId),
       freeBytes: free,
       reservedBytes: reserved,
       requiredBytes: required,
@@ -448,14 +426,12 @@ function createServer(downloadPath, options = {}) {
     const files = [];
     for (const raw of req.body.hashes) {
       const hash = String(raw).toLowerCase();
-      if (!/^(?:[a-f0-9]{32}|[a-f0-9]{64})$/.test(hash))
-        throw fail(400, "Invalid content hash");
+      if (!/^[a-f0-9]{64}$/.test(hash))
+        throw fail(400, "Invalid SHA-256");
       const e = match(req.device.id, hash);
       let exists = !!e;
       if (e && req.body.verify === true) {
-        exists =
-          (await hashFile(inside(root, e.relativePath), e.hashAlgorithm)) ===
-          hash;
+        exists = (await hashFile(inside(root, e.relativePath))) === hash;
         if (!exists) store.invalidateFile(e.id);
       }
       files.push({ hash, exists, ...(exists ? receipt(e) : {}) });
@@ -475,8 +451,7 @@ function createServer(downloadPath, options = {}) {
     if (
       !ID.test(uploadId) ||
       !ID.test(jobId) ||
-      !/^([a-f0-9]{64})$/.test(hash) ||
-      b.hashAlgorithm !== "sha256"
+      !/^([a-f0-9]{64})$/.test(hash)
     )
       throw fail(400, "Invalid upload identity or SHA-256");
     if (!Number.isSafeInteger(b.size) || b.size < 0 || b.size > MAX_FILE)
@@ -522,7 +497,6 @@ function createServer(downloadPath, options = {}) {
       deviceId: req.device.id,
       deviceFolder: req.device.folder,
       hash,
-      hashAlgorithm: "sha256",
       size: b.size,
       fileName: fileComponent(b.fileName),
       originalName: String(b.fileName || "Untitled").slice(0, 200),
@@ -533,18 +507,6 @@ function createServer(downloadPath, options = {}) {
       complete: false,
       updatedAt: Date.now(),
     };
-    if (b.adoptLegacy === true) {
-      locks.add(uploadId);
-      try {
-        const adopted = await adoptLegacy(store, u);
-        if (adopted) {
-          u = { ...u, offset: u.size, complete: true, receiptId: adopted.id, adoptedLegacy: true };
-          store.saveUpload(u);
-          emit("onFilesRemoved", { source: "legacy-adoption", deviceId: req.device.id });
-          return res.json({ ...u, ...receipt(adopted, uploadId) });
-        }
-      } finally { locks.delete(uploadId); }
-    }
     cleanupExpiredUploads();
     const free = freeBytes(), reserved = store.pendingUploads().reduce((s, x) => s + x.size - x.offset, 0);
     if (free !== null && b.size > Math.max(0, free - reserved))
@@ -791,7 +753,7 @@ function createServer(downloadPath, options = {}) {
     let deleted = 0,
       bytesFreed = 0;
     for (const item of entries) {
-      const hash = String(item.hash || item.md5 || ""),
+      const hash = String(item.hash || ""),
         candidates = store
           .find(req.device.id, hash)
           .filter(
@@ -803,7 +765,7 @@ function createServer(downloadPath, options = {}) {
         try {
           const file = inside(root, e.relativePath);
           const before = await fs.promises.stat(file);
-          if ((await hashFile(file, e.hashAlgorithm || "sha256")) !== e.hash)
+          if ((await hashFile(file)) !== e.hash)
             throw new Error("The computer copy changed. It was kept.");
           const after = await fs.promises.stat(file);
           if (
@@ -868,9 +830,6 @@ function createServer(downloadPath, options = {}) {
   app.get("/history/export", admin, (req, res) =>
     res.json(store.exportHistory()),
   );
-  app.post("/history/import", admin, (req, res) =>
-    res.json({ success: true, imported: store.importLegacy(req.body) }),
-  );
   app.get("/history/rebuild-progress", admin, (req, res) =>
     res.json({ success: true, ...rebuild }),
   );
@@ -880,36 +839,35 @@ function createServer(downloadPath, options = {}) {
     rebuild = { running: true, indexed: 0, total: 0, done: false, error: null };
     (async () => {
       const files = [];
+      const ds = store.devices().filter((d) => d.deviceFolder);
+      // Only phone folders hold backups; other files in the Pherry folder are not indexed.
       const walk = async (dir) => {
         for (const e of await fs.promises.readdir(dir, {
           withFileTypes: true,
         })) {
           if (e.name === ".pherry" || e.isSymbolicLink()) continue;
           const f = path.join(dir, e.name);
-          if (e.isDirectory()) await walk(f);
-          else if (e.isFile() && !e.name.endsWith(".part")) files.push(f);
+          if (e.isDirectory()) {
+            if (dir !== root || ds.some((d) => d.deviceFolder === e.name)) await walk(f);
+          } else if (dir !== root && e.isFile() && !e.name.endsWith(".part")) files.push(f);
         }
       };
       await walk(root);
       rebuild.total = files.length;
-      const ds = store.devices();
       for (const f of files) {
         const relative = path.relative(root, f),
           segments = relative.split(path.sep),
-          d = ds.find((d) => d.deviceFolder && d.deviceFolder === segments[0]),
+          d = ds.find((d) => d.deviceFolder === segments[0]),
           s = await fs.promises.stat(f),
           hash = await hashFile(f);
         store.saveMedia(
           {
-            deviceId: d?.deviceId || "legacy",
+            deviceId: d.deviceId,
             relativePath: relative,
             fileName: path.basename(f),
-            bucketName:
-              (d ? segments.slice(1, -1) : segments.slice(0, -1)).join("/") ||
-              "Unsorted",
+            bucketName: segments.slice(1, -1).join("/") || "Unsorted",
             size: s.size,
             hash,
-            hashAlgorithm: "sha256",
             time: s.mtimeMs,
             diskMtimeMs: s.mtimeMs,
             diskCtimeMs: s.ctimeMs,
@@ -945,7 +903,7 @@ function createServer(downloadPath, options = {}) {
       const real = fs.realpathSync(inside(root, e.relativePath));
       const canonical =
         process.platform === "win32" ? real.toLowerCase() : real;
-      // Imported/case-renamed records can point at one physical file. They are not two copies.
+      // Case-renamed records can point at one physical file. They are not two copies.
       if (seenPaths.has(canonical)) continue;
       seenPaths.add(canonical);
       const k = `${e.deviceId}:${e.hash}`;
@@ -961,7 +919,7 @@ function createServer(downloadPath, options = {}) {
         try {
           const file = inside(root, e.relativePath);
           const before = await fs.promises.stat(file);
-          const digest = await hashFile(file, e.hashAlgorithm || "sha256");
+          const digest = await hashFile(file);
           const after = await fs.promises.stat(file);
           if (
             digest === e.hash &&
@@ -1037,14 +995,12 @@ function createServer(downloadPath, options = {}) {
       lastRecoveryProgress = Date.now();
       emit("onRecoveryProgress", {});
     };
-    const legacyRecovery = await recoverLegacy(store, recoveryProgress);
-    if (legacyRecovery.pending) console.error("Previous backup moves need review:", legacyRecovery.errors);
     for (const u of store.pendingUploads()) {
       if (u.complete) continue;
       if (u.finalPath) {
           const final = inside(root, u.finalPath);
           let digest;
-          try { digest = await hashFile(final, "sha256", recoveryProgress); }
+          try { digest = await hashFile(final, recoveryProgress); }
           catch (error) { if (error.code !== "ENOENT") throw error; }
           if (digest === u.hash) {
             const existing = store
@@ -1086,6 +1042,12 @@ function createServer(downloadPath, options = {}) {
         } else throw e;
       }
     }
+    // A partial without an upload record (for example after a database reset) can never resume.
+    const known = new Set(store.uploads().map((u) => `${u.uploadId}.part`));
+    const partials = inside(root, path.join(".pherry", "uploads"));
+    for (const name of await fs.promises.readdir(partials))
+      if (name.endsWith(".part") && !known.has(name))
+        await fs.promises.rm(path.join(partials, name), { force: true });
   })();
   const timer = setInterval(() => {
     cleanupExpiredUploads();

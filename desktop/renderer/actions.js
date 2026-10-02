@@ -1,8 +1,8 @@
-import { state, refreshHistory, refreshStatus, refreshSettings } from './state.js';
+import { state, refreshHistory, refreshStatus } from './state.js';
 import { escHtml, fmtBytes, n, plural } from './utils.js';
 import { rerender } from './router.js';
 import { icon } from './icons.js';
-import { applyTheme, renderStation, showConfirm, showToast } from './shell.js';
+import { renderStation, showConfirm, showToast } from './shell.js';
 
 let rebuildPoller = null;
 
@@ -95,25 +95,6 @@ export async function exportHistory() {
   } else if (!res?.canceled) {
     showToast(`Couldn't export the history${res?.error ? `: ${res.error}` : ""}. Try another location.`, "error");
   }
-}
-
-export async function importHistory() {
-  const ok = await showConfirm({
-    title: "Restore records from a history backup?",
-    message: "Pherry merges records for files that are still on disk into its index. Existing records stay in place. No photos or videos are moved or deleted.",
-    confirmText: "Choose a backup",
-  });
-  if (!ok) return;
-  const res = await window.api.importHistory();
-  if (!res?.success) {
-    if (!res?.canceled) showToast(`Couldn't import the history${res?.error ? `: ${res.error}` : ""}.`, "error");
-    return;
-  }
-  await Promise.all([refreshHistory(), refreshStatus(), refreshSettings()]);
-  applyTheme();
-  renderStation();
-  rerender();
-  showToast(`History imported: ${plural(Number(state.status?.totalReceived || 0), "file")} on record.`);
 }
 
 export async function rebuildHistoryIndex() {

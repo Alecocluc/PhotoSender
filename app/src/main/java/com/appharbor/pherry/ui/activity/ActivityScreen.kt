@@ -25,7 +25,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.appharbor.pherry.data.model.ConnectionState
 import com.appharbor.pherry.ui.components.Fmt
@@ -48,7 +48,6 @@ fun ActivityScreen(
     onBeforeTransfer: () -> Unit = {},
     showHistory: Boolean = false,
     onOpenSettings: () -> Unit = {},
-    onReviewUpgrade: () -> Unit = {},
 ) {
     val transferViewModel: TransferViewModel = hiltViewModel()
     val historyViewModel: HistoryViewModel = hiltViewModel()
@@ -117,7 +116,6 @@ fun ActivityScreen(
                 onConnect = onConnectClick,
                 onOpenLibrary = onOpenLibrary,
                 onOpenSettings = onOpenSettings,
-                onReviewUpgrade = onReviewUpgrade,
             )
 
             TransfersTab.History -> TransfersHistory(

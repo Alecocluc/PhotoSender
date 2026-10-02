@@ -83,12 +83,6 @@ class TransferPresentationTest {
         }
     }
 
-    @Test fun upgradeGateOffersReviewInsteadOfBlindRetry() {
-        val copy = transferCopy(TransferState(phase = TransferPhase.FAILED,
-            reason = TransferReason.UPGRADE_REVIEW_REQUIRED), "Laptop", true)
-        assertEquals(TransferAction.REVIEW_UPGRADE, copy.action)
-    }
-
     @Test fun completionIsAuthoritativeDespitePreviousTransientReason() {
         val copy = transferCopy(TransferState(phase = TransferPhase.COMPLETE,
             reason = TransferReason.COMPUTER_UNAVAILABLE), "Laptop", true)
@@ -99,16 +93,5 @@ class TransferPresentationTest {
     @Test fun homeShowsRevokedPairingAfterAnEarlierCompletedJob() {
         val visible = homeTransferState(TransferState(phase = TransferPhase.COMPLETE), false, TransferReason.ACCESS_REVOKED)
         assertEquals(TransferAction.CONNECT, transferCopy(visible, "Laptop", false).action)
-    }
-
-    @Test fun upgradeReviewDoesNotPresentUnverifiedLegacyFilesAsNew() {
-        val previous = TransferState(phase = TransferPhase.COMPLETE, completedFiles = 3)
-        val library = UnsentState(count = 52, libraryCount = 55, backedUpCount = 3, computed = true)
-        assertEquals(HomeState.Attention, envelopeState(true, ConnectionState.CONNECTED, null,
-            true, previous, queuedCount = 0, unsent = library, upgradeReviewRequired = true))
-        val copy = transferCopy(homeTransferState(previous, true, TransferReason.NONE, true), "Laptop", true)
-        assertEquals("Review backup", copy.actionLabel)
-        assertTrue(copy.detail.contains("compared"))
-        assertFalse(copy.title.contains("new", ignoreCase = true))
     }
 }

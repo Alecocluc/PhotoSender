@@ -2,7 +2,6 @@ package com.appharbor.pherry.data.db
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import androidx.room.ColumnInfo
 import androidx.room.Index
 
 @Entity(tableName = "upload_records", indices = [
@@ -17,24 +16,23 @@ data class UploadRecord(
     val fileName: String,
     val bucketName: String,
     val fileSize: Long,
-    val md5Hash: String = "",
+    /** SHA-256 of the original, empty until it has been read. */
+    val hash: String = "",
     val status: UploadStatus = UploadStatus.PENDING,
     val progress: Int = 0,
     val uploadedAt: Long = 0,
-    val serverIp: String = "",
-    @ColumnInfo(defaultValue = "''") val receiverId: String = "",
-    @ColumnInfo(defaultValue = "''") val libraryId: String = "",
-    @ColumnInfo(defaultValue = "''") val sourceVersion: String = "",
-    @ColumnInfo(defaultValue = "NULL") val dedupKey: String? = null,
-    @ColumnInfo(defaultValue = "''") val jobId: String = "",
-    @ColumnInfo(defaultValue = "''") val uploadId: String = "",
-    @ColumnInfo(defaultValue = "'md5'") val hashAlgorithm: String = "md5",
-    @ColumnInfo(defaultValue = "0") val acknowledgedBytes: Long = 0,
-    @ColumnInfo(defaultValue = "0") val sentBytes: Long = 0,
-    @ColumnInfo(defaultValue = "''") val receiptId: String = "",
-    @ColumnInfo(defaultValue = "''") val error: String = "",
-    @ColumnInfo(defaultValue = "0") val skipped: Boolean = false,
-    @ColumnInfo(defaultValue = "0") val historyHidden: Boolean = false,
+    val receiverId: String = "",
+    val libraryId: String = "",
+    val sourceVersion: String = "",
+    val dedupKey: String? = null,
+    val jobId: String = "",
+    val uploadId: String = "",
+    val acknowledgedBytes: Long = 0,
+    val sentBytes: Long = 0,
+    val receiptId: String = "",
+    val error: String = "",
+    val skipped: Boolean = false,
+    val historyHidden: Boolean = false,
 )
 
 /** Durable user intent and identity, independent of a particular worker/process run. */

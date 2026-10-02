@@ -58,7 +58,7 @@ class TransferApiReceiverTest {
     }
 
     private fun metadata(job: String, upload: String, bytes: ByteArray) = JSONObject()
-        .put("jobId", job).put("uploadId", upload).put("hash", hash(bytes)).put("hashAlgorithm", "sha256")
+        .put("jobId", job).put("uploadId", upload).put("hash", hash(bytes))
         .put("size", bytes.size).put("fileName", "original.bin").put("bucketName", "Integration")
 
     private suspend fun startJob(api: TransferApi, job: String, files: Int, bytes: Int) = api.json("/v2/jobs/$job", "PUT",
@@ -68,7 +68,7 @@ class TransferApiReceiverTest {
         api.request("/v2/uploads/$upload", "PATCH", bytes.toRequestBody("application/octet-stream".toMediaType()), offset)
 
     private suspend fun exists(api: TransferApi, digest: String): JSONObject = api.json("/v2/files/exists", "POST",
-        JSONObject().put("hashes", JSONArray(listOf(digest))).put("hashAlgorithm", "sha256").put("verify", true))
+        JSONObject().put("hashes", JSONArray(listOf(digest))).put("verify", true))
         .getJSONArray("files").getJSONObject(0)
 
     @Test fun acknowledgedChunksResumeAndDuplicatePartialsDoNotBlockLaterJobsOrOtherPhones() = runBlocking<Unit> {
@@ -121,7 +121,7 @@ class TransferApiReceiverTest {
         }
     }
 
-    @Test fun actionableProtocolFailuresKeepTheirCodesAndLegacyClientsGetAnUpdateResponse() = runBlocking<Unit> {
+    @Test fun actionableProtocolFailuresKeepTheirCodes() = runBlocking<Unit> {
         val http = client()
         try {
             val api = pair(http)
@@ -149,12 +149,6 @@ class TransferApiReceiverTest {
                 .put("completedFiles", 0).put("failedFiles", 1)).getString("state"))
             val next = id()
             assertEquals("running", startJob(api, next, 1, bytes.size).getString("state"))
-
-            http.newCall(Request.Builder().url("$endpoint/upload")
-                .post(ByteArray(0).toRequestBody()).build()).awaitResponse().use {
-                assertEquals(426, it.code)
-                assertEquals("PROTOCOL_UPDATE_REQUIRED", JSONObject(it.body!!.string()).getString("code"))
-            }
         } finally { http.connectionPool.evictAll(); http.dispatcher.executorService.shutdown() }
     }
 

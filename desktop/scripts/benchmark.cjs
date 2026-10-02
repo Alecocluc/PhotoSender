@@ -72,7 +72,6 @@ async function measure(parallel) {
             uploadId: file.uploadId,
             jobId,
             hash: file.hash,
-            hashAlgorithm: "sha256",
             size: file.bytes.length,
             fileName: file.fileName,
             bucketName: "Fixture",

@@ -47,7 +47,7 @@ The visual metaphor is a photo lab. Product language stays literal: phone, compu
 ## Capabilities and constraints
 
 - Maximum file size is 16 GB. Originals are not transcoded or compressed by Pherry.
-- New transfers use SHA-256. The historical Android column named `md5Hash` remains for schema compatibility; `hashAlgorithm` distinguishes legacy records.
+- Transfers are identified and verified by SHA-256.
 - Identical content within one phone may reuse an existing receipt, including when it appears in another album. Different phones keep independent copies.
 - The transfer ledger retains the newest 5,000 events. The Photos inventory has no corresponding 5,000-file display cap.
 - Video poster availability depends on the operating system and installed codecs. A video/file icon remains a usable fallback.
@@ -55,13 +55,11 @@ The visual metaphor is a photo lab. Product language stays literal: phone, compu
 - Auto-backup remains subject to Android scheduling, battery, permission and foreground-service constraints. A paused queue must not be silently resumed by automatic work.
 - **Local HTTP, without TLS.** Pairing provides access control and per-phone authorization; it does not encrypt network traffic. Use a trusted private network. This is not an Internet-facing storage service. No remote deployment or cloud service is required.
 
-## Migration and recovery
+## Data and recovery
 
-Update both Android and desktop for protocol v2. Older upload endpoints are rejected; a new phone must complete pairing.
+Pherry is pre-release and does not migrate data from earlier builds. A change to the Android database schema resets the phone's local transfer state; the next backup checks the computer by content hash, so files already saved there are not sent again. A change to the desktop library schema resets the receiver database: phones pair again, and rebuilding the index restores the Photos inventory from the phone folders. The phone asks for a Pherry Desktop update when the receiver reports an older protocol version.
 
-Android Room migration 1 → 2 preserves existing records and adds destination/source/job metadata. Legacy completed records remain separately labelled history, not proof that a new receiver has the file. Manual and automatic backup wait for an explicit upgrade review when previous backups exist. Approval belongs to the chosen computer and destination; eligible legacy pending work is then adopted and checked again.
-
-The desktop imports available legacy JSON records into its SQLite library after checking paths and file presence. Old files initially stay where they are and appear as previous backups; importing a history file does not grant a phone access to those files. A phone can explicitly adopt a previous backup: Pherry verifies each matching original with SHA-256 before moving it into that phone's folder, preserving its receipt. Unmatched files and files owned by another phone are kept. The move uses a durable journal so an interruption can be recovered without copying the library twice. Moving to another destination folder gives that folder its own library identity. To include moved files, keep their phone/album directory structure and rebuild the index.
+Moving to another destination folder gives that folder its own library identity. Rebuilding the index scans the paired phones' folders only; other files in the Pherry folder are left alone and not indexed. To include moved files, keep their phone/album directory structure and rebuild the index.
 
 Keep the photo directory and the desktop application-data directory when making an independent backup. A history export alone contains records, not originals. Do not manually remove partial files or the database while the receiver is active.
 
@@ -97,13 +95,13 @@ The real Electron integration harness uses the same Playwright module setup and 
 node desktop/scripts/electron-integration.cjs
 ```
 
-With an Android emulator already running, the real Kotlin/Node protocol and Room migration tests run together against an isolated receiver:
+With an Android emulator already running, the real Kotlin/Node protocol tests run against an isolated receiver:
 
 ```powershell
 node desktop/scripts/android-integration.cjs
 ```
 
-The runner selects a running emulator, starts the receiver on a free loopback port, and uses an emulator-specific `adb reverse` tunnel. It removes that tunnel and its temporary library afterward and checks that both test classes actually ran. If several emulators are running, set `PHERRY_TEST_EMULATOR` to the desired `emulator-…` serial. Physical phones are excluded. CI runs the same command on an API 35 emulator, alongside the Windows/Linux receiver tests and Android build, unit tests and lint. This verifies the protocol through real sockets, not Wi-Fi throughput.
+The runner selects a running emulator, starts the receiver on a free loopback port, and uses an emulator-specific `adb reverse` tunnel. It removes that tunnel and its temporary library afterward and checks that the protocol tests actually ran. If several emulators are running, set `PHERRY_TEST_EMULATOR` to the desired `emulator-…` serial. Physical phones are excluded. CI runs the same command on an API 35 emulator, alongside the Windows/Linux receiver tests and Android build, unit tests and lint. This verifies the protocol through real sockets, not Wi-Fi throughput.
 
 `npm run benchmark` runs an isolated loopback receiver with temporary files: 32 files of 256 KiB and four files of 8 MiB, at concurrency 2, 3, 4 and 6. It reports hashing time, receiver time and loopback throughput, then removes its temporary data. Use it to compare local changes on the same computer. It does not measure phone performance or Wi-Fi throughput, and its numbers are not product speed claims.
 

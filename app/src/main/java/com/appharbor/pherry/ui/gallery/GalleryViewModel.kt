@@ -317,8 +317,6 @@ class GalleryViewModel @Inject constructor(
                 _sendEvents.emit(SendOutcome(toSend.size, selectedItems.size - toSend.size))
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
-            } catch (_: com.appharbor.pherry.data.upload.UpgradeReviewRequiredException) {
-                _sendEvents.emit(SendOutcome(0, 0, "Review your existing backup before sending. Your selection is saved."))
             } catch (_: Exception) {
                 _sendEvents.emit(SendOutcome(0, 0, "Could not prepare these files. Check photo access and storage, then retry."))
             } finally {

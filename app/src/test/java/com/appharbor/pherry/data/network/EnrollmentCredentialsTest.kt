@@ -11,10 +11,10 @@ class EnrollmentCredentialsTest {
         assertEquals(secret, EnrollmentCredentials.reuseOrCreate(secret))
         assertNotEquals(secret, EnrollmentCredentials.reuseOrCreate(""))
     }
-    @Test fun legacyShortPairingCodesAreNeverReusedAsDeviceSecrets() {
-        val oldCode = "123456789abc"
-        assertNotEquals(oldCode, EnrollmentCredentials.reuseOrCreate(oldCode))
-        val previousServerCredential = "a".repeat(64)
-        assertEquals(previousServerCredential, EnrollmentCredentials.reuseOrCreate(previousServerCredential))
+    @Test fun onlyCredentialsTheReceiverAcceptsAreReused() {
+        val pairingCode = "123456789abc"
+        assertNotEquals(pairingCode, EnrollmentCredentials.reuseOrCreate(pairingCode))
+        val serverCredential = "a".repeat(64)
+        assertEquals(serverCredential, EnrollmentCredentials.reuseOrCreate(serverCredential))
     }
 }

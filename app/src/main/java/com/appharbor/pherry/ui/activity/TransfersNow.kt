@@ -132,7 +132,6 @@ internal fun TransfersNow(
     onConnect: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenSettings: () -> Unit = {},
-    onReviewUpgrade: () -> Unit = {},
     /** Runs before Resume or Retry starts sending (the shell asks for notification permission here). */
     onBeforeTransfer: () -> Unit = {},
 ) {
@@ -176,7 +175,6 @@ internal fun TransfersNow(
                         when (action) {
                             TransferAction.CONNECT -> onConnect()
                             TransferAction.SETTINGS -> onOpenSettings()
-                            TransferAction.REVIEW_UPGRADE -> onReviewUpgrade()
                             TransferAction.LIBRARY -> onOpenLibrary()
                             TransferAction.RETRY -> {
                                 onBeforeTransfer()

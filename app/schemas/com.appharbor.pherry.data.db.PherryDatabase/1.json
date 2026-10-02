@@ -1,12 +1,12 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 2,
-    "identityHash": "53a4b8b986194675fbced5c3e15c1601",
+    "version": 1,
+    "identityHash": "5f1fb5b5fed18dea7bd45725a2c0a908",
     "entities": [
       {
         "tableName": "upload_records",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `mediaStoreId` INTEGER NOT NULL, `contentUri` TEXT NOT NULL, `fileName` TEXT NOT NULL, `bucketName` TEXT NOT NULL, `fileSize` INTEGER NOT NULL, `md5Hash` TEXT NOT NULL, `status` TEXT NOT NULL, `progress` INTEGER NOT NULL, `uploadedAt` INTEGER NOT NULL, `serverIp` TEXT NOT NULL, `receiverId` TEXT NOT NULL DEFAULT '', `libraryId` TEXT NOT NULL DEFAULT '', `sourceVersion` TEXT NOT NULL DEFAULT '', `dedupKey` TEXT DEFAULT NULL, `jobId` TEXT NOT NULL DEFAULT '', `uploadId` TEXT NOT NULL DEFAULT '', `hashAlgorithm` TEXT NOT NULL DEFAULT 'md5', `acknowledgedBytes` INTEGER NOT NULL DEFAULT 0, `sentBytes` INTEGER NOT NULL DEFAULT 0, `receiptId` TEXT NOT NULL DEFAULT '', `error` TEXT NOT NULL DEFAULT '', `skipped` INTEGER NOT NULL DEFAULT 0, `historyHidden` INTEGER NOT NULL DEFAULT 0)",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `mediaStoreId` INTEGER NOT NULL, `contentUri` TEXT NOT NULL, `fileName` TEXT NOT NULL, `bucketName` TEXT NOT NULL, `fileSize` INTEGER NOT NULL, `hash` TEXT NOT NULL, `status` TEXT NOT NULL, `progress` INTEGER NOT NULL, `uploadedAt` INTEGER NOT NULL, `receiverId` TEXT NOT NULL, `libraryId` TEXT NOT NULL, `sourceVersion` TEXT NOT NULL, `dedupKey` TEXT, `jobId` TEXT NOT NULL, `uploadId` TEXT NOT NULL, `acknowledgedBytes` INTEGER NOT NULL, `sentBytes` INTEGER NOT NULL, `receiptId` TEXT NOT NULL, `error` TEXT NOT NULL, `skipped` INTEGER NOT NULL, `historyHidden` INTEGER NOT NULL)",
         "fields": [
           {
             "fieldPath": "id",
@@ -45,8 +45,8 @@
             "notNull": true
           },
           {
-            "fieldPath": "md5Hash",
-            "columnName": "md5Hash",
+            "fieldPath": "hash",
+            "columnName": "hash",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -69,100 +69,75 @@
             "notNull": true
           },
           {
-            "fieldPath": "serverIp",
-            "columnName": "serverIp",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
             "fieldPath": "receiverId",
             "columnName": "receiverId",
             "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "''"
+            "notNull": true
           },
           {
             "fieldPath": "libraryId",
             "columnName": "libraryId",
             "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "''"
+            "notNull": true
           },
           {
             "fieldPath": "sourceVersion",
             "columnName": "sourceVersion",
             "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "''"
+            "notNull": true
           },
           {
             "fieldPath": "dedupKey",
             "columnName": "dedupKey",
-            "affinity": "TEXT",
-            "defaultValue": "NULL"
+            "affinity": "TEXT"
           },
           {
             "fieldPath": "jobId",
             "columnName": "jobId",
             "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "''"
+            "notNull": true
           },
           {
             "fieldPath": "uploadId",
             "columnName": "uploadId",
             "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "''"
-          },
-          {
-            "fieldPath": "hashAlgorithm",
-            "columnName": "hashAlgorithm",
-            "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "'md5'"
+            "notNull": true
           },
           {
             "fieldPath": "acknowledgedBytes",
             "columnName": "acknowledgedBytes",
             "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
+            "notNull": true
           },
           {
             "fieldPath": "sentBytes",
             "columnName": "sentBytes",
             "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
+            "notNull": true
           },
           {
             "fieldPath": "receiptId",
             "columnName": "receiptId",
             "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "''"
+            "notNull": true
           },
           {
             "fieldPath": "error",
             "columnName": "error",
             "affinity": "TEXT",
-            "notNull": true,
-            "defaultValue": "''"
+            "notNull": true
           },
           {
             "fieldPath": "skipped",
             "columnName": "skipped",
             "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
+            "notNull": true
           },
           {
             "fieldPath": "historyHidden",
             "columnName": "historyHidden",
             "affinity": "INTEGER",
-            "notNull": true,
-            "defaultValue": "0"
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -260,7 +235,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '53a4b8b986194675fbced5c3e15c1601')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5f1fb5b5fed18dea7bd45725a2c0a908')"
     ]
   }
 }

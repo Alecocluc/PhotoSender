@@ -32,8 +32,6 @@ class ConnectionManager @Inject constructor(
     val connectionState = _connectionState.asStateFlow()
     private val _serverName = MutableStateFlow("")
     val serverName = _serverName.asStateFlow()
-    private val _connectedIp = MutableStateFlow("")
-    val connectedIp = _connectedIp.asStateFlow()
     private val _connectedEndpoint = MutableStateFlow("")
     val connectedEndpoint = _connectedEndpoint.asStateFlow()
     private val _connectionError = MutableStateFlow<String?>(null)
@@ -42,8 +40,6 @@ class ConnectionManager @Inject constructor(
     val connectionReason = _connectionReason.asStateFlow()
     private val _disconnectedByUser = MutableStateFlow(false)
     val disconnectedByUser = _disconnectedByUser.asStateFlow()
-    private val _canDelete = MutableStateFlow(false)
-    val canDelete = _canDelete.asStateFlow()
     private val _receiverIdentity = MutableStateFlow<ReceiverIdentity?>(null)
     val receiverIdentity = _receiverIdentity.asStateFlow()
     private var connectJob: Job? = null
@@ -100,8 +96,6 @@ class ConnectionManager @Inject constructor(
 
     private fun markDisconnected(message: String?, reason: TransferReason = TransferReason.NONE) {
         session.connection.set(null)
-        _canDelete.value = false
-        _connectedIp.value = ""
         _connectedEndpoint.value = ""
         _connectionState.value = ConnectionState.DISCONNECTED
         _connectionError.value = message
@@ -144,19 +138,17 @@ class ConnectionManager @Inject constructor(
         } else appPreferences.tokenForDevice(identity.deviceId)
         if (credential.isBlank()) throw TransferHttpException(401, "Enter this computer's pairing code or scan its ticket", "PAIRING_REQUIRED")
         val connection = ReceiverConnection(identity, target.baseUrl, credential)
-        // Verify enrollment before showing Connected; an old global token is not a v2 credential.
+        // Verify enrollment before showing Connected.
         TransferApi(okHttpClient, connection).json("/v2/preflight", "POST", JSONObject().put("totalBytes", 0).put("totalFiles", 0))
         currentCoroutineContext().ensureActive()
         session.clientId = appPreferences.clientId()
         session.connection.set(connection)
         _receiverIdentity.value = identity
-        _connectedIp.value = target.host
         _connectedEndpoint.value = target.endpoint
         _serverName.value = info.optString("serverName", "Computer")
         _connectionState.value = ConnectionState.CONNECTED
         _connectionError.value = null
         _connectionReason.value = TransferReason.NONE
-        _canDelete.value = true
         appPreferences.rememberReceiver(identity.deviceId, identity.libraryId, target.endpoint, _serverName.value)
         return connection
     }
@@ -223,8 +215,4 @@ class ConnectionManager @Inject constructor(
             }
         }
     }
-
-    fun getBaseUrl(): String = session.connection.get()?.baseUrl.orEmpty()
-    fun getConnectedEndpoint(): String = _connectedEndpoint.value
-    fun baseUrlForTarget(target: String): String? = baseUrlForConnectionTarget(target)
 }

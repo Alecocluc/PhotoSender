@@ -70,7 +70,7 @@ const server = http.createServer((req, res) => {
         revokeDevice: async ({ id }) => { devices.find((d) => d.deviceId === id).revoked = true; return { success: true }; },
         updateSettings: async (patch) => { Object.assign(settings, patch); return { success: true }; },
         rebuildHistoryProgress: async () => ({ success: true, running: false }), clearHistory: async () => ({ success: true }),
-        exportHistory: async () => ({ success: true, filePath: 'history.json' }), importHistory: async () => ({ canceled: true }),
+        exportHistory: async () => ({ success: true, filePath: 'history.json' }),
         onFileReceived: hook('arrival'), onFilesRemoved: hook('removed'), onServerState: hook('server'), onIpsChanged: hook('ips'),
         onJobsChanged: hook('jobs'), onDevicesChanged: hook('devices'),
       };

@@ -4,7 +4,7 @@ import com.appharbor.pherry.data.upload.TransferPhase
 import com.appharbor.pherry.data.upload.TransferReason
 import com.appharbor.pherry.data.upload.TransferState
 
-internal enum class TransferAction { NONE, RETRY, CONNECT, SETTINGS, REVIEW_UPGRADE, LIBRARY }
+internal enum class TransferAction { NONE, RETRY, CONNECT, SETTINGS, LIBRARY }
 
 internal data class TransferCopy(
     val title: String,
@@ -48,7 +48,6 @@ internal fun reasonCopy(reason: TransferReason, computer: String): TransferCopy?
     TransferReason.RECEIVER_BUSY -> TransferCopy("The computer is busy", "Pherry Desktop is finishing another operation. Your queue is saved; try again shortly.", TransferAction.RETRY, "Try again")
     TransferReason.SOURCE_UNAVAILABLE -> TransferCopy("Some originals need attention", "A file was removed, changed or is no longer accessible. Check photo access and review the files that did not send.", TransferAction.LIBRARY, "Open Library")
     TransferReason.CHECKSUM_MISMATCH -> TransferCopy("A file needs to be sent again", "Its contents did not match the original. Retrying reads the original again before sending it.", TransferAction.RETRY, "Retry files")
-    TransferReason.UPGRADE_REVIEW_REQUIRED -> TransferCopy("Review your existing backup", "Files saved by the previous version need to be compared with this phone before Pherry can confirm what is backed up. Review how those files will move into this phone's folder.", TransferAction.REVIEW_UPGRADE, "Review backup")
     TransferReason.RECEIPT_PENDING -> TransferCopy("Confirming the backup", "The files were sent. Pherry is waiting for $computer to confirm the saved backup.", TransferAction.RETRY, "Check again")
     TransferReason.USER_PAUSED -> TransferCopy("Backup paused", "Your place is saved. Resume when you are ready.", TransferAction.RETRY, "Resume sending")
     TransferReason.ANDROID_INTERRUPTED -> TransferCopy("Waiting to resume", "Android stopped this transfer. Your place is saved and the remaining files can continue.", TransferAction.RETRY, "Resume sending")

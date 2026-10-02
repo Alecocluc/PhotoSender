@@ -82,7 +82,7 @@ async function run() {
     const jobId = crypto.randomUUID(), uploadId = crypto.randomUUID();
     await request(`/v2/jobs/${jobId}`, 'PUT', { state: 'running', totalFiles: 1, totalBytes: bytes.length });
     await request('/v2/uploads', 'POST', {
-      jobId, uploadId, hash: crypto.createHash('sha256').update(bytes).digest('hex'), hashAlgorithm: 'sha256',
+      jobId, uploadId, hash: crypto.createHash('sha256').update(bytes).digest('hex'),
       fileName: 'resume-fixture.jpg', bucketName: 'Camera', size: bytes.length,
     });
     const firstChunk = await request(`/v2/uploads/${uploadId}`, 'PATCH', bytes.subarray(0, offset), {

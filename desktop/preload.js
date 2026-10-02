@@ -18,7 +18,6 @@ contextBridge.exposeInMainWorld("api", {
   // Mutations
   clearHistory: () => ipcRenderer.invoke("clear-history"),
   exportHistory: () => ipcRenderer.invoke("export-history"),
-  importHistory: () => ipcRenderer.invoke("import-history"),
   rebuildHistoryIndex: () => ipcRenderer.invoke("rebuild-history-index"),
   rebuildHistoryProgress: () => ipcRenderer.invoke("rebuild-history-progress"),
   removeDuplicates: (opts) => ipcRenderer.invoke("remove-duplicates", opts),

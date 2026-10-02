@@ -26,18 +26,15 @@ enum class TransferPhase { IDLE, PREPARING, WAITING_FOR_COMPUTER, WAITING_FOR_NE
 enum class TransferReason {
     NONE, NETWORK_REQUIRED, UNMETERED_REQUIRED, COMPUTER_UNAVAILABLE, OUT_OF_SPACE,
     PAIRING_REQUIRED, PAIRING_CODE_INVALID, ACCESS_REVOKED, DESKTOP_UPDATE_REQUIRED, DESTINATION_CHANGED,
-    RECEIVER_BUSY, SOURCE_UNAVAILABLE, CHECKSUM_MISMATCH, UPGRADE_REVIEW_REQUIRED,
+    RECEIVER_BUSY, SOURCE_UNAVAILABLE, CHECKSUM_MISMATCH,
     RECEIPT_PENDING, USER_PAUSED, ANDROID_INTERRUPTED, FILE_FAILURES, UNKNOWN,
 }
 
 internal class SourceReadException(cause: Exception) : IOException("The original could not be read", cause)
-internal class UpgradeReviewRequiredException : IOException("Review your previous backup before continuing")
 
 internal fun Exception.transferReason(): TransferReason = when (this) {
-    is UpgradeReviewRequiredException -> TransferReason.UPGRADE_REVIEW_REQUIRED
     is SourceReadException, is FileNotFoundException, is SecurityException -> TransferReason.SOURCE_UNAVAILABLE
     is TransferHttpException -> when {
-        protocolCode == "LEGACY_REVIEW_REQUIRED" -> TransferReason.UPGRADE_REVIEW_REQUIRED
         protocolCode == "DESTINATION_CHANGED" -> TransferReason.DESTINATION_CHANGED
         protocolCode == "PROTOCOL_UPDATE_REQUIRED" || code == 426 -> TransferReason.DESKTOP_UPDATE_REQUIRED
         protocolCode == "PAIRING_CODE_INVALID" -> TransferReason.PAIRING_CODE_INVALID
@@ -54,7 +51,7 @@ internal fun Exception.transferReason(): TransferReason = when (this) {
 
 /** An unavailable receiver must not turn untouched originals into permanent file failures. */
 internal fun Exception.shouldRetryTransfer(): Boolean = when (this) {
-    is SourceReadException, is UpgradeReviewRequiredException, is FileNotFoundException, is SecurityException -> false
+    is SourceReadException, is FileNotFoundException, is SecurityException -> false
     is TransferHttpException -> retryable
     is IOException -> true
     else -> false

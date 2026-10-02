@@ -50,7 +50,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -107,14 +107,12 @@ fun HomeScreen(
     onOpenHistory: () -> Unit = onOpenTransfers,
     onOpenSettings: () -> Unit,
     onBeforeTransfer: () -> Unit = {},
-    onReviewUpgrade: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val serverName by viewModel.serverName.collectAsStateWithLifecycle()
     val transferState by viewModel.transferState.collectAsStateWithLifecycle()
     val connectionReason by viewModel.connectionReason.collectAsStateWithLifecycle()
-    val upgradeReview by viewModel.upgradeReviewState.collectAsStateWithLifecycle()
     val completedCount by viewModel.completedCount.collectAsStateWithLifecycle()
     val failedCount by viewModel.failedCount.collectAsStateWithLifecycle()
     val queuedCount by viewModel.queuedCount.collectAsStateWithLifecycle()
@@ -127,7 +125,6 @@ fun HomeScreen(
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
     val recentSent by viewModel.recentSent.collectAsStateWithLifecycle()
     val remembered by viewModel.rememberedComputer.collectAsStateWithLifecycle()
-    val canDelete by viewModel.canDelete.collectAsStateWithLifecycle()
     val isQueueing by viewModel.isQueueing.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -195,11 +192,6 @@ fun HomeScreen(
             plan = plan,
             computerName = computer,
             confirmDestructive = confirmDestructiveSync,
-            canDelete = canDelete,
-            onScanTicket = {
-                viewModel.cancelSync()
-                onConnectClick()
-            },
             onConfirm = {
                 if (!plan.isNoOp) onBeforeTransfer()
                 val hasUploads = viewModel.confirmSync()
@@ -217,7 +209,6 @@ fun HomeScreen(
         hasPermission = hasPermission,
         transfer = transferState,
         connectionReason = connectionReason,
-        upgradeReviewRequired = upgradeReview.required,
         queuedCount = queuedCount,
         unsent = unsent,
     )
@@ -235,12 +226,11 @@ fun HomeScreen(
                 permissionBlocked = permissionBlocked,
                 computer = computer,
                 remembered = remembered,
-                canDelete = canDelete,
                 isQueueing = isQueueing,
                 completedCount = completedCount,
                 queuedCount = queuedCount,
                 unsent = unsent,
-                transfer = homeTransferState(transferState, connected, connectionReason, upgradeReview.required),
+                transfer = homeTransferState(transferState, connected, connectionReason),
                 connected = connected,
                 lastBackupAt = lastBackupAt,
                 isPreparingSync = isPreparingSync,
@@ -248,7 +238,6 @@ fun HomeScreen(
                 onConnect = onConnectClick,
                 onSettings = onOpenSettings,
                 onLibrary = onOpenLibrary,
-                onReviewUpgrade = onReviewUpgrade,
                 onRetryConnect = viewModel::reconnect,
                 onAllowAccess = {
                     mediaAsk.beforeLaunch()
@@ -261,9 +250,9 @@ fun HomeScreen(
                 },
                 onBackUp = {
                     onBeforeTransfer()
-                    if (upgradeReview.required) onReviewUpgrade() else viewModel.backUpNew()
+                    viewModel.backUpNew()
                 },
-                onSync = { if (upgradeReview.required) onReviewUpgrade() else viewModel.prepareSync() },
+                onSync = viewModel::prepareSync,
                 onRefresh = { viewModel.refreshUnsent(force = true) },
                 onViewTransfer = onOpenTransfers,
                 onStop = {
@@ -280,7 +269,6 @@ fun HomeScreen(
 
         item(key = "auto-backup-entry") {
             ActionRow(title = "Auto-backup", subtitle = when {
-                upgradeReview.required -> "On hold for backup review"
                 autoBackupEnabled -> "On. Manage when new photos are sent."
                 else -> "Off. Set up automatic backups."
             }, icon = Ph.Clock, onClick = onOpenSettings)
@@ -360,10 +348,8 @@ fun HomeScreen(
 enum class HomeState { NoNetwork, NoComputer, Unreachable, Connecting, NoAccess, Counting, Sending, Waiting, Attention, Paused, Backlog, Idle }
 
 /** A finished job must not hide a new connection problem on the Home dashboard. */
-internal fun homeTransferState(transfer: TransferState, connected: Boolean, connectionReason: TransferReason,
-    upgradeReviewRequired: Boolean = false): TransferState =
-    if (upgradeReviewRequired) TransferState(phase = TransferPhase.IDLE, reason = TransferReason.UPGRADE_REVIEW_REQUIRED)
-    else if (!connected && connectionReason != TransferReason.NONE && transfer.phase in setOf(TransferPhase.IDLE, TransferPhase.COMPLETE)) {
+internal fun homeTransferState(transfer: TransferState, connected: Boolean, connectionReason: TransferReason): TransferState =
+    if (!connected && connectionReason != TransferReason.NONE && transfer.phase in setOf(TransferPhase.IDLE, TransferPhase.COMPLETE)) {
         transfer.copy(phase = TransferPhase.IDLE, reason = connectionReason)
     } else if (!connected && transfer.reason == TransferReason.NONE) transfer.copy(reason = connectionReason)
     else transfer
@@ -377,10 +363,8 @@ internal fun envelopeState(
     connectionReason: TransferReason = TransferReason.NONE,
     queuedCount: Int,
     unsent: UnsentState,
-    upgradeReviewRequired: Boolean = false,
 ): HomeState = when {
     !networkGranted -> HomeState.NoNetwork
-    upgradeReviewRequired -> HomeState.Attention
     transfer.phase in setOf(TransferPhase.WAITING_FOR_NETWORK, TransferPhase.WAITING_FOR_COMPUTER) -> HomeState.Waiting
     transfer.phase == TransferPhase.FAILED -> HomeState.Attention
     transfer.phase == TransferPhase.PAUSED -> HomeState.Paused
@@ -405,7 +389,6 @@ private fun HomeEnvelope(
     permissionBlocked: Boolean,
     computer: String,
     remembered: RememberedComputer?,
-    canDelete: Boolean,
     isQueueing: Boolean,
     completedCount: Int,
     queuedCount: Int,
@@ -418,7 +401,6 @@ private fun HomeEnvelope(
     onConnect: () -> Unit,
     onSettings: () -> Unit,
     onLibrary: () -> Unit,
-    onReviewUpgrade: () -> Unit,
     onRetryConnect: () -> Unit,
     onAllowAccess: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -557,12 +539,6 @@ private fun HomeEnvelope(
 
                         HomeState.Waiting, HomeState.Attention -> {
                             val copy = transferCopy(transfer, computer, connected)
-                            val reviewingUpgrade = copy.action == TransferAction.REVIEW_UPGRADE
-                            if (reviewingUpgrade) {
-                                Fields(library = unsent.libraryCount.takeIf { unsent.computed }, backedUp = backedUp(unsent),
-                                    computer = computer, link = if (connected) LampState.On else link, limitedAccess = limitedAccess)
-                                Spacer(Modifier.height(Spacing.lg))
-                            }
                             EnvelopeMessage(copy.title, copy.detail, lamp = LampState.Idle)
                             if (transfer.pendingFiles > 0) {
                                 Spacer(Modifier.height(Spacing.md))
@@ -575,16 +551,13 @@ private fun HomeEnvelope(
                                     TransferAction.CONNECT -> onConnect()
                                     TransferAction.LIBRARY -> onLibrary()
                                     TransferAction.SETTINGS -> onSettings()
-                                    TransferAction.REVIEW_UPGRADE -> onReviewUpgrade()
                                     else -> if (queuedCount == 0 && transfer.pendingFiles == 0 && !connected) onRetryConnect() else onResume()
                                 }
                             }, onEnvelope = true, modifier = Modifier.fillMaxWidth())
-                            if (!reviewingUpgrade) {
-                                Spacer(Modifier.height(Spacing.sm))
-                                Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                                    PrintButton("See transfer", onClick = onViewTransfer, onEnvelope = true, style = PrintButtonStyle.Outline, modifier = Modifier.weight(1f))
-                                    if (s == HomeState.Waiting) PrintButton("Pause", onClick = onStop, onEnvelope = true, style = PrintButtonStyle.Outline)
-                                }
+                            Spacer(Modifier.height(Spacing.sm))
+                            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                                PrintButton("See transfer", onClick = onViewTransfer, onEnvelope = true, style = PrintButtonStyle.Outline, modifier = Modifier.weight(1f))
+                                if (s == HomeState.Waiting) PrintButton("Pause", onClick = onStop, onEnvelope = true, style = PrintButtonStyle.Outline)
                             }
                         }
 
@@ -611,7 +584,7 @@ private fun HomeEnvelope(
                             }
                             if (unsent.syncMode && unsent.deleteCount > 0) {
                                 Spacer(Modifier.height(Spacing.md))
-                                DeleteLine(count = unsent.deleteCount, computer = computer, canDelete = canDelete)
+                                DeleteLine(count = unsent.deleteCount, computer = computer)
                             }
                             Spacer(Modifier.height(Spacing.lg))
                             if (unsent.syncMode) {
@@ -671,7 +644,6 @@ private fun HomeEnvelope(
             Spacer(Modifier.height(Spacing.md))
             Text(
                 text = when {
-                    transfer.reason == TransferReason.UPGRADE_REVIEW_REQUIRED -> "Automatic backups wait for this review."
                     autoBackupEnabled -> "New photos are backed up automatically."
                     else -> "You choose when to back up."
                 },
@@ -732,7 +704,7 @@ private fun BigCount(value: Int, caption: String) {
 }
 
 @Composable
-private fun DeleteLine(count: Int, computer: String, canDelete: Boolean) {
+private fun DeleteLine(count: Int, computer: String) {
     val c = PherryTheme.colors
     Row(
         Modifier
@@ -741,21 +713,12 @@ private fun DeleteLine(count: Int, computer: String, canDelete: Boolean) {
             .padding(horizontal = Spacing.md, vertical = Spacing.sm),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (canDelete) {
-            Box(Modifier.size(18.dp).clip(PherryShape.frame).background(c.red), contentAlignment = Alignment.Center) {
-                PhIcon(Ph.XBold, contentDescription = null, tint = MaterialTheme.colorScheme.onError, size = 11.dp)
-            }
-        } else {
-            // Nothing will be deleted without the ticket, so no red mark.
-            PhIcon(Ph.Info, contentDescription = null, tint = c.onEnvelope, size = 18.dp)
+        Box(Modifier.size(18.dp).clip(PherryShape.frame).background(c.red), contentAlignment = Alignment.Center) {
+            PhIcon(Ph.XBold, contentDescription = null, tint = MaterialTheme.colorScheme.onError, size = 11.dp)
         }
         Spacer(Modifier.width(Spacing.sm))
         Text(
-            if (canDelete) {
-                "${Fmt.count(count)} no longer on this phone will also be deleted from $computer"
-            } else {
-                "${Fmt.count(count)} no longer on this phone. To delete them on $computer, scan its pairing ticket once."
-            },
+            "${Fmt.count(count)} no longer on this phone will also be deleted from $computer",
             style = MaterialTheme.typography.bodySmall,
             color = c.onEnvelope,
         )

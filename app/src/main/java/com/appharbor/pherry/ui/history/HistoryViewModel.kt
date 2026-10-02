@@ -75,14 +75,6 @@ class HistoryViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val legacyHistoryCount = uploadRecordDao.getLegacyHistoryCount()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
-    private val legacyLimit = MutableStateFlow(HISTORY_LIMIT)
-    val legacyHistory = combine(historyShown, legacyLimit) { shown, limit -> shown to limit }
-        .flatMapLatest { (shown, limit) -> if (shown) uploadRecordDao.getLegacyCompleted(limit) else emptyFlow() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    fun loadMoreLegacyHistory() { legacyLimit.update { it + HISTORY_LIMIT } }
-
     fun setHistoryShown(shown: Boolean) {
         historyShown.value = shown
     }

@@ -34,7 +34,6 @@ class TransferPolicyTest {
         assertEquals(TransferReason.ACCESS_REVOKED, TransferHttpException(403, "Revoked").transferReason())
         assertEquals(TransferReason.DESTINATION_CHANGED, TransferHttpException(409, "Different folder", "DESTINATION_CHANGED").transferReason())
         assertEquals(TransferReason.OUT_OF_SPACE, TransferHttpException(507, "Full").transferReason())
-        assertEquals(TransferReason.UPGRADE_REVIEW_REQUIRED, TransferHttpException(409, "Move needs attention", "LEGACY_REVIEW_REQUIRED").transferReason())
         assertFalse(TransferHttpException(409, "Job has unfinished sessions", "JOB_HAS_PENDING_UPLOADS").shouldRetryTransfer())
     }
 

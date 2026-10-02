@@ -18,11 +18,14 @@ object DatabaseModule {
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): PherryDatabase {
+        // Pre-release: a schema change resets local transfer state instead of migrating it.
         return Room.databaseBuilder(
             context,
             PherryDatabase::class.java,
-            "photosender_db"
-        ).addMigrations(PherryDatabase.MIGRATION_1_2).build()
+            "pherry.db"
+        ).fallbackToDestructiveMigration(dropAllTables = true)
+            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
+            .build()
     }
 
     @Provides

@@ -64,7 +64,7 @@ dependencies {
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
-    implementation(libs.hilt.navigation.compose)
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
 
     // WorkManager (background transfers) + Hilt integration
     implementation(libs.androidx.work.runtime.ktx)

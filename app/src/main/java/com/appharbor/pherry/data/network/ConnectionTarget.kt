@@ -7,7 +7,7 @@ private const val MAX_PORT = 65535
 data class ConnectionTarget(
     val host: String,
     val port: Int = DEFAULT_SERVER_PORT,
-    /** Pairing token from the desktop QR (gates destructive ops). Empty for manual/discovered. */
+    /** Pairing code from the desktop QR. Empty for manual/discovered. */
     val token: String = "",
 ) {
     val endpoint: String
@@ -46,8 +46,6 @@ private fun parseTokenParam(query: String): String {
         ?: return ""
     return raw.filter { it.isLetterOrDigit() }.take(16)
 }
-
-fun baseUrlForConnectionTarget(input: String): String? = parseConnectionTarget(input)?.baseUrl
 
 private fun isValidIpv4(host: String): Boolean {
     val parts = host.split(".")
